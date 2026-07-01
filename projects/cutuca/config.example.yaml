@@ -1,0 +1,36 @@
+# Copy to config.yaml and fill. config.yaml is gitignored.
+# Secrets do NOT live here — they come from .env / environment.
+
+# --- who receives nudges ---
+# Your Telegram chat_id. Leave null on first run: send the bot any message and it
+# logs "owner chat_id=<N>"; paste that value here so the digest knows where to go.
+owner_chat_id: null
+
+# --- ClickUp ---
+clickup:
+  list_id: "<ID da lista de tarefas de funcionário>"   # required
+  # Optional: default assignee-name -> ClickUp user id overrides, if name matching
+  # is unreliable in your workspace. Leave empty to resolve by workspace member name.
+  assignee_overrides: {}                                 # e.g. {"joão": 12345678}
+
+# --- LLM (Flow A parser) ---
+llm:
+  model: "claude-haiku-4-5-20251001"                     # do NOT use Opus/Sonnet here
+  max_tokens: 400
+  timeout_seconds: 20
+
+# --- cobrança / nudge cadence (Flow B) ---
+digest_horarios: ["08:00"]        # add "13:00" for a midday overdue nudge
+timezone: "America/Sao_Paulo"
+escala_tom: true                  # firmer wording as days-overdue grows
+
+cobrar_se:                        # a task is chased if ANY of these is true
+  vence_em_dias: 0                # due within N days (0 = due today)
+  atrasada: true                  # any overdue task
+  sem_update_dias: 3             # untouched for N days
+
+# --- channel ---
+canal: "telegram"                 # "whatsapp" only in Fase 2
+
+# --- state ---
+state_db_path: "cutuca_state.db"  # SQLite file for nudge dedupe

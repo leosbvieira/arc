@@ -1,0 +1,8 @@
+# Runtime deps for cutuca v0 (long-poll host).
+# Pin loosely; the seams (model, channel) isolate churn.
+
+anthropic>=0.40,<1.0          # Messages API (Haiku parser) — Flow A only
+python-telegram-bot>=21,<22   # Telegram long-poll + send
+requests>=2.31,<3.0           # ClickUp REST v2 client
+APScheduler>=3.10,<4.0        # Flow B digest scheduler
+PyYAML>=6.0,<7.0              # config.yaml loader

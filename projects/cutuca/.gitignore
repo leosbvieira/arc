@@ -1,0 +1,29 @@
+# secrets & local config — NEVER commit
+.env
+config.yaml
+
+# state
+*.db
+*.sqlite
+*.sqlite3
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
