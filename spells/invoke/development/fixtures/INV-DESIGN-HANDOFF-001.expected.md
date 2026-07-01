@@ -1,0 +1,21 @@
+## Invoke Validation Fixture Result
+
+- Fixture: INV-DESIGN-HANDOFF-001
+- User request: Design a new sigil that validates experiment fixtures and routes maintenance through the sigil lifecycle.
+- Mode: design
+- Spell: invoke
+- Canonical ID: invoke
+- Scope: library
+- Phase status: pass
+- Mode contract: arcanum/spells/invoke/design.md
+- Outputs: artifacts/fixture-validation-sigil/HANDOFF.md, artifacts/fixture-validation-sigil/glossary-consistency.md, .arcanum/necronomicon/sessions/demo/invoke-transports/design.md
+- Design views: handoff context only
+- Glossary consistency: pass
+- Template/profile selection: sigil family
+- Dispatch techniques: `delegation_boundary`, `owner_boundary_check`, `frame_handoff`
+- Distill validation: pass; handoff context is one coherent sigil design unit
+- Implementation layering: gap recorded
+- Work-pack: n/a
+- Decisions: prepare sigil-development handoff; do not take sigil lifecycle ownership inside invoke
+- Unresolved gaps: sigil-development must validate tier fit, SKILL.md quality bar, anti-patterns, and observability
+- Next route: sigil-development

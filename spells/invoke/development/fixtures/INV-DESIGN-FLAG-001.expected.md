@@ -1,0 +1,21 @@
+## Invoke Validation Fixture Result
+
+- Fixture: INV-DESIGN-FLAG-001
+- User request: Design a research evidence ingestion architecture where two source notes disagree about whether ingestion should be append-only or allow correction.
+- Mode: design
+- Spell: invoke
+- Canonical ID: invoke
+- Scope: library
+- Phase status: flag
+- Mode contract: arcanum/spells/invoke/design.md
+- Outputs: artifacts/evidence-ingestion/ARCHITECTURE.md, artifacts/evidence-ingestion/research-brief.md, artifacts/evidence-ingestion/glossary-consistency.md, .arcanum/necronomicon/sessions/demo/invoke-transports/design.md
+- Design views: context, high-level structure, low-level components, workflow process, decision flow, dependency interface
+- Glossary consistency: pass
+- Template/profile selection: Module Formulae architecture profile plus research companion
+- Dispatch techniques: `dialectic`, `residue_ledger`, `owner_boundary_check`
+- Distill validation: flag; correction policy is a split-pressure gap before plan readiness
+- Implementation layering: seed emitted
+- Work-pack: n/a
+- Decisions: isolate correction policy behind an explicit decision point; carry claim status into architecture decisions
+- Unresolved gaps: ingestion correction policy needs decision-gate before implementation planning
+- Next route: deferred

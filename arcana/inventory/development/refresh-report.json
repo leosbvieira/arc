@@ -1,0 +1,131 @@
+{
+  "mode": "refresh",
+  "phaseStatus": "pass",
+  "sourceSignals": [
+    {
+      "id": "RS-INT-001",
+      "source_path": "current-thread",
+      "signal_type": "route_changed",
+      "target_artifacts": [
+        "arcana/inventory/development/ARCHITECTURE.md",
+        "arcana/inventory/development/IMPLEMENTATION-PLAN.md",
+        "arcana/inventory/development/WORK-PACK.md"
+      ],
+      "claim": "Active Inventory development should first build the interface, link discipline, and index substrate.",
+      "evidence": "User requested invoke refresh around interface/link/index and explicitly rejected active whole-Arcanum/domainspec directory tracks.",
+      "confidence": "high",
+      "mutation_safety": "safe"
+    },
+    {
+      "id": "RS-INT-002",
+      "source_path": "arcana/inventory/development/INTERFACE-ARCHITECTURE.md",
+      "signal_type": "evidence_added",
+      "target_artifacts": [
+        "arcana/inventory/development/ARCHITECTURE.md",
+        "arcana/inventory/development/IMPLEMENTATION-PLAN.md"
+      ],
+      "claim": "$inventory needs default auto behavior with target inference, confirmation, bounded slice execution, and status/explain views.",
+      "evidence": "Interface architecture artifact promoted into active development root.",
+      "confidence": "high",
+      "mutation_safety": "safe"
+    },
+    {
+      "id": "RS-INT-003",
+      "source_path": "arcana/inventory/development/INDEX-TECHNIQUE-RESEARCH.md",
+      "signal_type": "evidence_added",
+      "target_artifacts": [
+        "arcana/inventory/development/IMPLEMENTATION-PLAN.md",
+        "arcana/inventory/development/WORK-PACK.md"
+      ],
+      "claim": "Inventory needs selector, link, backlink, traceability, query-pattern, projection, and gap/risk indexes beyond basic tags.",
+      "evidence": "Index technique research artifact promoted into active development root.",
+      "confidence": "high",
+      "mutation_safety": "safe"
+    },
+    {
+      "id": "RS-INT-004",
+      "source_path": "arcana/inventory/development/LINKING-DISCIPLINE.md",
+      "signal_type": "evidence_added",
+      "target_artifacts": [
+        "arcana/inventory/development/IMPLEMENTATION-LAYERING.md",
+        "arcana/inventory/development/WORK-PACK.md"
+      ],
+      "claim": "DomainSpec-style stable IDs, source refs, typed links, traceability, and generated backlinks should govern Inventory links.",
+      "evidence": "Linking discipline artifact promoted into active development root.",
+      "confidence": "high",
+      "mutation_safety": "safe"
+    }
+  ],
+  "targetArtifacts": [
+    "INTERFACE-ARCHITECTURE.md",
+    "INDEX-TECHNIQUE-RESEARCH.md",
+    "LINKING-DISCIPLINE.md",
+    "INTERFACE-REFINE-SYNTHESIS.md",
+    "ARCHITECTURE.md",
+    "IMPLEMENTATION-LAYERING.md",
+    "IMPLEMENTATION-PLAN.md",
+    "WORK-PACK.md",
+    "EXECUTION-PACK.md",
+    "READINESS.md",
+    "REFRESH-REPORT.md",
+    "refresh-report.json"
+  ],
+  "deltaSummary": [
+    {
+      "delta": "route_changed",
+      "target": "arcana/inventory/development",
+      "state": "active development pivoted to interface/link/index",
+      "evidence": "RS-INT-001"
+    },
+    {
+      "delta": "artifact_drift",
+      "target": "arcana/inventory/development/archive",
+      "state": "whole-Arcanum and domainspec-core research moved to archive/reference",
+      "evidence": "RS-INT-001"
+    },
+    {
+      "delta": "evidence_added",
+      "target": "arcana/inventory/development",
+      "state": "interface, index technique, and linking discipline artifacts promoted to active root",
+      "evidence": "RS-INT-002"
+    }
+  ],
+  "proposedChanges": [],
+  "appliedChanges": [
+    "Archived scope-specific whole-Arcanum and domainspec-core research directories.",
+    "Promoted interface/link/index artifacts into the active Inventory development root.",
+    "Refreshed ARCHITECTURE.md, IMPLEMENTATION-LAYERING.md, IMPLEMENTATION-PLAN.md, WORK-PACK.md, EXECUTION-PACK.md, READINESS.md, REFRESH-REPORT.md, and refresh-report.json."
+  ],
+  "skippedChanges": [
+    "Production SKILL/README update deferred to SWU-INT-001.",
+    "Production index templates deferred to TASK-INT-002 and TASK-INT-003.",
+    "Validator extension deferred until templates exist.",
+    "Pilot slice deferred until interface and index substrate exist."
+  ],
+  "blockers": [
+    {
+      "id": "B-AUTO-SKILL-CONTRACT",
+      "status": "open",
+      "owner": "inventory",
+      "nextAction": "Execute SWU-INT-001."
+    },
+    {
+      "id": "B-INDEX-SCHEMA",
+      "status": "open",
+      "owner": "inventory",
+      "nextAction": "Execute TASK-INT-003 after TASK-INT-001."
+    },
+    {
+      "id": "B-INT-PILOT-TARGET",
+      "status": "open",
+      "owner": "operator/inventory",
+      "nextAction": "Confirm first pilot target after interface templates exist."
+    }
+  ],
+  "nextRoute": "task-session",
+  "validation": [
+    "jq empty arcana/inventory/development/refresh-report.json",
+    "required active artifact presence review",
+    "rg checks for interface/link/index references in active entrypoints"
+  ]
+}

@@ -1,0 +1,21 @@
+## Invoke Validation Fixture Result
+
+- Fixture: INV-DEFINE-BLOCK-001
+- User request: Set this up for later.
+- Mode: define
+- Spell: invoke
+- Canonical ID: invoke
+- Scope: library
+- Phase status: block
+- Mode contract: arcanum/spells/invoke/define.md
+- Outputs: n/a
+- Template selection: none finalized
+- Dispatch techniques: `data_quality_completeness`, `owner_boundary_check`
+- Distill validation: not applicable; blocked before a definition target exists
+- Decisions: block until the user provides a core goal or approves a one-question clarification answer
+- Glossary updates: n/a
+- Glossary linking: n/a
+- Implementation layering: n/a
+- Work-pack: n/a
+- Unresolved gaps: core goal missing; scope boundary missing
+- Next route: deferred

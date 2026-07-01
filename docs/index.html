@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CyberAlchemy is an operating language for turning ambitious ideas into governed, evidenced, reusable tools.">
+  <title>CyberAlchemy</title>
+  <style>
+    :root {
+      --ink: #151515;
+      --muted: #626262;
+      --paper: #fdfaf3;
+      --surface: #fffdf8;
+      --line: #e3ded2;
+      --red: #e60023;
+      --orange: #e85d18;
+      --teal: #088f8a;
+      --green: #2f8b57;
+      --blue: #2e6bb8;
+      --violet: #5c55b8;
+      --shadow: 0 18px 60px rgba(21, 21, 21, .12);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      padding: 14px clamp(18px, 4vw, 52px);
+      background: rgba(253, 250, 243, .88);
+      border-bottom: 1px solid rgba(227, 222, 210, .84);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 180px;
+      font-weight: 850;
+      text-decoration: none;
+      letter-spacing: 0;
+    }
+
+    .brand img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+    }
+
+    nav {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    nav a {
+      min-height: 34px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    nav a:hover {
+      background: #f2eee3;
+      color: var(--ink);
+    }
+
+    .hero {
+      position: relative;
+      min-height: min(84vh, 820px);
+      display: grid;
+      align-items: end;
+      overflow: hidden;
+      padding: 112px clamp(18px, 5vw, 70px) 54px;
+      border-bottom: 1px solid var(--line);
+      background: #fbf8ef;
+    }
+
+    .hero-sigil {
+      position: absolute;
+      right: clamp(24px, 6vw, 96px);
+      bottom: clamp(32px, 8vw, 110px);
+      z-index: 1;
+      width: min(28vw, 360px);
+      min-width: 180px;
+      opacity: .11;
+      pointer-events: none;
+    }
+
+    #system-map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: .88;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(253, 250, 243, .98) 0%, rgba(253, 250, 243, .86) 42%, rgba(253, 250, 243, .52) 100%),
+        linear-gradient(0deg, rgba(253, 250, 243, .98) 0%, rgba(253, 250, 243, .14) 32%, rgba(253, 250, 243, .05) 100%);
+      pointer-events: none;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 18px;
+      color: var(--red);
+      font-size: 13px;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 940px;
+      font-size: clamp(54px, 8vw, 112px);
+      line-height: .88;
+    }
+
+    h2 {
+      max-width: 860px;
+      font-size: clamp(32px, 4.6vw, 62px);
+      line-height: .98;
+    }
+
+    h3 {
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.64;
+    }
+
+    .lead {
+      max-width: 730px;
+      margin-top: 22px;
+      color: #383838;
+      font-size: clamp(18px, 2.3vw, 24px);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 10px 15px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 820;
+      box-shadow: 0 6px 18px rgba(20, 20, 20, .06);
+    }
+
+    .button.primary {
+      border-color: var(--red);
+      background: var(--red);
+      color: white;
+    }
+
+    section {
+      padding: clamp(48px, 8vw, 92px) clamp(18px, 5vw, 70px);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .inner {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .section-head {
+      margin-bottom: 30px;
+    }
+
+    .section-head p {
+      max-width: 780px;
+      margin-top: 14px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 15px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .panel {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 9px 24px rgba(22, 22, 22, .05);
+    }
+
+    .panel p {
+      margin-top: 10px;
+    }
+
+    .panel .tag {
+      display: inline-flex;
+      margin-bottom: 14px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #f1eadc;
+      color: #6f5a3c;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .loop {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+    }
+
+    .step {
+      min-height: 158px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .step b {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      margin-bottom: 12px;
+      border-radius: 50%;
+      background: var(--red);
+      color: white;
+      font-size: 13px;
+    }
+
+    .step:nth-child(2) b { background: var(--orange); }
+    .step:nth-child(3) b { background: var(--blue); }
+    .step:nth-child(4) b { background: var(--violet); }
+    .step:nth-child(5) b { background: var(--green); }
+    .step:nth-child(6) b { background: var(--teal); }
+
+    .evidence {
+      display: grid;
+      grid-template-columns: minmax(260px, .72fr) minmax(360px, 1.28fr);
+      gap: 28px;
+      align-items: start;
+    }
+
+    .arcanum-direct {
+      background: #fffdf8;
+    }
+
+    .direct-layout {
+      display: grid;
+      grid-template-columns: minmax(220px, .62fr) minmax(360px, 1.38fr);
+      gap: 32px;
+      align-items: center;
+    }
+
+    .direct-mark {
+      width: min(100%, 280px);
+      justify-self: center;
+      filter: drop-shadow(0 18px 34px rgba(230, 0, 35, .12));
+    }
+
+    .direct-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .code {
+      overflow: auto;
+      padding: 18px;
+      border-radius: 8px;
+      background: #171717;
+      color: #fff8eb;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+
+    .artifact-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .artifact-list a {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 760;
+    }
+
+    .artifact-list span {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .footer {
+      padding: 28px clamp(18px, 5vw, 70px);
+      background: #151515;
+      color: #fdfaf3;
+    }
+
+    .footer p {
+      color: #c7c1b5;
+    }
+
+    @media (max-width: 920px) {
+      .grid-3,
+      .grid-2,
+      .direct-layout,
+      .evidence {
+        grid-template-columns: 1fr;
+      }
+
+      .hero {
+        min-height: 86vh;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .topbar {
+        position: static;
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      nav {
+        justify-content: flex-start;
+      }
+
+      .hero {
+        min-height: auto;
+        padding-top: 54px;
+      }
+
+      h1 {
+        font-size: clamp(46px, 18vw, 74px);
+      }
+    }
+  
+    nav a.active { color: var(--ink); background: #f2eee3; box-shadow: inset 0 -2px 0 var(--red); }
+    .subnav { position: fixed; top: 61px; left: 0; right: 0; z-index: 15; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; padding: 8px clamp(18px, 5vw, 70px); background: rgba(253,250,243,.93); border-bottom: 1px solid var(--line); backdrop-filter: blur(10px); }
+    .subnav .on { color: var(--muted); font-size: 11px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; margin-right: 2px; }
+    .subnav a { color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 740; }
+    .subnav a:hover { color: var(--ink); }
+    section { scroll-margin-top: 112px; }
+    @media (max-width: 680px) { .subnav { position: static; } }
+
+  
+    .nav-toggle { display:none; align-items:center; justify-content:center; width:42px; height:36px; padding:0; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--ink); font-size:17px; line-height:1; cursor:pointer; }
+    .nav-toggle:hover { background:#f2eee3; }
+    @media (max-width:940px) {
+      .topbar { flex-direction:row; flex-wrap:wrap; align-items:center; }
+      .nav-toggle { display:inline-flex; }
+      .topbar nav { display:none; width:100%; margin-top:8px; flex-direction:column; gap:2px; }
+      .topbar nav.open { display:flex; }
+      .topbar nav a { padding:11px 10px; font-size:15px; }
+    }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="CyberAlchemy home">
+      <img class="brand-mark" src="assets/cyberalchemy-mark.svg" alt="">
+      <span>CyberAlchemy</span>
+    </a>
+    <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="primary-nav">☰</button>
+    <nav id="primary-nav" aria-label="Primary navigation">
+      <a href="index.html" class="active" aria-current="page">Home</a>
+      <a href="system.html">The System</a>
+      <a href="saturn.html">Saturn</a>
+      <a href="craft.html">Craft</a>
+      <a href="method.html">Method</a>
+      <a href="skill-anatomy.html">Anatomy</a>
+      <a href="registry.html">Skills</a>
+      <a href="paper.html">Paper</a>
+      <a href="blog.html">Blog</a>
+      <a href="who-we-are.html">About</a>
+    </nav>
+  </header>
+  <div class="subnav"><span class="on">On this page</span> <a href="#pillars">Pillars</a> <a href="#loop">Loop</a> <a href="#evidence">Evidence</a> <a href="#start">Start</a></div>
+
+
+  <main id="top">
+    <section class="hero" aria-label="CyberAlchemy">
+      <canvas id="system-map" aria-hidden="true"></canvas>
+      <img class="hero-sigil" src="assets/cyberalchemy-mark.svg" alt="">
+      <div class="hero-content">
+        <p class="eyebrow">An operating language for agentic creation</p>
+        <h1>CyberAlchemy</h1>
+        <p class="lead">Turn ambitious ideas into named workflows, governed artifacts, validator-backed evidence, and reusable tools people can understand.</p>
+        <div class="actions">
+          <a class="button primary" href="system.html">See the system</a>
+          <a class="button" href="paper.html">Read the paper</a>
+          <a class="button" href="saturn.html">Saturn</a>
+          <a class="button" href="https://github.com/cyberAlchemyAI/Arcanum">Open Arcanum</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="pillars">
+      <div class="inner">
+        <div class="section-head">
+          <p class="eyebrow">Three pillars</p>
+          <h2>DomainSpec, Arcanum, Saturn — one loop, for humans and agents.</h2>
+          <p>Different layers, different jobs. DomainSpec says what is meaningful. Arcanum says how the work is done. Saturn closes the loop with evidence. <a href="system.html">Read the full explanation →</a></p>
+        </div>
+        <div class="grid-3">
+          <article class="panel">
+            <span class="tag">DomainSpec</span>
+            <h3>The structured-intent layer</h3>
+            <p>A closed vocabulary of 25 meta-types and 29 typed relationships. From a typed model you derive tests, metrics, and contracts by rule, not by guess. A deterministic engine already does this — same docs in, byte-identical output. <a href="paper.html">Read the paper →</a></p>
+          </article>
+          <article class="panel">
+            <span class="tag">Arcanum</span>
+            <h3>The execution layer</h3>
+            <p>Reusable agent capabilities, composed routes, and the development loop from a wild idea to a validated slice. The part you can open and read today. <a href="https://github.com/cyberAlchemyAI/Arcanum">Open Arcanum →</a></p>
+          </article>
+          <article class="panel">
+            <span class="tag">Saturn</span>
+            <h3>The convergence loop</h3>
+            <p>Observe what was built, compare it to the DomainSpec baseline, detect drift, correct, verify, feed back to governance. The intended frame — not yet a shipped public surface. <a href="saturn.html">Explore Saturn →</a></p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="method">
+      <div class="inner">
+        <div class="section-head">
+          <p class="eyebrow">The method</p>
+          <h2>Language becomes a way to build operational memory.</h2>
+          <p>CyberAlchemy treats names, prompts, schemas, validations, and artifacts as working material. A good name is not decoration; it is a handle for a repeatable process. <a href="method.html">Read the full method →</a></p>
+        </div>
+        <div class="grid-3">
+          <article class="panel">
+            <span class="tag">name</span>
+            <h3>Give the pattern a handle</h3>
+            <p>Start with the messy thing you keep doing. Name it so it can be pointed at, improved, taught, and reused.</p>
+          </article>
+          <article class="panel">
+            <span class="tag">shape</span>
+            <h3>Turn intent into artifacts</h3>
+            <p>Use refine, invoke, guides, x-rays, work-packs, and task-sessions to make the idea inspectable before mutation.</p>
+          </article>
+          <article class="panel">
+            <span class="tag">prove</span>
+            <h3>Keep evidence with the work</h3>
+            <p>Every serious output should leave receipts: sources, decisions, validators, screenshots, residues, and the next route.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="loop">
+      <div class="inner">
+        <div class="section-head">
+          <p class="eyebrow">Arcanum loop</p>
+          <h2>From a wild idea to a validated working slice.</h2>
+        </div>
+        <div class="loop" aria-label="CyberAlchemy development loop">
+          <article class="step"><b>1</b><h3>Prompt</h3><p>Describe the idea, user, promise, constraints, unknowns, and ambitious future.</p></article>
+          <article class="step"><b>2</b><h3>Refine</h3><p>Extract the core shape, compare routes, expose gaps, and choose the next owner.</p></article>
+          <article class="step"><b>3</b><h3>Invoke</h3><p>Author definition, design, layering, work-pack, and handoff artifacts.</p></article>
+          <article class="step"><b>4</b><h3>Route</h3><p>Use decision-gate, dispatch-spec, x-ray, or another refine pass when uncertainty appears.</p></article>
+          <article class="step"><b>5</b><h3>Execute</h3><p>Run one bounded task-session with validation and synchronized evidence.</p></article>
+          <article class="step"><b>6</b><h3>Learn</h3><p>Preserve residue, telemetry, follow-up gaps, and the next loop.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="arcanum" class="arcanum-direct">
+      <div class="inner direct-layout">
+        <img class="direct-mark" src="assets/cyberalchemy-mark.svg" alt="">
+        <div>
+          <p class="eyebrow">Arcanum directly</p>
+          <h2>The repository is the working surface.</h2>
+          <p class="lead">The public Arcanum system carries the real material: sigils, guides, validators, research traces, work-packs, and examples that can be inspected, reused, and improved.</p>
+          <div class="direct-actions">
+            <a class="button primary" href="https://github.com/cyberAlchemyAI/Arcanum">Open Arcanum on GitHub</a>
+            <a class="button" href="arcanum-development-loop.html">Read the loop guide</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <div class="inner evidence">
+        <div>
+          <p class="eyebrow">Evidence-backed imagination</p>
+          <h2>Designers and builders can be ambitious without becoming vague.</h2>
+          <p class="lead">The Whisper example shows how a broad writing idea becomes cores, candidate routes, hard gates, composition parts, validators, and task-session receipts. The same structure can shape a tool, product workflow, frontend validator, or research route.</p>
+        </div>
+        <div class="artifact-list">
+          <a href="skill-anatomy.html">Anatomy of a Skill — take one apart, layer by layer <span>interactive deep dive</span></a>
+          <a href="system.html">The System — how it fits together <span>explainer</span></a>
+          <a href="paper.html">DomainSpec — the paper <span>experiments + theory</span></a>
+          <a href="saturn.html">Saturn — convergence + what's free <span>architecture</span></a>
+          <a href="https://github.com/cyberAlchemyAI/Arcanum">Arcanum repository <span>framework</span></a>
+          <a href="arcanum-development-loop.html">Arcanum development loop <span>HTML guide</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="inner grid-2">
+        <div>
+          <p class="eyebrow">Start here</p>
+          <h2>Ask for the shape, not the implementation first.</h2>
+          <p class="lead">The best first prompt is rich, unfinished, and honest about what is exciting, risky, unclear, and worth proving.</p>
+        </div>
+        <pre class="code">[$refine] I want to develop this idea:
+
+Describe the product, audience, promise, current workflow, missing pieces, constraints, risks, unresolved decisions, MVP proof, and ambitious future.
+
+Please refine this into definition, design, plan, gaps, blockers, and the next executable task.</pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="inner">
+      <h3>CyberAlchemy</h3>
+      <p>Built from the Arcanum framework: reusable agent capabilities, governed synthesis, and evidence-preserving development loops.</p>
+                <p style="margin-top:12px"><a href="https://www.linkedin.com/in/vladimir-rondelli/" style="color:#fdfaf3;font-weight:820;text-decoration:underline">Work with me → LinkedIn</a></p>
+<p style="margin-top:14px;font-size:12px;color:#8f897e">© 2026 Vladimir Rondelli and Victor Boscaro. All rights reserved.</p>
+</div>
+  </footer>
+
+  <script>
+    const canvas = document.getElementById('system-map');
+    const ctx = canvas.getContext('2d');
+    const labels = ['refine', 'invoke', 'x-ray', 'guide', 'whisper', 'task-session', 'evidence', 'residue', 'validator'];
+    let nodes = [];
+    let linkDist = 260;
+
+    function resize() {
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      canvas.width = Math.floor(canvas.offsetWidth * ratio);
+      canvas.height = Math.floor(canvas.offsetHeight * ratio);
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const w = canvas.offsetWidth;
+      const h = canvas.offsetHeight;
+      // Bounded scale keeps the constellation a tight, connected cluster at any
+      // viewport size — instead of sprawling apart (and dropping its links) on wide screens.
+      const S = Math.min(Math.max(Math.min(w, h), 460), 720);
+      const cx = Math.min(w * 0.72, w - S * 0.5 - 32);
+      const cy = h * 0.46;
+      const R = S * 0.52;
+      linkDist = S * 0.5;
+      nodes = labels.map((label, i) => {
+        const angle = (Math.PI * 2 * i) / labels.length;
+        const radius = S * (0.26 + (i % 3) * 0.06);
+        return {
+          label,
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius,
+          vx: Math.sin(angle) * 0.12,
+          vy: Math.cos(angle) * 0.1,
+          cx, cy, R,
+          color: ['#e60023', '#e85d18', '#088f8a', '#2e6bb8', '#5c55b8'][i % 5]
+        };
+      });
+    }
+
+    function draw() {
+      const w = canvas.offsetWidth;
+      const h = canvas.offsetHeight;
+      ctx.clearRect(0, 0, w, h);
+      ctx.lineWidth = 1;
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const a = nodes[i];
+          const b = nodes[j];
+          const distance = Math.hypot(a.x - b.x, a.y - b.y);
+          if (distance < linkDist) {
+            ctx.strokeStyle = `rgba(21, 21, 21, ${Math.max(0.05, 0.18 * (1 - distance / linkDist))})`;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+      nodes.forEach((node) => {
+        node.x += node.vx;
+        node.y += node.vy;
+        if (node.x < node.cx - node.R || node.x > node.cx + node.R) node.vx *= -1;
+        if (node.y < node.cy - node.R || node.y > node.cy + node.R) node.vy *= -1;
+        ctx.fillStyle = 'rgba(255,255,255,.86)';
+        ctx.strokeStyle = node.color;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, 26, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#151515';
+        ctx.font = '700 11px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x, node.y + 4);
+      });
+      requestAnimationFrame(draw);
+    }
+
+    resize();
+    draw();
+    window.addEventListener('resize', resize);
+  </script>
+  <script>
+    (function () {
+      var b = document.querySelector('.nav-toggle');
+      var n = document.querySelector('.topbar nav');
+      if (!b || !n) return;
+      b.addEventListener('click', function () {
+        var open = n.classList.toggle('open');
+        b.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      n.addEventListener('click', function (e) {
+        if (e.target.tagName === 'A') { n.classList.remove('open'); b.setAttribute('aria-expanded', 'false'); }
+      });
+    })();
+  </script>
+</body>
+</html>

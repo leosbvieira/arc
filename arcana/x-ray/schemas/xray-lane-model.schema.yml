@@ -1,0 +1,106 @@
+artifact:
+  artifact_id: xray.schema.lane-model
+  artifact_type: schema
+  intent: Candidate structural schema for x-ray lane model JSON artifacts.
+  owner: x-ray
+  lifecycle_status: candidate
+  evidence_role: source
+  canonical_format: schema.yml
+  constitution_selectors:
+    - framework.artifact-metadata
+    - framework.schema
+    - xray
+  validation_profile:
+    - yaml-parse
+    - xray-lane-model
+schema:
+  id: xray-lane-model
+  status: candidate
+  target_artifact: "*.lanes.json"
+  required_top_level:
+    - xray_version
+    - example_id
+    - mode
+    - target_boundary
+    - renderer_level
+    - layer_interaction
+    - reader_contract
+    - reader_terms
+    - layer_reader_outcomes
+    - readability_dynamics
+    - lanes
+  allowed_modes:
+    - object
+    - artifact
+    - architecture
+    - codebase
+    - process
+    - mixed
+  allowed_renderer_levels:
+    - L0
+  allowed_lane_genres:
+    - orthogonal-toggle
+    - ordered-ladder
+    - graph
+  required_lanes:
+    - surface
+    - properties
+    - components
+    - internal_dependencies
+    - external_dependencies
+    - flow
+    - lifecycle
+    - risk_questions
+    - visual_composition
+  required_lane_fields:
+    - handle
+    - evidence
+    - inference
+  allowed_reader_baselines:
+    - newcomer
+    - working-reader
+    - expert
+    - unknown
+  required_reader_contract_fields:
+    - reader_baseline
+    - target_public
+    - assumed_knowledge
+    - reader_reward
+    - opening_contract
+  required_opening_contract_fields:
+    - must_start_with
+    - must_not_start_with
+    - failure_message
+  required_reader_term_fields:
+    - term
+    - plain_meaning
+    - why_it_matters
+    - source_or_lane
+    - authority
+    - misuse_warning
+  allowed_reader_term_authority:
+    - explanatory
+    - source-backed
+    - inferred
+  required_layer_reader_outcome_fields:
+    - layer
+    - as_a_reader
+    - should_understand
+    - because_it_matters_for
+  required_readability_dynamics_fields:
+    - max_words_per_paragraph
+    - max_consecutive_dense_blocks
+    - require_scan_anchor_every_n_blocks
+    - allowed_visual_treatments
+  non_empty_evidence_except:
+    - risk_questions
+  lane_field_types:
+    handle: string
+    evidence: list
+    inference: list
+  notes:
+    - This schema validates structure only.
+    - Reader fields validate baseline presence, local explanatory terms, layer outcomes, and readability configuration.
+    - It does not validate full explanatory correctness, source truth, or promotion readiness.
+    - Full result-envelope schema is deferred until multiple real x-ray outputs exist.
+    - lane_genre is an optional top-level hint; orthogonal-toggle is the validated default. ordered-ladder and graph are declared genres whose genre-specific validation (relaxing the four-toggle / data-lane HTML checks and the nine-lane reader contract) is not yet enforced by validate-xray-example.py. See refinement-runs/20260623-componentize-xray-explanation/RESULT.md.

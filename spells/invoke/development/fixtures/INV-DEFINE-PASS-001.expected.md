@@ -1,0 +1,21 @@
+## Invoke Validation Fixture Result
+
+- Fixture: INV-DEFINE-PASS-001
+- User request: Define a small Mars rover maintenance log module before architecture work begins.
+- Mode: define
+- Spell: invoke
+- Canonical ID: invoke
+- Scope: library
+- Phase status: pass
+- Mode contract: arcanum/spells/invoke/define.md
+- Outputs: artifacts/mars-rover-maintenance/SPEC.md, artifacts/mars-rover-maintenance/GLOSSARY.md, .arcanum/necronomicon/sessions/demo/invoke-transports/define.md
+- Template selection: Module Formulae discovery profile
+- Dispatch techniques: `sequence`, `owner_boundary_check`, `artifact_contract_bridge`
+- Distill validation: not required; request is one coherent module definition
+- Decisions: define the module boundary around daily inspection notes, component status, operator decisions, and unresolved repair questions
+- Glossary updates: rover maintenance log, inspection note, component status, operator decision, repair question
+- Glossary linking: exact or alias matches link; unsupported terms become candidates with no-match rationale
+- Implementation layering: seed emitted
+- Work-pack: n/a
+- Unresolved gaps: none blocking
+- Next route: deferred
