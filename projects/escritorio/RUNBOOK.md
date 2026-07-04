@@ -123,12 +123,23 @@ WebUI instead.
 
 ---
 
-## Stage 8 — Your own cockpit app (last, optional)
+## Stage 8 — O app nativo (agora **prioridade**, não "por último")
 
-Only once 1–7 are solid and you still want full UX control: build a web app against Hermes' REST
-(`/api/sessions/*`) or OpenAI-compatible `/v1`. The hard part (engine, tools, memory, cron) is
-already done — this is just the skin. This is where a custom "task-manager-by-area" dashboard view
-lives if the chat answer isn't enough.
+**Supersede:** o cockpit deixou de ser "web app por último". Agora é um **app Android nativo
+(Expo/React Native) + um BFF fino (FastAPI)** no VPS — ver `development/APP-ARCHITECTURE.md` e
+`development/APP-WORK-PACK.md` (D-12/D-13/D-14). O Stage 7 (Open WebUI/dashboard) vira só um
+atalho opcional pra ter *algum* cockpit web enquanto o app nativo não está pronto.
+
+- O app é vidro sobre o Hermes; o **BFF** guarda a `HERMES_API_KEY`, faz auth single-user, proxy
+  pro Hermes e o **relay de push (FCM)**.
+- Dá pra **construir app + BFF em paralelo** contra um Hermes **mockado** (local, sem VPS) e plugar
+  o Hermes real quando os stages 1–5 estiverem de pé.
+- Push no app: cron `reminder-digest` do Hermes → Telegram **e** `POST /internal/notify` no BFF →
+  FCM → celular. Telegram segue como backbone.
+
+O plano em ondas (L0→L3) está em `development/APP-WORK-PACK.md`. Push via **Expo Push Service**
+(EAS gerencia o FCM); precisa de um **dev build** pra receber push no Android — Expo Go atual não
+recebe push remoto.
 
 ---
 

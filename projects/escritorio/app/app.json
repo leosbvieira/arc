@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "escritório",
+    "slug": "escritorio-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.leo.escritorio"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-secure-store",
+      "expo-asset",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}
