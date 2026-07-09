@@ -29,7 +29,7 @@ class Task(BaseModel):
     due: str | None = None
     last_done: str | None = None
     assignee: str | None = None
-    days_overdue: int | None = None   # positivo = atrasada; None = sem due
+    days_overdue: int | None = None   # positivo = atrasada; negativo = dias restantes (futura); None = sem due
     severity: str = "no_prazo"        # fonte única no back (cadence.tone_name)
 
 
