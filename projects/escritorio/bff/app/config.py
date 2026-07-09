@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     hermes_mock: bool = True
     hermes_base_url: str = "http://localhost:8080"
     hermes_api_key: str = ""
-    hermes_profile_capture: str = "Leitura"
+    hermes_profile_capture: str = "Capturas"
     # Integração real = chamar a CLI do Hermes em oneshot (`hermes -z`), não HTTP.
     hermes_bin: str = "hermes"        # caminho do hermes.exe (ou "hermes" se no PATH)
     hermes_timeout: int = 150         # segundos por chamada (o agente pode usar tools)

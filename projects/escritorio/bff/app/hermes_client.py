@@ -6,9 +6,12 @@ Rodamos num thread (asyncio.to_thread) porque o loop do uvicorn no Windows nem s
 suporta subprocess assíncrono; subprocess.run num thread é à prova disso.
 """
 import asyncio
+import logging
 import subprocess
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 # Enquadramento por modo (o SOUL.md já define o escritório; isto só escolhe o chapéu).
 MODE_FRAME = {
@@ -45,6 +48,8 @@ async def capture(text: str, profile: str | None = None) -> str:
         return f"[mock:{prof}] anotado: {text}"
 
     frame = MODE_FRAME.get(prof, "")
+    if not frame:
+        logger.warning("profile desconhecido %r - captura segue sem frame", prof)  # sem logar o texto
     suppress = "(Responda direto ao Leo, sem exibir o menu de modos nem o manual.)"
     prompt = "\n\n".join(p for p in (frame, text, suppress) if p)
 
