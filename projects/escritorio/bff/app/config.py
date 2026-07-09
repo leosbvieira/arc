@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     clickup_token: str = ""             # pk_...
     clickup_verify_ssl: str = "true"    # "true" | "false" | caminho do .pem da CA
 
+    # Vault (escrita determinística via GitHub Contents API — o BFF segura a caneta)
+    github_pat: str = ""                        # PAT fine-grained com Contents:write no repo do vault
+    vault_repo: str = "leosbvieira/aeternum"    # owner/repo do vault
+    vault_branch: str = "main"                  # branch alvo das escritas
+
     # push
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"
 
