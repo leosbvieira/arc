@@ -53,6 +53,12 @@ async def capture(text: str, profile: str | None = None) -> str:
     suppress = "(Responda direto ao Leo, sem exibir o menu de modos nem o manual.)"
     prompt = "\n\n".join(p for p in (frame, text, suppress) if p)
 
+    return await _oneshot(prompt)
+
+
+async def _oneshot(prompt: str) -> str:
+    """Roda um prompt no Hermes CLI (oneshot) e devolve a resposta limpa. Miolo comum
+    de capture() e draft_diario(); a Task 9 (pipeline v2) reusa este helper."""
     def _run() -> subprocess.CompletedProcess:
         return subprocess.run(
             [settings.hermes_bin, "-z", prompt],
@@ -76,3 +82,19 @@ async def capture(text: str, profile: str | None = None) -> str:
 
     reply = _clean(proc.stdout or "")
     return reply or "(o Hermes respondeu vazio)"
+
+
+DIARIO_FRAME = """Voce estrutura o diario do Leo (sistema Aeternum). NAO use ferramentas. NAO invente
+nada que nao esteja no texto. Reescreva o despejo como nota de diario em markdown PT-BR, com no
+maximo estas secoes (so as com material): ## Resumo · ## Eventos · ## Como me senti · ## Aprendizados.
+Preserve fatos e palavras do Leo. Responda APENAS o markdown.
+O despejo esta entre <despejo></despejo>:
+<despejo>{text}</despejo>"""
+
+
+async def draft_diario(text: str, template: str) -> str:
+    """Estrutura o despejo do dia como rascunho de diario (lei 3: a IA so PROPOE; o Leo
+    aprova e o BFF grava o texto exato). `template` fica no contrato pra evolucao futura."""
+    if settings.hermes_mock:
+        return f"## Resumo\n{text}"
+    return await _oneshot(DIARIO_FRAME.format(text=text))

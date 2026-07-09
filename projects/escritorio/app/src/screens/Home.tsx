@@ -111,6 +111,9 @@ export default function Home({ onOpenTab }: { onOpenTab?: (t: string) => void })
           <Pressable style={[styles.chip, styles.chipMentor]} onPress={() => onOpenTab?.("chat")}>
             <Text style={styles.chipMentorText}>◆ falar com o mentor</Text>
           </Pressable>
+          <Pressable style={styles.chip} onPress={() => onOpenTab?.("fechar")}>
+            <Text style={styles.chipText}>◗ fechar o dia</Text>
+          </Pressable>
         </View>
       </ScrollView>
 

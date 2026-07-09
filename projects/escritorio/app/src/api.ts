@@ -153,3 +153,42 @@ export async function getTaskDetail(id: string): Promise<TaskDetail> {
   if (!r.ok) throw new Error(`erro ${r.status}`);
   return (await r.json()) as TaskDetail;
 }
+
+// ---- Fechamento noturno (A3) ----
+export type CheckItem = { rotina: string; feito: boolean };
+
+export async function closingRoutines(template: string): Promise<string[]> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/closing/routines?template=${encodeURIComponent(template)}`, {
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`routines: ${r.status}`);
+  return (await r.json()).routines;
+}
+
+export async function closingDraft(text: string, template: string): Promise<string> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/closing/draft`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ text, template }),
+  });
+  if (!r.ok) throw new Error(`draft: ${r.status}`);
+  return (await r.json()).draft;
+}
+
+export async function closingApprove(body: {
+  raw_text: string;
+  draft_md: string;
+  template: string;
+  checks: CheckItem[];
+}): Promise<{ ok: boolean; daily_path: string }> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/closing/approve`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`approve: ${r.status}`);
+  return r.json();
+}

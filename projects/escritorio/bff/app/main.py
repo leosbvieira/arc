@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
 
-from . import hermes_client, push, store, tasks
+from . import hermes_client, push, routines, store, tasks, vault_client
 from .auth import make_token, require_auth
 from .config import settings
 
@@ -46,6 +47,23 @@ class NotifyIn(BaseModel):
 class CreateTaskIn(BaseModel):
     name: str
     area: str
+
+
+class ClosingDraftIn(BaseModel):
+    text: str
+    template: str = "yoga"
+
+
+class CheckItem(BaseModel):
+    rotina: str
+    feito: bool
+
+
+class ClosingApproveIn(BaseModel):
+    raw_text: str
+    draft_md: str
+    template: str = "yoga"
+    checks: list[CheckItem] = []
 
 
 @app.get("/health")
@@ -105,6 +123,33 @@ async def get_task_detail(task_id: str, _: str = Depends(require_auth)):
 async def get_digest(_: str = Depends(require_auth)):
     """Digest de cobranças pro app (sem push). Mesmo cálculo do /internal/run-digest."""
     return await tasks.run_digest()
+
+
+@app.get("/closing/routines")
+async def closing_routines(template: str = "yoga", _=Depends(require_auth)):
+    return {"routines": routines.ROUTINES.get(template, routines.ROUTINES["yoga"])}
+
+
+@app.post("/closing/draft")
+async def closing_draft(body: ClosingDraftIn, _=Depends(require_auth)):
+    return {"draft": await hermes_client.draft_diario(body.text, body.template)}
+
+
+@app.post("/closing/approve")
+async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
+    import hashlib
+    today = date.today().isoformat()
+    raw_path = await vault_client.write_raw(body.raw_text, f"f{today.replace('-', '')}")
+    marker = f"<!-- fechamento:{today}:{hashlib.sha1(body.draft_md.encode()).hexdigest()[:8]} -->"
+    block = (f"## Fechamento ({datetime.now():%H:%M}) {marker}\n\n"
+             f"{body.draft_md}\n\n_raw: [[{raw_path}]]_\n")
+    daily_path = await vault_client.append_file(
+        f"Daily/{today}.md", block, f"diario: fechamento {today}",
+        header_if_new=f"# {today}", dedupe_marker=marker,
+    )
+    store.record_checks(today, body.template, [(c.rotina, c.feito) for c in body.checks])
+    store.log_event("closing_approved", ref=today)
+    return {"ok": True, "daily_path": daily_path, "raw_path": raw_path}
 
 
 @app.post("/internal/notify")

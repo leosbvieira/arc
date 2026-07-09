@@ -27,13 +27,14 @@ import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api
 import { registerForPushToken } from "./src/notifications";
 import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
+import Fechar from "./src/screens/Fechar";
 import Home from "./src/screens/Home";
 import Revisao from "./src/screens/Revisao";
 import Tasks from "./src/screens/Tasks";
 import { colors, fonts, spacing } from "./src/theme";
 import { AppButton, Card, Field } from "./src/ui";
 
-type Tab = "home" | "capturar" | "tarefas" | "chat" | "revisao";
+type Tab = "home" | "capturar" | "tarefas" | "chat" | "revisao" | "fechar";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "home", label: "Home", icon: "home" },
@@ -137,14 +138,15 @@ export default function App() {
   }
 
   const isFull = tab === "home" || tab === "chat";
-  const title = tab === "revisao" ? "Revisão" : TABS.find((t) => t.key === tab)?.label ?? "";
+  const title =
+    tab === "revisao" ? "Revisão" : tab === "fechar" ? "Fechar o dia" : TABS.find((t) => t.key === tab)?.label ?? "";
 
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
       {tab !== "home" && (
         <View style={styles.header}>
-          {tab === "revisao" ? (
+          {tab === "revisao" || tab === "fechar" ? (
             <Pressable
               onPress={() => setTab("home")}
               hitSlop={8}
@@ -169,6 +171,8 @@ export default function App() {
           <Tasks />
         ) : tab === "chat" ? (
           <Chat />
+        ) : tab === "fechar" ? (
+          <Fechar />
         ) : (
           <Revisao />
         )}
