@@ -1,8 +1,9 @@
 import { Feather } from "@expo/vector-icons";
-import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { capture } from "../api";
+import { enqueue, flush, pendingCount } from "../captureQueue";
 import { colors, fonts, radius, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
 
@@ -40,6 +41,8 @@ export default function Capture() {
   const [text, setText] = useState("");
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(0);
+  const [status, setStatus] = useState("");
 
   // sessão de leitura
   const [book, setBook] = useState("Antifrágil · p. 85");
@@ -47,15 +50,40 @@ export default function Capture() {
   const [entry, setEntry] = useState("");
   const [compiling, setCompiling] = useState(false);
 
+  // Fila offline (§10): reenvia pendentes ao montar e sempre que o app volta ao foco.
+  useEffect(() => {
+    let alive = true;
+    const sync = async () => {
+      const remaining = await flush();
+      if (alive) setPending(remaining);
+    };
+    sync();
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") sync();
+    });
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+
   async function onSend() {
-    if (!text.trim()) return;
+    const t = text.trim();
+    if (!t) return;
     setBusy(true);
+    setStatus("");
     try {
-      const r = await capture(text.trim());
+      await flush(); // esvazia pendentes antes do envio novo — preserva a ordem
+      const r = await capture(t);
       setReply(r);
       setText("");
-    } catch (e: any) {
-      Alert.alert("Erro", e?.message ?? "falhou");
+      setPending(await pendingCount());
+    } catch {
+      // Sem conexão: guarda criptografado no aparelho e reenvia depois (lei 7).
+      await enqueue({ kind: "capture", payload: { text: t }, ts: Date.now() });
+      setText("");
+      setPending(await pendingCount());
+      setStatus("sem conexão — guardado no aparelho, reenvio automático");
     } finally {
       setBusy(false);
     }
@@ -119,6 +147,13 @@ export default function Capture() {
             multiline
           />
           <AppButton title="Enviar" onPress={onSend} loading={busy} />
+          {pending > 0 ? (
+            <View style={styles.queueRow}>
+              <Feather name="clock" size={12} color={colors.textMuted} />
+              <Text style={styles.queueText}>{pending} na fila local</Text>
+            </View>
+          ) : null}
+          {status ? <Text style={styles.status}>{status}</Text> : null}
           {reply ? (
             <Card style={styles.reply}>
               <Feather name="check-circle" size={18} color={colors.success} />
@@ -183,6 +218,9 @@ const styles = StyleSheet.create({
   input: { minHeight: 120, textAlignVertical: "top" },
   reply: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
   replyText: { flex: 1, fontFamily: fonts.ui, color: colors.text, fontSize: 15, lineHeight: 21 },
+  queueRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: -spacing.xs },
+  queueText: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted },
+  status: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted, marginTop: -spacing.xs },
 
   bookHead: { flexDirection: "row", alignItems: "center", gap: 8 },
   bookTitle: { fontFamily: fonts.serif, fontSize: 17, color: colors.text },
