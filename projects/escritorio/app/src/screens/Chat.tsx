@@ -11,16 +11,20 @@ import {
   View,
 } from "react-native";
 
-import { capture } from "../api";
+import { chatSend } from "../api";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 
 type Msg = { from: "me" | "ai" | "ground"; text?: string; soul?: string; k?: string; v?: string };
 type Conv = { id: string; mode: string; title: string; time: string; sub: string; msgs: Msg[] };
 
+// Uma cor por modo. A paleta mudou na Task 6 (10 áreas normativas): "Pessoal" saiu, então
+// Capturas passa a usar o cinza de Staging (para onde as capturas vão). Conselho deixa de
+// usar "Trabalho" — que é o MESMO bronze do colors.primary/Mentor e colava os dois — e vai
+// pro azul "Carreira" (estratégico), distinto de Mentor (bronze) e Capturas (cinza).
 const MODE_COLOR: Record<string, string> = {
   Mentor: colors.primary,
-  Capturas: areaColor("Pessoal"),
-  Conselho: areaColor("Trabalho"),
+  Capturas: areaColor("Staging"),
+  Conselho: areaColor("Carreira"),
 };
 
 const CONVS: Conv[] = [
@@ -286,7 +290,7 @@ export default function Chat() {
     setDraft("");
     setSending(true);
     try {
-      const reply = await capture(t, mode);
+      const reply = await chatSend(t, mode);
       setConvs((prev) => ({
         ...prev,
         [id]: { ...prev[id], msgs: [...prev[id].msgs, { from: "ai", text: reply }] },

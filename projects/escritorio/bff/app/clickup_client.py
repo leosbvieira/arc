@@ -119,11 +119,21 @@ async def get_task(task_id: str) -> dict:
         return r.json()
 
 
-async def create(name: str, area: str, tags: list[str] | None = None) -> dict:
+async def create(name: str, area: str, tags: list[str] | None = None,
+                 due_ts: float | None = None, description: str | None = None) -> dict:
+    """Cria uma task na list da área. `due_ts` (epoch em SEGUNDOS) vira `due_date` em ms
+    com `due_date_time` (hora marcada, não só o dia); `description` guarda o link do Raw e
+    o marker de idempotência da captura (Task 9). `tags`/`due_ts`/`description` são opcionais
+    pra não quebrar quem chama posicional (tasks.create)."""
     lid = AREA_LISTS[area]
     body: dict = {"name": name}
     if tags:
         body["tags"] = tags   # ClickUp cria a tag na hora se não existir (ex.: "aguardando")
+    if due_ts is not None:
+        body["due_date"] = int(due_ts * 1000)   # ClickUp espera epoch-ms
+        body["due_date_time"] = True
+    if description is not None:
+        body["description"] = description
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
         r = await client.post(f"{API}/list/{lid}/task", json=body, headers=_headers())
         r.raise_for_status()

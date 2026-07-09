@@ -4,3 +4,4 @@ httpx
 pydantic
 pydantic-settings
 PyJWT
+tzdata  # base IANA de timezones p/ zoneinfo (Windows/VPS não trazem system tz db) — Task 9 usa America/Sao_Paulo

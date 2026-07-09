@@ -1,18 +1,41 @@
-from contextlib import asynccontextmanager
+import asyncio
+import logging
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
 
-from . import hermes_client, push, routines, store, tasks, telegram, vault_client
+from . import capture_pipeline, hermes_client, push, routines, store, tasks, telegram, vault_client
 from .auth import make_token, require_auth
 from .config import settings
+
+logger = logging.getLogger(__name__)
+
+
+async def _capture_worker() -> None:
+    """Worker de fundo da fila de captura (B6/§10): drena pending_captures em loop e
+    dorme `capture_worker_interval`. NUNCA derruba o processo — process_pending já isola
+    cada item; o try aqui cobre falha de infra da rodada (ex.: DB), logada SEM conteúdo
+    (lei 7). CancelledError é BaseException e escapa do `except Exception` → shutdown limpo."""
+    while True:
+        try:
+            await capture_pipeline.process_pending()
+        except Exception:  # noqa: BLE001 - a rodada nunca derruba o loop
+            logger.exception("worker de captura: rodada falhou")
+        await asyncio.sleep(settings.capture_worker_interval)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.init_db()
-    yield
+    worker = asyncio.create_task(_capture_worker())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker
 
 
 app = FastAPI(title="escritório BFF", lifespan=lifespan)
@@ -33,6 +56,12 @@ class CaptureIn(BaseModel):
 
 class CaptureOut(BaseModel):
     reply: str
+    queued: bool = False
+
+
+class ChatIn(BaseModel):
+    text: str
+    mode: str = "Mentor"
 
 
 class DeviceIn(BaseModel):
@@ -80,7 +109,18 @@ async def login(body: LoginIn):
 
 @app.post("/capture", response_model=CaptureOut)
 async def capture(body: CaptureIn, _: str = Depends(require_auth)):
-    reply = await hermes_client.capture(body.text, body.profile)
+    """Fire-and-forget (B6): enfileira e responde na hora. O worker processa a fila em
+    fundo (Raw → classificação → Staging). O Chat NÃO usa mais esta rota (ela não devolve
+    a resposta do Hermes) — conversa síncrona vai por /chat."""
+    cid = store.enqueue_capture(body.text, body.profile)
+    store.log_event("capture_in", ref=str(cid))
+    return CaptureOut(reply="✅ anotado", queued=True)
+
+
+@app.post("/chat", response_model=CaptureOut)
+async def chat(body: ChatIn, _: str = Depends(require_auth)):
+    """Rota síncrona do Chat: fala com o Hermes no modo escolhido e devolve a resposta."""
+    reply = await hermes_client.chat(body.text, body.mode)
     return CaptureOut(reply=reply)
 
 

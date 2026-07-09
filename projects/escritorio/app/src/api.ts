@@ -52,6 +52,8 @@ export async function login(password: string): Promise<string> {
   return data.token;
 }
 
+// /capture é fire-and-forget (B6): enfileira e devolve "✅ anotado". NÃO retorna a
+// resposta do Hermes — para conversa síncrona (Chat) use chatSend.
 export async function capture(text: string, profile?: string): Promise<string> {
   const base = await getBffUrl();
   const token = await getToken();
@@ -62,6 +64,24 @@ export async function capture(text: string, profile?: string): Promise<string> {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ text, profile }),
+  });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+  const data = (await r.json()) as { reply: string };
+  return data.reply;
+}
+
+// Chat síncrono: fala com o Hermes no modo escolhido (Mentor/Conselho/Capturas) e
+// devolve a resposta. Rota separada do /capture (que virou fila fire-and-forget).
+export async function chatSend(text: string, mode: string): Promise<string> {
+  const base = await getBffUrl();
+  const token = await getToken();
+  const r = await fetch(`${base}/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ text, mode }),
   });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   const data = (await r.json()) as { reply: string };

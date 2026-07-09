@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     # Integração real = chamar a CLI do Hermes em oneshot (`hermes -z`), não HTTP.
     hermes_bin: str = "hermes"        # caminho do hermes.exe (ou "hermes" se no PATH)
     hermes_timeout: int = 150         # segundos por chamada (o agente pode usar tools)
+    capture_worker_interval: float = 5.0   # segundos entre rodadas do worker da fila (B6/§10)
 
     # ClickUp (fonte real das tarefas — porta REST, não MCP)
     tasks_source: str = "mock"          # "mock" | "clickup"
