@@ -9,6 +9,7 @@ regras do cutuca (cadence.py). Em produção com o Hermes, o cron calcula o dige
 POST /internal/notify (D-14). As regras de cadência são as mesmas nos dois casos.
 """
 
+import unicodedata
 from dataclasses import dataclass
 
 from pydantic import BaseModel
@@ -172,8 +173,17 @@ async def complete(task_id: str) -> bool:
 MARKER = {"no_prazo": "🟡", "leve": "🟠", "firme": "🔴", "urgente": "🚨"}
 
 
+def _norm(s: str) -> str:
+    """Fold p/ comparação robusta de área (lei 7 FAIL-CLOSED): drift de caixa/acento/espaço
+    entre o nome da lista no ClickUp e o CSV de config não pode vazar conteúdo no lockscreen.
+    NFKD → remove marcas de acento → casefold → strip."""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return s.casefold().strip()
+
+
 def _sensitive_areas() -> set[str]:
-    return {a.strip() for a in settings.sensitive_areas.split(",") if a.strip()}
+    return {_norm(a) for a in settings.sensitive_areas.split(",") if a.strip()}
 
 
 def render_digest_lines(tasks: list[Task], for_channel: str) -> list[str]:
@@ -182,7 +192,7 @@ def render_digest_lines(tasks: list[Task], for_channel: str) -> list[str]:
     for t in sorted(tasks, key=lambda x: -(x.days_overdue or 0)):
         m = MARKER.get(t.severity, "🟡")
         atraso = f"{t.days_overdue}d de atraso" if (t.days_overdue or 0) > 0 else "no prazo"
-        if for_channel == "telegram" and t.area in _sensitive_areas():
+        if for_channel == "telegram" and _norm(t.area or "") in _sensitive_areas():
             lines.append(f"{m} 1 pendência de saúde ({atraso}) — abre o app")
         else:
             lines.append(f"{m} {t.name} · {t.area} ({atraso})")
@@ -209,12 +219,17 @@ def routine_lines(today: str | None = None) -> list[str]:
 
 
 def _age_days(ms) -> int | None:
-    """Idade em dias de calendário desde a criação (ClickUp date_created em ms)."""
-    from datetime import date, datetime
+    """Idade em dias desde a criação. ClickUp date_created é epoch-ms UTC — comparamos os
+    DOIS lados em UTC (não `date.today()` local) pra não ter skew de fronteira de dia, e o
+    parse fica independente da tz da máquina. Valor ausente/não-numérico → None."""
+    from datetime import datetime, timezone
     if ms in (None, "", 0, "0"):
         return None
-    created = datetime.fromtimestamp(int(ms) / 1000).date()
-    return (date.today() - created).days
+    try:
+        created = datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).date()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+    return (datetime.now(timezone.utc).date() - created).days
 
 
 def _staging_metrics(raw: list[dict], area: str) -> tuple[int, int | None]:

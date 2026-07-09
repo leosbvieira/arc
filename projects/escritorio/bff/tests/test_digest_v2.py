@@ -38,6 +38,26 @@ def test_area_sensivel_sai_neutralizada_no_telegram():
     assert "Marcar psiquiatra" in full                      # no app (atras do login) sai inteiro
 
 
+def test_area_sensivel_fail_closed_variantes():
+    # Lei 7 fail-closed: drift de nome (caixa/acento/espaço) NÃO pode vazar no lockscreen.
+    variantes = [
+        Task(id="1", name="Marcar psiquiatra", area="corpo ", days_overdue=2, severity="leve"),
+        Task(id="2", name="Terapia semanal", area="Saude Mental", days_overdue=1, severity="leve"),
+    ]
+    joined = "\n".join(render_digest_lines(variantes, for_channel="telegram"))
+    assert "psiquiatra" not in joined and "Terapia" not in joined
+    assert joined.count("1 pendência de saúde") == 2       # ambas neutralizadas
+    full = "\n".join(render_digest_lines(variantes, for_channel="app"))
+    assert "Marcar psiquiatra" in full and "Terapia semanal" in full  # app mostra inteiro
+
+
+def test_age_days_guard_e_utc():
+    assert tasks._age_days(None) is None
+    assert tasks._age_days("0") is None
+    assert tasks._age_days("nao-numero") is None           # não-int → None, não explode
+    assert tasks._age_days(1609459200000) > 1500           # 2021-01-01Z: idade determinística
+
+
 # ---- endpoints + integração (dedupe, persistência, gate acionável, lei 7) ---
 
 HDR = {"X-Internal-Token": settings.internal_token}
