@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useCallback, useEffect, useState } from "react";
+import { ComponentProps, useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -15,16 +15,18 @@ import { TaskDetailModal } from "../TaskDetailModal";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { Card, ErrorState, Skeleton } from "../ui";
 
-function severity(t: Task): { color: string; icon: any } {
-  const d = (t.due ?? "").toLowerCase();
-  if (d.startsWith("atrasada")) {
-    const n = parseInt(d.replace(/\D+/g, "") || "0", 10);
-    if (n >= 7) return { color: colors.danger, icon: "alert-octagon" };
-    if (n >= 3) return { color: colors.danger, icon: "alert-circle" };
-    return { color: colors.amber, icon: "alert-triangle" };
-  }
-  return { color: colors.amber, icon: "clock" };
-}
+// Exibição pura: a severidade vem pronta do back (Task.severity). O front só mapeia
+// nível -> cor/ícone; não parseia mais a string `due` (fonte única no BFF, P0.2).
+type FeatherName = ComponentProps<typeof Feather>["name"];
+
+const SEVERITY_STYLE: Record<string, { color: string; icon: FeatherName }> = {
+  urgente: { color: colors.danger, icon: "alert-octagon" },
+  firme: { color: colors.danger, icon: "alert-circle" },
+  leve: { color: colors.amber, icon: "alert-triangle" },
+  no_prazo: { color: colors.amber, icon: "clock" },
+};
+
+const styleFor = (t: Task) => SEVERITY_STYLE[t.severity ?? "no_prazo"];
 
 export default function Revisao() {
   const [d, setD] = useState<Digest | null>(null);
@@ -88,7 +90,7 @@ export default function Revisao() {
       >
         {tasks.length > 0 ? (
           tasks.map((t) => {
-            const s = severity(t);
+            const s = styleFor(t);
             return (
               <Pressable
                 key={t.id}

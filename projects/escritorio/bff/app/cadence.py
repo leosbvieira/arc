@@ -45,6 +45,15 @@ def tone(days_overdue: int) -> str:
     return "urgente"
 
 
+def tone_name(days_overdue: int | None) -> str:
+    """Nome da severidade a partir dos dias de atraso (positivo = atrasada).
+
+    Deriva de `tone()` — única tabela de thresholds — e só acrescenta o caso 'sem
+    due' (None -> no_prazo). É a fonte única que /tasks, /digest e /tasks/{id} usam.
+    """
+    return "no_prazo" if days_overdue is None else tone(days_overdue)
+
+
 def needs_nudge(t, rule: Rule = DEFAULT_RULE) -> bool:
     """Cobra se QUALQUER ramo bater; nunca cobra tarefa fechada."""
     if is_closed(t.status):

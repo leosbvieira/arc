@@ -29,6 +29,8 @@ class Task(BaseModel):
     due: str | None = None
     last_done: str | None = None
     assignee: str | None = None
+    days_overdue: int | None = None   # positivo = atrasada; None = sem due
+    severity: str = "no_prazo"        # fonte única no back (cadence.tone_name)
 
 
 @dataclass
@@ -82,6 +84,10 @@ def _display(t: _Task) -> Task:
     due = t.due_label()
     if due is None and t.update_offset is not None and t.update_offset >= 1:
         due = f"parada há {t.update_offset}d"
+    # due_offset é dias até vencer (negativo = atrasada); days_overdue inverte o sinal
+    # (positivo = atrasada), None quando não há due. Ponto único: todas as rotas e
+    # ambas as fontes (mock/ClickUp) passam por aqui, então a severidade nasce uma vez.
+    days_overdue = -t.due_offset if t.due_offset is not None else None
     return Task(
         id=t.id,
         name=t.name,
@@ -90,6 +96,8 @@ def _display(t: _Task) -> Task:
         due=due,
         last_done=t.last_done,
         assignee=t.assignee,
+        days_overdue=days_overdue,
+        severity=cadence.tone_name(days_overdue),
     )
 
 

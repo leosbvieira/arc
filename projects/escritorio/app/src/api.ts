@@ -68,6 +68,8 @@ export type Task = {
   due?: string | null;
   last_done?: string | null;
   assignee?: string | null;
+  severity?: "no_prazo" | "leve" | "firme" | "urgente";
+  days_overdue?: number | null;
 };
 
 export type TasksByArea = { areas: { area: string; tasks: Task[] }[] };
