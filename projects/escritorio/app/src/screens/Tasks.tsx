@@ -15,7 +15,8 @@ import { TaskDetailModal } from "../TaskDetailModal";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { AppButton, Card, ErrorState, Field, Skeleton } from "../ui";
 
-const AREAS = ["Trabalho", "Finanças", "Saúde", "Pessoal"];
+const AREAS = ["Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
+  "Finance", "Carreira", "Estudo", "Relacionamentos", "Lazer"];
 
 function meta(t: Task): string {
   if (t.due) return t.due;

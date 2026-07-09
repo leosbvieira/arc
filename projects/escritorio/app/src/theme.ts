@@ -55,12 +55,11 @@ export const light: Palette = {
 // Padrão do escritório = dark. (O ThemeProvider da fundação troca isto por light quando o usuário quiser.)
 export const colors = dark;
 
-// Uma cor por área de vida (tom médio, dessaturado — opção 2).
+// Uma cor por área de vida (tom médio, dessaturado). As 10 áreas normativas (Task 6).
 export const AREA_COLORS: Record<string, string> = {
-  Trabalho: "#7690BC",
-  "Finanças": "#6FB58C",
-  "Saúde": "#DE8A7A",
-  Pessoal: "#A88CBE",
+  Trabalho: "#C9A97E", Staging: "#8A8A93", Corpo: "#7FA98E",
+  "Saúde Mental": "#9B8EC4", Responsabilidade: "#A9A18C", Finance: "#6BA8A0",
+  Carreira: "#7E9AC9", Estudo: "#C9BC7E", Relacionamentos: "#C98E9B", Lazer: "#D98A6E",
 };
 
 export function areaColor(area: string): string {

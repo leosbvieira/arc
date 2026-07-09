@@ -17,7 +17,8 @@ from pydantic import BaseModel
 from . import cadence, clickup_client, store
 from .config import settings
 
-AREAS = ["Trabalho", "Finanças", "Saúde", "Pessoal"]
+AREAS = ["Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
+         "Finance", "Carreira", "Estudo", "Relacionamentos", "Lazer"]
 
 
 class Task(BaseModel):
@@ -70,13 +71,15 @@ class _Task:
         return f"vence em {self.due_offset}d"
 
 
+# seed do modo mock: áreas no vocabulário normativo das 10 listas (Task 6); senão
+# `_grouped` (que itera AREAS) não acha essas tarefas e o modo dev mostra só "Trabalho".
 _MOCK: list[_Task] = [
     _Task("t1", "Relatório mensal", "Trabalho", due_offset=0, assignee="Ana"),
-    _Task("t2", "Pagar fatura do cartão", "Finanças", due_offset=-2),
-    _Task("t3", "Dentista", "Saúde", last_done="há 7 meses"),
-    _Task("t4", "Treino", "Saúde", due_offset=0),
-    _Task("t5", "Ligar pro contador", "Pessoal", update_offset=5),
-    _Task("t6", "Renovar seguro do carro", "Finanças", due_offset=-8),
+    _Task("t2", "Pagar fatura do cartão", "Finance", due_offset=-2),
+    _Task("t3", "Dentista", "Corpo", last_done="há 7 meses"),
+    _Task("t4", "Treino", "Corpo", due_offset=0),
+    _Task("t5", "Ligar pro contador", "Responsabilidade", update_offset=5),
+    _Task("t6", "Renovar seguro do carro", "Finance", due_offset=-8),
 ]
 _next = 7
 
@@ -122,7 +125,7 @@ def _from_clickup(t: dict) -> _Task:
     return _Task(
         id=str(t["id"]),
         name=t.get("name", ""),
-        area=t.get("_area", "Pessoal"),
+        area=t.get("_area", "Staging"),
         status=status or "open",
         due_offset=clickup_client.days_from_ms(t.get("due_date")),
         update_offset=None,
@@ -247,7 +250,7 @@ async def run_digest() -> dict:
     """Digest v2: cobranças por área (staging excluído) + staging envelhecendo + rotina-
     padrão + capturas travadas. Dois corpos — `body_telegram` neutraliza áreas sensíveis
     (lei 7), `body_app` mostra tudo — mais a lista `tasks` (fresca p/ a Home)."""
-    staging = getattr(clickup_client, "STAGING", "Staging")
+    staging = clickup_client.STAGING
     staging_count, staging_oldest = 0, None
     if _use_clickup():
         raw = await clickup_client.fetch_open()
@@ -279,7 +282,7 @@ async def get_detail(task_id: str) -> dict | None:
     if _use_clickup():
         t = await clickup_client.get_task(task_id)
         lst = t.get("list") or {}
-        t["_area"] = clickup_client.LIST_AREA.get(str(lst.get("id")), lst.get("name") or "Pessoal")
+        t["_area"] = clickup_client.LIST_AREA.get(str(lst.get("id")), lst.get("name") or "Staging")
         base = _display(_from_clickup(t)).model_dump()
         base["priority"] = (t.get("priority") or {}).get("priority") if t.get("priority") else None
         base["description"] = (t.get("text_content") or t.get("description") or "").strip()
