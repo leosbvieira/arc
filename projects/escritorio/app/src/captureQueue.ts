@@ -4,15 +4,32 @@ import { capture } from "./api";
 const IDX = "oq_idx_v2";   // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
 // Limite do SecureStore e em BYTES (~2048). Fatiamos por CARACTERES no pior caso UTF-8:
 // 600 code units * 3 bytes/unit max = 1800 bytes <= limite, para qualquer emoji/acento.
+// Invariante: CHUNK_CHARS >= 2 — o recuo de 1 char na fronteira de surrogate pair
+// nunca pode zerar o avanco do loop de splitChunks (senao entra em loop infinito).
 const CHUNK_CHARS = 600;
 
 export type QueuedItem = { kind: "capture" | "session"; payload: any; ts: number };
 
 type IdxEntry = { id: string; chunks: number };
 
+// Mutex async (promise-chain, sem dependencia nova): serializa TODA operacao que muta
+// o indice (enqueue/flush). Fecha os dois interleavings: dois flush nao rodam sobrepostos
+// (sem envio duplicado) e um enqueue no meio de um flush nao perde/envenena o indice.
+let lock: Promise<unknown> = Promise.resolve();
+function serialized<T>(op: () => Promise<T>): Promise<T> {
+  const run = lock.then(op, op);
+  lock = run.catch(() => {});
+  return run;
+}
+
 async function readIdx(): Promise<IdxEntry[]> {
   const raw = await SecureStore.getItemAsync(IDX);
-  return raw ? (JSON.parse(raw) as IdxEntry[]) : [];
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as IdxEntry[];
+  } catch {
+    return []; // indice corrompido: recomeca (os chunks viram orfaos inofensivos)
+  }
 }
 
 async function writeIdx(idx: IdxEntry[]): Promise<void> {
@@ -49,13 +66,17 @@ function splitChunks(s: string): string[] {
   return out.length ? out : [""];
 }
 
-export async function enqueue(item: QueuedItem): Promise<void> {
+async function _enqueue(item: QueuedItem): Promise<void> {
   const parts = splitChunks(JSON.stringify(item));
   const id = `${item.ts}_${Math.random().toString(36).slice(2, 8)}`;
   for (let i = 0; i < parts.length; i++) {
     await SecureStore.setItemAsync(`oq_${id}_${i}`, parts[i]);
   }
   await writeIdx([...(await readIdx()), { id, chunks: parts.length }]);  // indice por ultimo: item orfao > item perdido
+}
+
+export function enqueue(item: QueuedItem): Promise<void> {
+  return serialized(() => _enqueue(item));
 }
 
 export async function pendingCount(): Promise<number> {
@@ -67,18 +88,35 @@ async function sendOne(it: QueuedItem): Promise<void> {
   else throw new Error("kind não suportado"); // kind "session" chega na Task 15
 }
 
-/** Reenvia em ordem; para no primeiro erro (rede continua ruim). Tudo criptografado em repouso. */
-export async function flush(): Promise<number> {
+/** Reenvia em ordem; para no primeiro erro de REDE. Item envenenado e descartado (nunca
+ * trava a fila). Tudo criptografado em repouso. */
+async function _flush(): Promise<number> {
   let idx = await readIdx();
   while (idx.length > 0) {
+    const entry = idx[0];
+    let item: QueuedItem;
     try {
-      await sendOne(await readItem(idx[0]));
-      await deleteItem(idx[0]);
-      idx = idx.slice(1);
-      await writeIdx(idx);
+      item = await readItem(entry);
     } catch {
-      break;
+      // Item envenenado (JSON corrompido / chunks ausentes): o conteudo ja se perdeu.
+      // De-indexa e descarta pra nao travar o resto da fila (fantasma preso = pior pra lei 1).
+      idx = idx.slice(1);
+      await writeIdx(idx);      // de-indexa ANTES de apagar (orfao inofensivo > fantasma)
+      await deleteItem(entry);
+      continue;
     }
+    try {
+      await sendOne(item);
+    } catch {
+      break; // erro de rede: para e tenta de novo depois (rede continua ruim)
+    }
+    idx = idx.slice(1);
+    await writeIdx(idx);        // de-indexa ANTES de apagar os chunks (orfao > fantasma)
+    await deleteItem(entry);
   }
   return idx.length;
+}
+
+export function flush(): Promise<number> {
+  return serialized(() => _flush());
 }
