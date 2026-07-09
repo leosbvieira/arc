@@ -1,12 +1,31 @@
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 
 const KEY = "session_token";
+const URL_KEY = "bff_url";
 
-// IP da máquina na rede local (detectado 2026-07-05: Ethernet 192.168.0.5).
-// Se o IP mudar (outra rede/DHCP), atualize: `ipconfig` → IPv4 do adaptador ativo.
-// NÃO use "localhost" (no celular é o próprio telefone). O celular precisa estar na
-// MESMA rede (mesmo roteador 192.168.0.x) que o PC.
-export const BFF_URL = "http://192.168.0.5:8000";
+// Endereço do BFF. Resolução: override salvo em SecureStore (editável na tela de
+// login) → `extra.bffUrl` do app.json → default abaixo. NÃO use "localhost" (no
+// celular é o próprio telefone); o celular precisa estar na MESMA rede (mesmo
+// roteador 192.168.0.x) que o PC. Trocou de rede/DHCP? Ajuste na tela de login.
+const DEFAULT_BFF_URL = "http://192.168.0.5:8000";
+
+let cachedUrl: string | null = null;
+
+export async function getBffUrl(): Promise<string> {
+  if (cachedUrl) return cachedUrl;
+  const stored = await SecureStore.getItemAsync(URL_KEY);
+  cachedUrl =
+    stored ||
+    (Constants.expoConfig?.extra as { bffUrl?: string } | undefined)?.bffUrl ||
+    DEFAULT_BFF_URL;
+  return cachedUrl;
+}
+
+export async function setBffUrl(url: string): Promise<void> {
+  cachedUrl = url.trim().replace(/\/+$/, "");
+  await SecureStore.setItemAsync(URL_KEY, cachedUrl);
+}
 
 export async function getToken(): Promise<string | null> {
   return SecureStore.getItemAsync(KEY);
@@ -21,7 +40,8 @@ export async function clearToken(): Promise<void> {
 }
 
 export async function login(password: string): Promise<string> {
-  const r = await fetch(`${BFF_URL}/auth/login`, {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
@@ -33,8 +53,9 @@ export async function login(password: string): Promise<string> {
 }
 
 export async function capture(text: string, profile?: string): Promise<string> {
+  const base = await getBffUrl();
   const token = await getToken();
-  const r = await fetch(`${BFF_URL}/capture`, {
+  const r = await fetch(`${base}/capture`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -48,8 +69,9 @@ export async function capture(text: string, profile?: string): Promise<string> {
 }
 
 export async function registerDevice(expoToken: string): Promise<void> {
+  const base = await getBffUrl();
   const token = await getToken();
-  await fetch(`${BFF_URL}/devices`, {
+  await fetch(`${base}/devices`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -83,13 +105,15 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 export async function listTasks(): Promise<TasksByArea> {
-  const r = await fetch(`${BFF_URL}/tasks`, { headers: await authHeaders() });
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/tasks`, { headers: await authHeaders() });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   return (await r.json()) as TasksByArea;
 }
 
 export async function createTask(name: string, area: string): Promise<void> {
-  const r = await fetch(`${BFF_URL}/tasks`, {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/tasks`, {
     method: "POST",
     headers: await authHeaders(),
     body: JSON.stringify({ name, area }),
@@ -98,7 +122,8 @@ export async function createTask(name: string, area: string): Promise<void> {
 }
 
 export async function completeTask(id: string): Promise<void> {
-  const r = await fetch(`${BFF_URL}/tasks/${id}/complete`, {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/tasks/${id}/complete`, {
     method: "POST",
     headers: await authHeaders(),
   });
@@ -109,7 +134,8 @@ export async function completeTask(id: string): Promise<void> {
 export type Digest = { count: number; text: string; body: string; tasks: Task[] };
 
 export async function getDigest(): Promise<Digest> {
-  const r = await fetch(`${BFF_URL}/digest`, { headers: await authHeaders() });
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/digest`, { headers: await authHeaders() });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   return (await r.json()) as Digest;
 }
@@ -122,7 +148,8 @@ export type TaskDetail = Task & {
 };
 
 export async function getTaskDetail(id: string): Promise<TaskDetail> {
-  const r = await fetch(`${BFF_URL}/tasks/${id}`, { headers: await authHeaders() });
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/tasks/${id}`, { headers: await authHeaders() });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   return (await r.json()) as TaskDetail;
 }

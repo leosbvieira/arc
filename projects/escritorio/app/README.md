@@ -8,7 +8,7 @@ push. Não fala com LLM/ClickUp/GitHub direto (isso é o BFF→Hermes).
 cd projects/escritorio/app
 npm install
 npx expo install --fix      # alinha as versões dos pacotes ao SDK instalado
-# edite src/api.ts → BFF_URL com o IP da sua máquina (ipconfig)
+# default do BFF em app.json → extra.bffUrl (IP da máquina, ipconfig); trocável na tela de login
 npx expo start
 ```
 No celular Android: app **Expo Go** → escaneie o QR (mesmo Wi-Fi da máquina).
@@ -18,5 +18,6 @@ A captura funciona no Expo Go. **Push remoto NÃO funciona no Expo Go** — prec
 
 ## Arquivos
 - `App.tsx` — telas (login / captura).
-- `src/api.ts` — cliente do BFF (login, capture, registerDevice). **BFF_URL aqui.**
+- `src/api.ts` — cliente do BFF (getBffUrl/setBffUrl, login, capture, tarefas). URL do BFF
+  configurável na tela de login (default em `app.json` → `extra.bffUrl`).
 - `src/notifications.ts` — permissão + Expo push token.

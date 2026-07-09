@@ -23,7 +23,7 @@ import {
   View,
 } from "react-native";
 
-import { getToken, login, registerDevice } from "./src/api";
+import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
 import { registerForPushToken } from "./src/notifications";
 import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
@@ -54,6 +54,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
+  const [server, setServer] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
 
@@ -62,6 +63,10 @@ export default function App() {
       setAuthed(!!t);
       setReady(true);
     });
+  }, []);
+
+  useEffect(() => {
+    getBffUrl().then(setServer);
   }, []);
 
   async function afterAuth() {
@@ -77,6 +82,7 @@ export default function App() {
   async function onLogin() {
     setBusy(true);
     try {
+      await setBffUrl(server);
       await login(password);
       await afterAuth();
     } catch (e: any) {
@@ -113,6 +119,15 @@ export default function App() {
               placeholder="senha do BFF"
               value={password}
               onChangeText={setPassword}
+            />
+            <Text style={styles.label}>SERVIDOR</Text>
+            <Field
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              placeholder="http://192.168.x.x:8000"
+              value={server}
+              onChangeText={setServer}
             />
             <AppButton title="Entrar" onPress={onLogin} loading={busy} />
           </Card>
