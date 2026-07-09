@@ -22,7 +22,11 @@ async def _create_task(area, nome, due_ts=None, tags=None, description=None):
     que e create(name, area, ...) (Task 6) — aqui a assinatura fica (area, nome, ...) porque
     e como o plano/testes chamam; passo por keyword pra nao inverter os dois."""
     return await clickup_client.create(
-        name=nome, area=area, due_ts=due_ts, tags=tags, description=description
+        name=nome,
+        area=area,
+        due_ts=due_ts,
+        tags=tags,
+        description=description,
     )
 
 
@@ -32,34 +36,76 @@ def _parse_quando(q: str | None) -> float | None:
     try:
         return datetime.strptime(q, "%Y-%m-%d %H:%M").replace(tzinfo=TZ).timestamp()
     except (ValueError, TypeError):
-        return None            # formato invalido (ValueError) ou nao-string (TypeError) => sem due,
-                               # NAO bumpa attempts: um verdict bem-formado com quando ruim degrada, nao retenta
+        # Formato inválido ou não-string degrada para captura sem due. Não retenta:
+        # o Raw já foi preservado e o restante do verdict continua utilizável.
+        return None
 
 
 async def _process_one(row: dict) -> None:
     cid = row["id"]
     raw_path = row["raw_path"]
-    if not raw_path:                                   # etapa 1: Raw (idempotente por coluna + path deterministico)
+
+    # Etapa 1: Raw, idempotente por coluna + path determinístico.
+    if not raw_path:
         raw_path = await vault_client.write_raw(row["text"], cid, ts=row["ts"])
         store.mark_capture(cid, raw_path=raw_path)
-    verdict = await hermes_client.classify(row["text"])
-    tipo = verdict.get("tipo")
-    if tipo not in VALID_TIPOS:
-        tipo = "nota"                                  # degrada: Raw ja cumpriu a lei 1
-    if tipo != "nota" and not row["clickup_task_id"]:  # etapa 2: Staging (idempotente por coluna)
-        titulo = (verdict.get("titulo") or row["text"][:80]).strip()
-        if tipo == "cobranca":
-            titulo = f"Cobrar: {titulo}" if not titulo.lower().startswith("cobrar") else titulo
-        due_ts = _parse_quando(verdict.get("quando"))
-        task = await _create_task(
-            STAGING, titulo, due_ts=due_ts,
-            tags=["aguardando"] if tipo == "cobranca" else None,
-            description=f"[cap:{cid}] raw: {raw_path}",
+
+    # Classifica em todo retry ainda não concluído. Isso recompõe due/tipo mesmo se
+    # uma tentativa anterior já tiver criado ou reconciliado a tarefa no ClickUp.
+    raw_verdict = await hermes_client.classify(row["text"])
+    verdict = raw_verdict if isinstance(raw_verdict, dict) else {}
+
+    raw_tipo = verdict.get("tipo")
+    tipo = (
+        raw_tipo
+        if isinstance(raw_tipo, str) and raw_tipo in VALID_TIPOS
+        else "nota"
+    )
+
+    raw_titulo = verdict.get("titulo")
+    titulo = (
+        raw_titulo.strip()
+        if isinstance(raw_titulo, str) and raw_titulo.strip()
+        else row["text"][:80]
+    )
+    due_ts = _parse_quando(verdict.get("quando"))
+
+    # Etapa 2: Staging. Antes de criar, reconcilia um possível create que chegou
+    # ao ClickUp mas cujo id não foi persistido localmente antes de um crash.
+    if tipo != "nota" and not row["clickup_task_id"]:
+        marker = f"[cap:{cid}]"
+        existing_task_id = await clickup_client.find_task_by_marker(
+            clickup_client.AREA_LISTS[STAGING],
+            marker,
         )
-        store.mark_capture(cid, clickup_task_id=task["id"])
-        if due_ts:                                     # lembrete GENERICO (B6/§10; texto neutro, sem conteudo)
-            store.add_schedule(due_ts, "cobrar-terceiro" if tipo == "cobranca" else "minha",
-                               f"item capturado com hora marcada (c{cid}) — abre o app")
+        if existing_task_id is not None:
+            store.mark_capture(cid, clickup_task_id=existing_task_id)
+        else:
+            if tipo == "cobranca":
+                titulo = (
+                    f"Cobrar: {titulo}"
+                    if not titulo.lower().startswith("cobrar")
+                    else titulo
+                )
+            task = await _create_task(
+                STAGING,
+                titulo,
+                due_ts=due_ts,
+                tags=["aguardando"] if tipo == "cobranca" else None,
+                description=f"{marker} raw: {raw_path}",
+            )
+            store.mark_capture(cid, clickup_task_id=task["id"])
+
+    # Etapa 3: lembrete independente da criação da task. O marker no ref torna a
+    # etapa retomável após crash e impede duplicação em retries posteriores.
+    schedule_fragment = f"(c{cid})"
+    if due_ts and not store.has_schedule_ref(schedule_fragment):
+        store.add_schedule(
+            due_ts,
+            "cobrar-terceiro" if tipo == "cobranca" else "minha",
+            f"item capturado com hora marcada {schedule_fragment} — abre o app",
+        )
+
     store.mark_capture(cid, status="done")
     store.log_event("capture_done", ref=str(cid), meta={"tipo": tipo})
 
@@ -67,14 +113,24 @@ async def _process_one(row: dict) -> None:
 async def process_pending() -> int:
     done = 0
     for row in store.pending_captures():
+        if not store.claim_capture(row["id"]):
+            continue
         try:
             await _process_one(row)
             done += 1
         except Exception as e:  # noqa: BLE001 - a fila NUNCA derruba o worker
-            # O except largo subsume VaultError E httpx.HTTPError (o vault_client nao embrulha
-            # erros de transporte httpx — handoff da Task 8): qualquer falha marca a tentativa e
-            # segue; o Raw ja gravado persiste e o item volta na proxima rodada (nada se perde).
-            store.mark_capture(row["id"], bump_attempts=True, error=type(e).__name__)  # SEM conteudo (lei 7)
-            logger.warning("captura %s falhou: %s (tentativa %s)",
-                           row["id"], type(e).__name__, row["attempts"] + 1)
+            # Qualquer falha incrementa a tentativa e devolve o item para pending;
+            # no teto ele vira failed, mas permanece persistido. Apenas a classe
+            # sanitizada do erro vai para o banco/log (lei 7).
+            store.mark_capture(
+                row["id"],
+                bump_attempts=True,
+                error=type(e).__name__,
+            )
+            logger.warning(
+                "captura %s falhou: %s (tentativa %s)",
+                row["id"],
+                type(e).__name__,
+                row["attempts"] + 1,
+            )
     return done

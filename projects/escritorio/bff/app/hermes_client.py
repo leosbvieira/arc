@@ -42,7 +42,12 @@ def _clean(s: str) -> str:
     i = 0
     while i < len(lines):
         t = lines[i].strip().lower()
-        if t == "" or t.startswith("modos") or t.startswith("manual completo") or t.startswith(_MENU_BULLETS):
+        if (
+            t == ""
+            or t.startswith("modos")
+            or t.startswith("manual completo")
+            or t.startswith(_MENU_BULLETS)
+        ):
             i += 1
         else:
             break
@@ -59,7 +64,10 @@ async def capture(text: str, profile: str | None = None) -> str:
 
     frame = MODE_FRAME.get(prof, "")
     if not frame:
-        logger.warning("profile desconhecido %r - captura segue sem frame", prof)  # sem logar o texto
+        logger.warning(
+            "profile desconhecido %r - captura segue sem frame",
+            prof,
+        )
     suppress = "(Responda direto ao Leo, sem exibir o menu de modos nem o manual.)"
     prompt = "\n\n".join(p for p in (frame, text, suppress) if p)
 
@@ -67,14 +75,11 @@ async def capture(text: str, profile: str | None = None) -> str:
 
 
 async def _oneshot(prompt: str) -> str:
-    """Roda um prompt no Hermes CLI (oneshot) e devolve a resposta limpa. Miolo comum
-    de capture(), draft_diario(), classify() e chat() (pipeline v2 da Task 9).
+    """Roda um prompt no Hermes CLI e devolve apenas a resposta limpa.
 
-    RISCO REGISTRADO (Task 9, Step 2a): o prompt vai como argv (`-z <prompt>`), não por
-    stdin (`-z -` + input=). stdin evitaria o conteúdo aparecer na lista de processos,
-    mas exige confirmar que o CLI do Hermes aceita `-`; isso só se valida no E2E real
-    (Task 7, gate adiado). Single-user no P1 => aceito. Migrar pra stdin quando o Hermes
-    real estiver disponível. `errors="replace"` (não "ignore") preserva acentos/emoji."""
+    Toda falha é deliberadamente reduzida ao código fixo `hermes_error`: prompt,
+    stdout e stderr nunca aparecem na exception message (lei 7).
+    """
     def _run() -> subprocess.CompletedProcess:
         return subprocess.run(
             [settings.hermes_bin, "-z", prompt],
@@ -87,17 +92,12 @@ async def _oneshot(prompt: str) -> str:
 
     try:
         proc = await asyncio.to_thread(_run)
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("o Hermes demorou demais pra responder (timeout)")
-    except FileNotFoundError:
-        raise RuntimeError(f"não achei o hermes em '{settings.hermes_bin}' (ajuste HERMES_BIN no .env)")
-
-    if proc.returncode != 0:
-        msg = (proc.stderr or "").strip()[:300]
-        raise RuntimeError(msg or f"hermes saiu com código {proc.returncode}")
-
-    reply = _clean(proc.stdout or "")
-    return reply or "(o Hermes respondeu vazio)"
+        if proc.returncode != 0:
+            raise RuntimeError("hermes_error")
+        reply = _clean(proc.stdout or "")
+        return reply or "(o Hermes respondeu vazio)"
+    except Exception:
+        raise RuntimeError("hermes_error") from None
 
 
 # Classificador da fila (Task 9/B6). SEM campo `area`: no P1 toda tarefa cai em Staging
@@ -123,12 +123,16 @@ async def classify(text: str) -> dict:
     if settings.hermes_mock:
         return {"tipo": "nota", "titulo": None, "quando": None}
     from datetime import datetime
-    prompt = CLASSIFY_FRAME.format(now=f"{datetime.now(TZ):%Y-%m-%d %H:%M}",
-                                   tz=str(TZ), text=text)
+
+    prompt = CLASSIFY_FRAME.format(
+        now=f"{datetime.now(TZ):%Y-%m-%d %H:%M}",
+        tz=str(TZ),
+        text=text,
+    )
     out = await _oneshot(prompt)
     m = _re.search(r"\{.*\}", out, _re.S)
     if not m:
-        raise RuntimeError("classify_sem_json")        # SEM conteudo (lei 7)
+        raise RuntimeError("classify_sem_json")
     return _json.loads(m.group(0))
 
 
@@ -136,7 +140,11 @@ async def chat(text: str, mode: str) -> str:
     """Rota sincrona do Chat (Mentor/Conselho/Capturas como conversa). Mode desconhecido
     segue sem frame. Mock ecoa pra o app rodar sem o Hermes."""
     frame = MODE_FRAME.get(mode, "")
-    return await _oneshot(f"{frame}\n\n{text}") if not settings.hermes_mock else f"[mock:{mode}] {text}"
+    return (
+        await _oneshot(f"{frame}\n\n{text}")
+        if not settings.hermes_mock
+        else f"[mock:{mode}] {text}"
+    )
 
 
 DIARIO_FRAME = """Voce estrutura o diario do Leo (sistema Aeternum). NAO use ferramentas. NAO invente

@@ -54,7 +54,11 @@ export async function login(password: string): Promise<string> {
 
 // /capture é fire-and-forget (B6): enfileira e devolve "✅ anotado". NÃO retorna a
 // resposta do Hermes — para conversa síncrona (Chat) use chatSend.
-export async function capture(text: string, profile?: string): Promise<string> {
+export async function capture(
+  text: string,
+  profile?: string,
+  clientKey?: string,
+): Promise<string> {
   const base = await getBffUrl();
   const token = await getToken();
   const r = await fetch(`${base}/capture`, {
@@ -63,7 +67,7 @@ export async function capture(text: string, profile?: string): Promise<string> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text, profile }),
+    body: JSON.stringify({ text, profile, client_key: clientKey }),
   });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   const data = (await r.json()) as { reply: string };
@@ -179,14 +183,18 @@ export type CheckItem = { rotina: string; feito: boolean };
 
 export async function closingRoutines(template: string): Promise<string[]> {
   const base = await getBffUrl();
-  const r = await fetch(`${base}/closing/routines?template=${encodeURIComponent(template)}`, {
-    headers: await authHeaders(),
-  });
+  const r = await fetch(
+    `${base}/closing/routines?template=${encodeURIComponent(template)}`,
+    { headers: await authHeaders() },
+  );
   if (!r.ok) throw new Error(`routines: ${r.status}`);
   return (await r.json()).routines;
 }
 
-export async function closingDraft(text: string, template: string): Promise<string> {
+export async function closingDraft(
+  text: string,
+  template: string,
+): Promise<string> {
   const base = await getBffUrl();
   const r = await fetch(`${base}/closing/draft`, {
     method: "POST",

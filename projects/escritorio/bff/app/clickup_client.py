@@ -83,14 +83,38 @@ def days_from_ms(ms) -> int | None:
     return (due - date.today()).days
 
 
-async def _list_tasks(client: httpx.AsyncClient, list_id: str) -> list[dict]:
+async def _list_tasks(
+    client: httpx.AsyncClient,
+    list_id: str,
+    *,
+    include_closed: bool = False,
+) -> list[dict]:
     r = await client.get(
         f"{API}/list/{list_id}/task",
-        params={"archived": "false", "subtasks": "false", "include_closed": "false"},
+        params={
+            "archived": "false",
+            "subtasks": "false",
+            "include_closed": "true" if include_closed else "false",
+        },
         headers=_headers(),
     )
     r.raise_for_status()
     return r.json().get("tasks", [])
+
+
+async def find_task_by_marker(list_id: str, marker: str) -> str | None:
+    """Procura inclusive tarefas fechadas cujo conteúdo contenha o marker da captura."""
+    if not marker:
+        return None
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        tasks = await _list_tasks(client, list_id, include_closed=True)
+    for task in tasks:
+        for field in ("description", "text_content"):
+            content = task.get(field)
+            if isinstance(content, str) and marker in content:
+                task_id = task.get("id")
+                return str(task_id) if task_id is not None else None
+    return None
 
 
 async def fetch_open() -> list[dict]:
@@ -119,8 +143,13 @@ async def get_task(task_id: str) -> dict:
         return r.json()
 
 
-async def create(name: str, area: str, tags: list[str] | None = None,
-                 due_ts: float | None = None, description: str | None = None) -> dict:
+async def create(
+    name: str,
+    area: str,
+    tags: list[str] | None = None,
+    due_ts: float | None = None,
+    description: str | None = None,
+) -> dict:
     """Cria uma task na list da área. `due_ts` (epoch em SEGUNDOS) vira `due_date` em ms
     com `due_date_time` (hora marcada, não só o dia); `description` guarda o link do Raw e
     o marker de idempotência da captura (Task 9). `tags`/`due_ts`/`description` são opcionais
@@ -128,9 +157,9 @@ async def create(name: str, area: str, tags: list[str] | None = None,
     lid = AREA_LISTS[area]
     body: dict = {"name": name}
     if tags:
-        body["tags"] = tags   # ClickUp cria a tag na hora se não existir (ex.: "aguardando")
+        body["tags"] = tags
     if due_ts is not None:
-        body["due_date"] = int(due_ts * 1000)   # ClickUp espera epoch-ms
+        body["due_date"] = int(due_ts * 1000)
         body["due_date_time"] = True
     if description is not None:
         body["description"] = description

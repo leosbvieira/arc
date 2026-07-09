@@ -6,7 +6,16 @@ from datetime import date, datetime
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
 
-from . import capture_pipeline, hermes_client, push, routines, store, tasks, telegram, vault_client
+from . import (
+    capture_pipeline,
+    hermes_client,
+    push,
+    routines,
+    store,
+    tasks,
+    telegram,
+    vault_client,
+)
 from .auth import make_token, require_auth
 from .config import settings
 
@@ -14,10 +23,14 @@ logger = logging.getLogger(__name__)
 
 
 async def _capture_worker() -> None:
-    """Worker de fundo da fila de captura (B6/§10): drena pending_captures em loop e
-    dorme `capture_worker_interval`. NUNCA derruba o processo — process_pending já isola
-    cada item; o try aqui cobre falha de infra da rodada (ex.: DB), logada SEM conteúdo
-    (lei 7). CancelledError é BaseException e escapa do `except Exception` → shutdown limpo."""
+    """Worker de fundo da fila de captura (B6/§10): recupera claims órfãos uma vez,
+    drena pending_captures em loop e dorme `capture_worker_interval`.
+
+    NUNCA derruba o processo durante uma rodada — process_pending já isola cada item;
+    o try aqui cobre falha de infra (ex.: DB), logada SEM conteúdo (lei 7).
+    CancelledError é BaseException e escapa do `except Exception` → shutdown limpo.
+    """
+    store.recover_processing()
     while True:
         try:
             await capture_pipeline.process_pending()
@@ -52,6 +65,7 @@ class TokenOut(BaseModel):
 class CaptureIn(BaseModel):
     text: str
     profile: str | None = None
+    client_key: str | None = None
 
 
 class CaptureOut(BaseModel):
@@ -62,6 +76,10 @@ class CaptureOut(BaseModel):
 class ChatIn(BaseModel):
     text: str
     mode: str = "Mentor"
+
+
+class ChatOut(BaseModel):
+    reply: str
 
 
 class DeviceIn(BaseModel):
@@ -112,16 +130,22 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     """Fire-and-forget (B6): enfileira e responde na hora. O worker processa a fila em
     fundo (Raw → classificação → Staging). O Chat NÃO usa mais esta rota (ela não devolve
     a resposta do Hermes) — conversa síncrona vai por /chat."""
-    cid = store.enqueue_capture(body.text, body.profile)
+    cid = store.enqueue_capture(body.text, body.profile, body.client_key)
     store.log_event("capture_in", ref=str(cid))
     return CaptureOut(reply="✅ anotado", queued=True)
 
 
-@app.post("/chat", response_model=CaptureOut)
+@app.post("/chat", response_model=ChatOut)
 async def chat(body: ChatIn, _: str = Depends(require_auth)):
     """Rota síncrona do Chat: fala com o Hermes no modo escolhido e devolve a resposta."""
-    reply = await hermes_client.chat(body.text, body.mode)
-    return CaptureOut(reply=reply)
+    try:
+        reply = await hermes_client.chat(body.text, body.mode)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="hermes_indisponivel",
+        ) from None
+    return ChatOut(reply=reply)
 
 
 @app.post("/devices")
@@ -167,8 +191,16 @@ async def get_digest(_: str = Depends(require_auth)):
     fresh = await tasks.run_digest()
     run = store.get_digest_run(date.today().isoformat())
     if run:
-        return {"count": run["count"], "body": run["body"], "tasks": fresh["tasks"]}
-    return {"count": len(fresh["tasks"]), "body": fresh["body_app"], "tasks": fresh["tasks"]}
+        return {
+            "count": run["count"],
+            "body": run["body"],
+            "tasks": fresh["tasks"],
+        }
+    return {
+        "count": len(fresh["tasks"]),
+        "body": fresh["body_app"],
+        "tasks": fresh["tasks"],
+    }
 
 
 @app.get("/closing/routines")
@@ -184,29 +216,55 @@ async def closing_draft(body: ClosingDraftIn, _=Depends(require_auth)):
 @app.post("/closing/approve")
 async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
     import hashlib
+
     today = date.today().isoformat()
-    raw_path = await vault_client.write_raw(body.raw_text, f"f{today.replace('-', '')}")
-    marker = f"<!-- fechamento:{today}:{hashlib.sha1(body.draft_md.encode()).hexdigest()[:8]} -->"
-    block = (f"## Fechamento ({datetime.now():%H:%M}) {marker}\n\n"
-             f"{body.draft_md}\n\n_raw: [[{raw_path}]]_\n")
-    daily_path = await vault_client.append_file(
-        f"Daily/{today}.md", block, f"diario: fechamento {today}",
-        header_if_new=f"# {today}", dedupe_marker=marker,
+    raw_path = await vault_client.write_raw(
+        body.raw_text,
+        f"f{today.replace('-', '')}",
     )
-    store.record_checks(today, body.template, [(c.rotina, c.feito) for c in body.checks])
+    marker = (
+        f"<!-- fechamento:{today}:"
+        f"{hashlib.sha1(body.draft_md.encode()).hexdigest()[:8]} -->"
+    )
+    block = (
+        f"## Fechamento ({datetime.now():%H:%M}) {marker}\n\n"
+        f"{body.draft_md}\n\n_raw: [[{raw_path}]]_\n"
+    )
+    daily_path = await vault_client.append_file(
+        f"Daily/{today}.md",
+        block,
+        f"diario: fechamento {today}",
+        header_if_new=f"# {today}",
+        dedupe_marker=marker,
+    )
+    store.record_checks(
+        today,
+        body.template,
+        [(c.rotina, c.feito) for c in body.checks],
+    )
     store.log_event("closing_approved", ref=today)
     return {"ok": True, "daily_path": daily_path, "raw_path": raw_path}
 
 
 def _check_internal(token: str) -> None:
     if token != settings.internal_token:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "token interno inválido")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "token interno inválido",
+        )
 
 
 @app.post("/internal/notify")
-async def internal_notify(body: NotifyIn, x_internal_token: str = Header(default="")):
+async def internal_notify(
+    body: NotifyIn,
+    x_internal_token: str = Header(default=""),
+):
     _check_internal(x_internal_token)
-    return await push.send_push(store.list_devices(), body.title, body.body)
+    return await push.send_push(
+        store.list_devices(),
+        body.title,
+        body.body,
+    )
 
 
 @app.post("/internal/run-digest")
@@ -221,8 +279,13 @@ async def internal_run_digest(x_internal_token: str = Header(default="")):
     result = await tasks.run_digest()
     has_content = bool(result["tasks"]) or bool(result.get("lines_extra"))
     delivered = False
-    if has_content:                                   # QUALQUER linha acionavel envia (C10/C11)
+    if has_content:
         delivered = await telegram.send(result["body_telegram"])
         store.log_notif("digest", "telegram", delivered)
-    store.save_digest_run(today, result["body_app"], len(result["tasks"]), delivered)
+    store.save_digest_run(
+        today,
+        result["body_app"],
+        len(result["tasks"]),
+        delivered,
+    )
     return {"count": len(result["tasks"]), "telegram": delivered}

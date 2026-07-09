@@ -1,21 +1,36 @@
 import * as SecureStore from "expo-secure-store";
 import { capture } from "./api";
 
-const IDX = "oq_idx_v2";   // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
+const IDX = "oq_idx_v2"; // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
 // Limite do SecureStore e em BYTES (~2048). Fatiamos por CARACTERES no pior caso UTF-8:
 // 600 code units * 3 bytes/unit max = 1800 bytes <= limite, para qualquer emoji/acento.
 // Invariante: CHUNK_CHARS >= 2 — o recuo de 1 char na fronteira de surrogate pair
 // nunca pode zerar o avanco do loop de splitChunks (senao entra em loop infinito).
 const CHUNK_CHARS = 600;
 
-export type QueuedItem = { kind: "capture" | "session"; payload: any; ts: number };
+export type QueuedItem = {
+  kind: "capture" | "session";
+  payload: any;
+  ts: number;
+};
 
 type IdxEntry = { id: string; chunks: number };
+
+function idForTimestamp(ts: number): string {
+  return `${ts}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Chave estável de uma tentativa de captura. Deve ser criada antes do primeiro
+ * POST e reaproveitada se a mesma tentativa precisar entrar na fila offline. */
+export function createCaptureClientKey(ts: number = Date.now()): string {
+  return idForTimestamp(ts);
+}
 
 // Mutex async (promise-chain, sem dependencia nova): serializa TODA operacao que muta
 // o indice (enqueue/flush). Fecha os dois interleavings: dois flush nao rodam sobrepostos
 // (sem envio duplicado) e um enqueue no meio de um flush nao perde/envenena o indice.
 let lock: Promise<unknown> = Promise.resolve();
+
 function serialized<T>(op: () => Promise<T>): Promise<T> {
   const run = lock.then(op, op);
   lock = run.catch(() => {});
@@ -67,12 +82,26 @@ function splitChunks(s: string): string[] {
 }
 
 async function _enqueue(item: QueuedItem): Promise<void> {
-  const parts = splitChunks(JSON.stringify(item));
-  const id = `${item.ts}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = idForTimestamp(item.ts);
+  const storedItem: QueuedItem =
+    item.kind === "capture"
+      ? {
+          ...item,
+          payload: {
+            ...item.payload,
+            client_key: item.payload?.client_key ?? id,
+          },
+        }
+      : item;
+  const parts = splitChunks(JSON.stringify(storedItem));
+
   for (let i = 0; i < parts.length; i++) {
     await SecureStore.setItemAsync(`oq_${id}_${i}`, parts[i]);
   }
-  await writeIdx([...(await readIdx()), { id, chunks: parts.length }]);  // indice por ultimo: item orfao > item perdido
+  await writeIdx([
+    ...(await readIdx()),
+    { id, chunks: parts.length },
+  ]); // indice por ultimo: item orfao > item perdido
 }
 
 export function enqueue(item: QueuedItem): Promise<void> {
@@ -84,8 +113,15 @@ export async function pendingCount(): Promise<number> {
 }
 
 async function sendOne(it: QueuedItem): Promise<void> {
-  if (it.kind === "capture") await capture(it.payload.text, it.payload.profile);
-  else throw new Error("kind não suportado"); // kind "session" chega na Task 15
+  if (it.kind === "capture") {
+    await capture(
+      it.payload.text,
+      it.payload.profile,
+      it.payload.client_key,
+    );
+  } else {
+    throw new Error("kind não suportado"); // kind "session" chega na Task 15
+  }
 }
 
 /** Reenvia em ordem; para no primeiro erro de REDE. Item envenenado e descartado (nunca
@@ -101,7 +137,7 @@ async function _flush(): Promise<number> {
       // Item envenenado (JSON corrompido / chunks ausentes): o conteudo ja se perdeu.
       // De-indexa e descarta pra nao travar o resto da fila (fantasma preso = pior pra lei 1).
       idx = idx.slice(1);
-      await writeIdx(idx);      // de-indexa ANTES de apagar (orfao inofensivo > fantasma)
+      await writeIdx(idx); // de-indexa ANTES de apagar (orfao inofensivo > fantasma)
       await deleteItem(entry);
       continue;
     }
@@ -111,7 +147,7 @@ async function _flush(): Promise<number> {
       break; // erro de rede: para e tenta de novo depois (rede continua ruim)
     }
     idx = idx.slice(1);
-    await writeIdx(idx);        // de-indexa ANTES de apagar os chunks (orfao > fantasma)
+    await writeIdx(idx); // de-indexa ANTES de apagar os chunks (orfao > fantasma)
     await deleteItem(entry);
   }
   return idx.length;

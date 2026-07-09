@@ -22,7 +22,10 @@ MAX_ATTEMPTS = 5
 
 # Colunas do contrato de fila (Tasks 9/10/12). `status` fica de fora de propósito:
 # em `pending_captures` é sempre 'pending', em `failed_captures` sempre 'failed'.
-_CAPTURE_COLS = "id, ts, text, profile, attempts, raw_path, clickup_task_id, last_error"
+_CAPTURE_COLS = (
+    "id, ts, text, profile, client_key, attempts, raw_path, "
+    "clickup_task_id, last_error"
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
@@ -46,7 +49,7 @@ CREATE TABLE IF NOT EXISTS notif_log (
 );
 CREATE TABLE IF NOT EXISTS capture_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, text TEXT NOT NULL,
-  profile TEXT, status TEXT NOT NULL DEFAULT 'pending',
+  profile TEXT, client_key TEXT, status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0, raw_path TEXT, clickup_task_id TEXT, last_error TEXT
 );
 CREATE TABLE IF NOT EXISTS digest_runs (
@@ -71,6 +74,18 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with closing(_connect()) as con:
         con.executescript(_SCHEMA)
+
+        # Migração idempotente para bancos criados antes do client_key. O índice
+        # vem depois do ALTER porque CREATE TABLE IF NOT EXISTS não adiciona coluna.
+        columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(capture_queue)")
+        }
+        if "client_key" not in columns:
+            con.execute("ALTER TABLE capture_queue ADD COLUMN client_key TEXT")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_client_key "
+            "ON capture_queue(client_key)"
+        )
         con.commit()
 
 
@@ -184,15 +199,36 @@ def notif_sent_today(evento: str) -> bool:
     return row is not None
 
 
-# --- capture_queue (pending -> done | failed; failed nunca é descartado) -----
+# --- capture_queue (pending -> processing -> done | failed) ------------------
 
 
-def enqueue_capture(text: str, profile: str | None) -> int:
+def enqueue_capture(
+    text: str,
+    profile: str | None,
+    client_key: str | None = None,
+) -> int:
     with closing(_connect()) as con:
-        cur = con.execute(
-            "INSERT INTO capture_queue (ts, text, profile) VALUES (?, ?, ?)",
-            (time.time(), text, profile),
-        )
+        if client_key is not None:
+            # Serializa select+insert entre escritores. Se uma resposta se perdeu,
+            # o retry encontra e devolve exatamente o id originalmente enfileirado.
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                "SELECT id FROM capture_queue WHERE client_key = ?",
+                (client_key,),
+            ).fetchone()
+            if row is not None:
+                con.commit()
+                return int(row["id"])
+            cur = con.execute(
+                "INSERT INTO capture_queue (ts, text, profile, client_key) "
+                "VALUES (?, ?, ?, ?)",
+                (time.time(), text, profile, client_key),
+            )
+        else:
+            cur = con.execute(
+                "INSERT INTO capture_queue (ts, text, profile) VALUES (?, ?, ?)",
+                (time.time(), text, profile),
+            )
         con.commit()
         return int(cur.lastrowid)
 
@@ -205,6 +241,29 @@ def pending_captures(max_attempts: int = MAX_ATTEMPTS) -> list[dict]:
             (max_attempts,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def claim_capture(id: int) -> bool:
+    """Toma posse atômica de um item ainda pendente."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE capture_queue SET status = 'processing' "
+            "WHERE id = ? AND status = 'pending'",
+            (id,),
+        )
+        con.commit()
+        return cur.rowcount == 1
+
+
+def recover_processing() -> int:
+    """Reapresenta itens órfãos deixados em processing por crash do worker."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE capture_queue SET status = 'pending' "
+            "WHERE status = 'processing'"
+        )
+        con.commit()
+        return cur.rowcount
 
 
 def failed_captures() -> list[dict]:
@@ -228,16 +287,21 @@ def mark_capture(
     """Atualiza um item da fila. `error` é a classe/código do erro sanitizado pelo
     chamador — NUNCA o conteúdo capturado (lei 7), pois vai para `last_error`.
 
-    Auto-failover: se `bump_attempts=True` empurra `attempts` até `MAX_ATTEMPTS` e
-    o chamador não forçou um `status`, o item sai da fila ativa como 'failed' — mas
+    Auto-failover: uma falha devolve o item de `processing` para `pending`; quando
+    `attempts` chega a `MAX_ATTEMPTS`, ele sai da fila ativa como `failed`, mas
     permanece na tabela (lei 1: failed nunca é descartado, é reapresentado)."""
     with closing(_connect()) as con:
         if bump_attempts and status is None:
             row = con.execute(
                 "SELECT attempts FROM capture_queue WHERE id = ?", (id,)
             ).fetchone()
-            if row is not None and row["attempts"] + 1 >= MAX_ATTEMPTS:
-                status = "failed"
+            if row is not None:
+                status = (
+                    "failed"
+                    if row["attempts"] + 1 >= MAX_ATTEMPTS
+                    else "pending"
+                )
+
         sets, params = [], []
         if bump_attempts:
             sets.append("attempts = attempts + 1")
@@ -304,6 +368,16 @@ def add_schedule(quando_ts: float, tipo: str, ref: str) -> int:
         )
         con.commit()
         return int(cur.lastrowid)
+
+
+def has_schedule_ref(fragment: str) -> bool:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT 1 FROM scheduler "
+            "WHERE ref LIKE '%' || ? || '%' LIMIT 1",
+            (fragment,),
+        ).fetchone()
+    return row is not None
 
 
 def due_schedules(now_ts: float) -> list[dict]:
