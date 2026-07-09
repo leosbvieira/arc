@@ -4,7 +4,7 @@ from datetime import date, datetime
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
 
-from . import hermes_client, push, routines, store, tasks, vault_client
+from . import hermes_client, push, routines, store, tasks, telegram, vault_client
 from .auth import make_token, require_auth
 from .config import settings
 
@@ -121,8 +121,14 @@ async def get_task_detail(task_id: str, _: str = Depends(require_auth)):
 
 @app.get("/digest")
 async def get_digest(_: str = Depends(require_auth)):
-    """Digest de cobranças pro app (sem push). Mesmo cálculo do /internal/run-digest."""
-    return await tasks.run_digest()
+    """Digest do dia pro app. §10: se já rodou hoje, reabre o MESMO corpo persistido
+    (body_app) com as tarefas recalculadas frescas p/ a Home; senão, calcula na hora.
+    Mantém `count` e `tasks` no shape (compat com o app)."""
+    fresh = await tasks.run_digest()
+    run = store.get_digest_run(date.today().isoformat())
+    if run:
+        return {"count": run["count"], "body": run["body"], "tasks": fresh["tasks"]}
+    return {"count": len(fresh["tasks"]), "body": fresh["body_app"], "tasks": fresh["tasks"]}
 
 
 @app.get("/closing/routines")
@@ -152,24 +158,31 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
     return {"ok": True, "daily_path": daily_path, "raw_path": raw_path}
 
 
+def _check_internal(token: str) -> None:
+    if token != settings.internal_token:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "token interno inválido")
+
+
 @app.post("/internal/notify")
 async def internal_notify(body: NotifyIn, x_internal_token: str = Header(default="")):
-    if x_internal_token != settings.internal_token:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "token interno inválido")
+    _check_internal(x_internal_token)
     return await push.send_push(store.list_devices(), body.title, body.body)
 
 
 @app.post("/internal/run-digest")
 async def internal_run_digest(x_internal_token: str = Header(default="")):
-    """Calcula o digest de cobranças (regras do cutuca) e faz push. Caminho dev/mock/
-    fallback; em produção o cron do Hermes calcula e usa /internal/notify (D-14)."""
-    if x_internal_token != settings.internal_token:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "token interno inválido")
-    d = await tasks.run_digest()
-    sent = 0
-    if d["count"] > 0:
-        res = await push.send_push(
-            store.list_devices(), f"🔔 {d['count']} cobranças de hoje", d["body"]
-        )
-        sent = res["sent"]
-    return {"count": d["count"], "pushed": sent, "text": d["text"], "tasks": d["tasks"]}
+    """Calcula e ENTREGA o digest do dia pelo Telegram (C10/C11). 1/dia por ENTREGA real:
+    falha de envio NÃO consome o slot do dia (retry same-day permitido, §10). Persiste o
+    run pro app reabrir (body neutralizado só no Telegram; body_app tem tudo)."""
+    _check_internal(x_internal_token)
+    today = date.today().isoformat()
+    if store.notif_sent_today("digest"):
+        return {"skipped": "digest ja enviado hoje"}
+    result = await tasks.run_digest()
+    has_content = bool(result["tasks"]) or bool(result.get("lines_extra"))
+    delivered = False
+    if has_content:                                   # QUALQUER linha acionavel envia (C10/C11)
+        delivered = await telegram.send(result["body_telegram"])
+        store.log_notif("digest", "telegram", delivered)
+    store.save_digest_run(today, result["body_app"], len(result["tasks"]), delivered)
+    return {"count": len(result["tasks"]), "telegram": delivered}

@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     # push
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"
 
+    # Telegram (canal do digest no P1, spec §6). Vazios = canal desligado (send() no-op).
+    # Gate manual (Q3): copiar token do bot do Hermes + chat_id pro .env.
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
+    # Digest v2 (C10/C11): knobs de cobrança. sensitive_areas é CSV (parse em tasks.py):
+    # linhas dessas áreas saem neutralizadas no Telegram (lockscreen mostra tudo, lei 7).
+    staging_age_days: int = 3
+    routine_miss_threshold: int = 3
+    sensitive_areas: str = "Corpo,Saúde Mental"
+
     # server-to-server (cron do Hermes -> /internal/notify)
     internal_token: str = "troque-token-interno"
 

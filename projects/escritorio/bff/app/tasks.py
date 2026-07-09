@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from . import cadence, clickup_client
+from . import cadence, clickup_client, store
 from .config import settings
 
 AREAS = ["Trabalho", "Finanças", "Saúde", "Pessoal"]
@@ -164,21 +164,99 @@ async def complete(task_id: str) -> bool:
     return False
 
 
-async def run_digest() -> dict:
-    """Calcula o digest de cobranças (regras do cutuca em cadence.py)."""
-    if _use_clickup():
-        src = [_from_clickup(t) for t in await clickup_client.fetch_open()]
-    else:
-        src = _open()
+# --- digest v2 (C10/C11 + lei 7) --------------------------------------------
+# O texto INTEIRO da mensagem do Telegram aparece no lockscreen, então linhas de áreas
+# sensíveis saem neutralizadas nesse canal; o app (atrás do login) mostra tudo. O digest
+# envia se houver QUALQUER linha acionável (tarefa, staging, rotina ou captura travada).
 
-    selected = cadence.select(src)
-    escala = cadence.DEFAULT_RULE.escala_tom
-    return {
-        "count": len(selected),
-        "text": cadence.format_digest(selected, escala_tom=escala),
-        "body": "\n".join(cadence.digest_lines(selected, escala_tom=escala)),
-        "tasks": [_display(t).model_dump() for t in selected],
-    }
+MARKER = {"no_prazo": "🟡", "leve": "🟠", "firme": "🔴", "urgente": "🚨"}
+
+
+def _sensitive_areas() -> set[str]:
+    return {a.strip() for a in settings.sensitive_areas.split(",") if a.strip()}
+
+
+def render_digest_lines(tasks: list[Task], for_channel: str) -> list[str]:
+    """for_channel: 'telegram' neutraliza áreas sensíveis (lei 7); 'app' mostra tudo."""
+    lines = []
+    for t in sorted(tasks, key=lambda x: -(x.days_overdue or 0)):
+        m = MARKER.get(t.severity, "🟡")
+        atraso = f"{t.days_overdue}d de atraso" if (t.days_overdue or 0) > 0 else "no prazo"
+        if for_channel == "telegram" and t.area in _sensitive_areas():
+            lines.append(f"{m} 1 pendência de saúde ({atraso}) — abre o app")
+        else:
+            lines.append(f"{m} {t.name} · {t.area} ({atraso})")
+    return lines
+
+
+def staging_line(count: int, oldest_days: int | None) -> str | None:
+    if count and oldest_days is not None and oldest_days >= settings.staging_age_days:
+        return f"📥 staging: {count} itens, mais velho {oldest_days}d — triar no ClickUp"
+    return None
+
+
+def routine_lines(today: str | None = None) -> list[str]:
+    """Furo = dia COM fechamento e check false; >=N/7d vira padrão. Linguagem factual (lei 4)."""
+    from datetime import date, timedelta
+    ref = date.fromisoformat(today) if today else date.today()
+    since = (ref - timedelta(days=7)).isoformat()
+    misses: dict[str, int] = {}
+    for row in store.get_checks_since(since):
+        if not row["feito"]:
+            misses[row["rotina"]] = misses.get(row["rotina"], 0) + 1
+    return [f"🔁 {r}: {n} furos nos últimos 7 dias"
+            for r, n in sorted(misses.items()) if n >= settings.routine_miss_threshold]
+
+
+def _age_days(ms) -> int | None:
+    """Idade em dias de calendário desde a criação (ClickUp date_created em ms)."""
+    from datetime import date, datetime
+    if ms in (None, "", 0, "0"):
+        return None
+    created = datetime.fromtimestamp(int(ms) / 1000).date()
+    return (date.today() - created).days
+
+
+def _staging_metrics(raw: list[dict], area: str) -> tuple[int, int | None]:
+    """(qtd, idade-do-mais-velho-em-dias) da lista Staging. Degrada p/ (0, None) enquanto
+    a lista não existir no ClickUp (Task 6): `area` não está em AREA_LISTS, logo fetch_open
+    nem a traz. Idade por `date_created`."""
+    if area not in clickup_client.AREA_LISTS:
+        return 0, None
+    items = [t for t in raw if t.get("_area") == area]
+    ages = [a for a in (_age_days(t.get("date_created")) for t in items) if a is not None]
+    return len(items), (max(ages) if ages else None)
+
+
+async def run_digest() -> dict:
+    """Digest v2: cobranças por área (staging excluído) + staging envelhecendo + rotina-
+    padrão + capturas travadas. Dois corpos — `body_telegram` neutraliza áreas sensíveis
+    (lei 7), `body_app` mostra tudo — mais a lista `tasks` (fresca p/ a Home)."""
+    staging = getattr(clickup_client, "STAGING", "Staging")
+    staging_count, staging_oldest = 0, None
+    if _use_clickup():
+        raw = await clickup_client.fetch_open()
+        src = [_from_clickup(t) for t in raw]
+        staging_count, staging_oldest = _staging_metrics(raw, staging)
+    else:
+        src = _open()  # mock: sem lista Staging
+
+    selected = [t for t in cadence.select(src) if t.area != staging]
+    tasks = [_display(t) for t in selected]
+
+    extra: list[str] = []
+    sl = staging_line(staging_count, staging_oldest)
+    if sl:
+        extra.append(sl)
+    extra.extend(routine_lines())
+    n_failed = len(store.failed_captures())
+    if n_failed:                                   # linha neutra: nunca o conteúdo (lei 7)
+        extra.append(f"⚠ {n_failed} capturas não processadas — abrir o app")
+
+    body_telegram = "\n".join([*render_digest_lines(tasks, "telegram"), *extra])
+    body_app = "\n".join([*render_digest_lines(tasks, "app"), *extra])
+    return {"tasks": tasks, "body_telegram": body_telegram,
+            "body_app": body_app, "lines_extra": extra}
 
 
 async def get_detail(task_id: str) -> dict | None:
