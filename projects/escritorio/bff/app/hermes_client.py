@@ -10,10 +10,18 @@ import json as _json
 import logging
 import re as _re
 import subprocess
+from zoneinfo import ZoneInfo
 
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+# Fuso do Leo. `classify` injeta o AGORA neste fuso (não o do host) pra o modelo resolver
+# "às 15h" com o mesmo relógio que _parse_quando usa pra virar due_ts — no VPS Ubuntu (UTC)
+# um `now` naïve daria horário defasado. Duplica a const de capture_pipeline de propósito:
+# capture_pipeline importa hermes_client (não o contrário), então compartilhar daqui criaria
+# ciclo; se virar um 3º uso, extrair pra um app/tz.py comum.
+TZ = ZoneInfo("America/Sao_Paulo")
 
 # Enquadramento por modo (o SOUL.md já define o escritório; isto só escolhe o chapéu).
 MODE_FRAME = {
@@ -115,8 +123,8 @@ async def classify(text: str) -> dict:
     if settings.hermes_mock:
         return {"tipo": "nota", "titulo": None, "quando": None}
     from datetime import datetime
-    prompt = CLASSIFY_FRAME.format(now=f"{datetime.now():%Y-%m-%d %H:%M}",
-                                   tz="America/Sao_Paulo", text=text)
+    prompt = CLASSIFY_FRAME.format(now=f"{datetime.now(TZ):%Y-%m-%d %H:%M}",
+                                   tz=str(TZ), text=text)
     out = await _oneshot(prompt)
     m = _re.search(r"\{.*\}", out, _re.S)
     if not m:

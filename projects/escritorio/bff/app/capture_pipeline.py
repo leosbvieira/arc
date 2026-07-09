@@ -31,8 +31,9 @@ def _parse_quando(q: str | None) -> float | None:
         return None
     try:
         return datetime.strptime(q, "%Y-%m-%d %H:%M").replace(tzinfo=TZ).timestamp()
-    except ValueError:
-        return None
+    except (ValueError, TypeError):
+        return None            # formato invalido (ValueError) ou nao-string (TypeError) => sem due,
+                               # NAO bumpa attempts: um verdict bem-formado com quando ruim degrada, nao retenta
 
 
 async def _process_one(row: dict) -> None:

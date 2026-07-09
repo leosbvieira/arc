@@ -79,3 +79,9 @@ async def test_ja_criado_no_clickup_nao_duplica(spies, monkeypatch):
     store.mark_capture(cid, raw_path="r.md", clickup_task_id="tsk9")   # crash simulado pos-create
     await cp.process_pending()
     assert spies["clickup"] == []                                       # nao recria
+
+def test_parse_quando_degrada_para_none_em_lixo():
+    assert cp._parse_quando(None) is None                              # sem quando
+    assert cp._parse_quando(123) is None                              # nao-string de modelo malcomportado (TypeError)
+    assert cp._parse_quando("qualquer coisa") is None                 # formato invalido (ValueError)
+    assert isinstance(cp._parse_quando("2026-07-09 15:00"), float)     # hora marcada vira epoch
