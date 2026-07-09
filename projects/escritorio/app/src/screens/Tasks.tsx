@@ -1,6 +1,6 @@
+import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   RefreshControl,
@@ -11,8 +11,9 @@ import {
 } from "react-native";
 
 import { completeTask, createTask, listTasks, Task, TasksByArea } from "../api";
-import { areaColor, colors, radius, spacing } from "../theme";
-import { AppButton, Card, Field } from "../ui";
+import { TaskDetailModal } from "../TaskDetailModal";
+import { areaColor, colors, fonts, radius, spacing } from "../theme";
+import { AppButton, Card, ErrorState, Field, Skeleton } from "../ui";
 
 const AREAS = ["Trabalho", "Finanças", "Saúde", "Pessoal"];
 
@@ -25,15 +26,19 @@ function meta(t: Task): string {
 export default function Tasks() {
   const [data, setData] = useState<TasksByArea | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [name, setName] = useState("");
   const [area, setArea] = useState("Trabalho");
   const [busy, setBusy] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       setData(await listTasks());
-    } catch (e: any) {
-      Alert.alert("Tarefas", e?.message ?? "falhou");
+      setError(false);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -57,9 +62,9 @@ export default function Tasks() {
     }
   }
 
-  async function onDone(t: Task) {
+  async function completeById(id: string) {
     try {
-      await completeTask(t.id);
+      await completeTask(id);
       await load();
     } catch (e: any) {
       Alert.alert("Concluir", e?.message ?? "falhou");
@@ -88,7 +93,19 @@ export default function Tasks() {
       </Card>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 24 }} />
+        <View style={{ marginTop: spacing.lg }}>
+          <Skeleton height={14} style={{ width: 84, marginLeft: 2 }} />
+          <Skeleton height={70} />
+          <Skeleton height={70} />
+          <Skeleton height={14} style={{ width: 84, marginLeft: 2, marginTop: spacing.md }} />
+          <Skeleton height={70} />
+        </View>
+      ) : error ? (
+        <ErrorState
+          message="Não consegui falar com o servidor."
+          hint="O BFF (backend) está rodando na rede? Toque pra tentar de novo."
+          onRetry={load}
+        />
       ) : (
         <ScrollView
           style={{ marginTop: spacing.md }}
@@ -104,25 +121,35 @@ export default function Tasks() {
                 </View>
                 {g.tasks.map((t) => (
                   <View key={t.id} style={[styles.taskCard, { borderLeftColor: areaColor(t.area) }]}>
-                    <View style={{ flex: 1 }}>
+                    <Pressable style={{ flex: 1 }} onPress={() => setDetailId(t.id)}>
                       <Text style={styles.taskName}>{t.name}</Text>
                       <Text style={styles.taskMeta}>
                         {meta(t)}
                         {t.assignee ? ` · ${t.assignee}` : ""}
                       </Text>
-                    </View>
-                    <Pressable onPress={() => onDone(t)} style={styles.check}>
-                      <Text style={styles.checkText}>✓</Text>
+                    </Pressable>
+                    <Feather name="chevron-right" size={16} color={colors.textMuted} />
+                    <Pressable onPress={() => completeById(t.id)} style={styles.check} hitSlop={6}>
+                      <Feather name="check" size={18} color={colors.success} />
                     </Pressable>
                   </View>
                 ))}
               </View>
             ))
           ) : (
-            <Text style={styles.empty}>tudo em dia ✅</Text>
+            <View style={styles.emptyWrap}>
+              <Feather name="check-circle" size={30} color={colors.success} />
+              <Text style={styles.empty}>tudo em dia</Text>
+            </View>
           )}
         </ScrollView>
       )}
+
+      <TaskDetailModal
+        taskId={detailId}
+        onClose={() => setDetailId(null)}
+        onComplete={completeById}
+      />
     </View>
   );
 }
@@ -136,15 +163,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1.5,
   },
-  pillText: { fontWeight: "600", fontSize: 13 },
+  pillText: { fontFamily: fonts.uiSemi, fontSize: 13 },
   areaHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
   dot: { width: 10, height: 10, borderRadius: 5 },
   areaLabel: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontFamily: fonts.mono,
+    fontSize: 11,
     color: colors.textMuted,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
   },
   taskCard: {
     backgroundColor: colors.card,
@@ -158,8 +185,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
   },
-  taskName: { fontSize: 16, color: colors.text, fontWeight: "500" },
-  taskMeta: { fontSize: 12.5, color: colors.textMuted, marginTop: 3 },
+  taskName: { fontFamily: fonts.uiSemi, fontSize: 15.5, color: colors.text },
+  taskMeta: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted, marginTop: 3 },
   check: {
     width: 36,
     height: 36,
@@ -169,6 +196,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  checkText: { color: colors.success, fontSize: 16, fontWeight: "700" },
-  empty: { textAlign: "center", color: colors.textMuted, marginTop: 32 },
+  emptyWrap: { alignItems: "center", marginTop: 40, gap: spacing.sm },
+  empty: { fontFamily: fonts.ui, textAlign: "center", color: colors.textMuted },
 });

@@ -7,6 +7,9 @@
     "android": "expo start --android"
   },
   "dependencies": {
+    "@expo-google-fonts/fraunces": "^0.4.1",
+    "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
     "expo": "^54.0.0",
     "expo-asset": "~12.0.13",
     "expo-constants": "~18.0.13",

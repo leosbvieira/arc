@@ -1,10 +1,16 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env fica na raiz do bff/ (um nível acima do pacote app/). Caminho ABSOLUTO pra o
+# .env ser lido independentemente de onde o uvicorn é iniciado (CWD não importa).
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
     """Config lida de variáveis de ambiente / .env. Segredos NUNCA no código."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     # auth single-user
     app_password: str = "troque-esta-senha"
@@ -16,6 +22,14 @@ class Settings(BaseSettings):
     hermes_base_url: str = "http://localhost:8080"
     hermes_api_key: str = ""
     hermes_profile_capture: str = "Leitura"
+    # Integração real = chamar a CLI do Hermes em oneshot (`hermes -z`), não HTTP.
+    hermes_bin: str = "hermes"        # caminho do hermes.exe (ou "hermes" se no PATH)
+    hermes_timeout: int = 150         # segundos por chamada (o agente pode usar tools)
+
+    # ClickUp (fonte real das tarefas — porta REST, não MCP)
+    tasks_source: str = "mock"          # "mock" | "clickup"
+    clickup_token: str = ""             # pk_...
+    clickup_verify_ssl: str = "true"    # "true" | "false" | caminho do .pem da CA
 
     # push
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"

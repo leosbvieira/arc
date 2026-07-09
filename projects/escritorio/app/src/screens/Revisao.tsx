@@ -1,7 +1,8 @@
+import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,30 +10,35 @@ import {
   View,
 } from "react-native";
 
-import { Digest, getDigest, Task } from "../api";
-import { areaColor, colors, radius, spacing } from "../theme";
-import { Card } from "../ui";
+import { completeTask, Digest, getDigest, Task } from "../api";
+import { TaskDetailModal } from "../TaskDetailModal";
+import { areaColor, colors, fonts, radius, spacing } from "../theme";
+import { Card, ErrorState, Skeleton } from "../ui";
 
-function severity(t: Task): { color: string; icon: string } {
+function severity(t: Task): { color: string; icon: any } {
   const d = (t.due ?? "").toLowerCase();
   if (d.startsWith("atrasada")) {
     const n = parseInt(d.replace(/\D+/g, "") || "0", 10);
-    if (n >= 7) return { color: colors.danger, icon: "🚨" };
-    if (n >= 3) return { color: colors.danger, icon: "🔴" };
-    return { color: colors.amber, icon: "🟠" };
+    if (n >= 7) return { color: colors.danger, icon: "alert-octagon" };
+    if (n >= 3) return { color: colors.danger, icon: "alert-circle" };
+    return { color: colors.amber, icon: "alert-triangle" };
   }
-  return { color: colors.amber, icon: "🟡" };
+  return { color: colors.amber, icon: "clock" };
 }
 
 export default function Revisao() {
   const [d, setD] = useState<Digest | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       setD(await getDigest());
-    } catch (e: any) {
-      Alert.alert("Revisão", e?.message ?? "falhou");
+      setError(false);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -42,8 +48,13 @@ export default function Revisao() {
     load();
   }, [load]);
 
-  if (loading) {
-    return <ActivityIndicator style={{ marginTop: 24 }} />;
+  async function completeById(id: string) {
+    try {
+      await completeTask(id);
+      await load();
+    } catch (e: any) {
+      Alert.alert("Concluir", e?.message ?? "falhou");
+    }
   }
 
   const tasks = d?.tasks ?? [];
@@ -57,6 +68,19 @@ export default function Revisao() {
         </View>
       </View>
 
+      {loading ? (
+        <View style={{ marginTop: spacing.lg }}>
+          <Skeleton height={64} />
+          <Skeleton height={64} />
+          <Skeleton height={64} />
+        </View>
+      ) : error ? (
+        <ErrorState
+          message="Não consegui falar com o servidor."
+          hint="O BFF (backend) está rodando na rede? Toque pra tentar de novo."
+          onRetry={load}
+        />
+      ) : (
       <ScrollView
         style={{ marginTop: spacing.md }}
         contentContainerStyle={{ paddingBottom: spacing.xl }}
@@ -66,8 +90,12 @@ export default function Revisao() {
           tasks.map((t) => {
             const s = severity(t);
             return (
-              <View key={t.id} style={[styles.row, { borderLeftColor: s.color }]}>
-                <Text style={{ fontSize: 18 }}>{s.icon}</Text>
+              <Pressable
+                key={t.id}
+                onPress={() => setDetailId(t.id)}
+                style={[styles.row, { borderLeftColor: s.color }]}
+              >
+                <Feather name={s.icon} size={18} color={s.color} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{t.name}</Text>
                   <Text style={styles.meta}>
@@ -78,23 +106,30 @@ export default function Revisao() {
                 <View style={[styles.areaTag, { backgroundColor: areaColor(t.area) + "22" }]}>
                   <Text style={[styles.areaTagText, { color: areaColor(t.area) }]}>{t.area}</Text>
                 </View>
-              </View>
+              </Pressable>
             );
           })
         ) : (
           <Card style={styles.emptyCard}>
-            <Text style={{ fontSize: 32 }}>✅</Text>
-            <Text style={{ color: colors.textMuted, marginTop: spacing.sm }}>tudo em dia</Text>
+            <Feather name="check-circle" size={32} color={colors.success} />
+            <Text style={styles.emptyText}>tudo em dia</Text>
           </Card>
         )}
       </ScrollView>
+      )}
+
+      <TaskDetailModal
+        taskId={detailId}
+        onClose={() => setDetailId(null)}
+        onComplete={completeById}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  title: { fontSize: 18, fontWeight: "700", color: colors.text },
+  title: { fontFamily: fonts.serif, fontSize: 21, color: colors.text },
   badge: {
     backgroundColor: colors.primary,
     borderRadius: radius.pill,
@@ -103,7 +138,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     alignItems: "center",
   },
-  badgeText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  badgeText: { fontFamily: fonts.uiBold, color: colors.primaryText, fontSize: 13 },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -116,9 +151,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
-  name: { fontSize: 15.5, color: colors.text, fontWeight: "500" },
-  meta: { fontSize: 12.5, color: colors.textMuted, marginTop: 3 },
+  name: { fontFamily: fonts.uiSemi, fontSize: 15.5, color: colors.text },
+  meta: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted, marginTop: 3 },
   areaTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm },
-  areaTagText: { fontSize: 11, fontWeight: "700" },
-  emptyCard: { alignItems: "center", paddingVertical: spacing.xl },
+  areaTagText: { fontFamily: fonts.mono, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase" },
+  emptyCard: { alignItems: "center", paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyText: { fontFamily: fonts.ui, color: colors.textMuted },
 });

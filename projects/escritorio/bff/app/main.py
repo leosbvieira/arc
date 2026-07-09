@@ -93,6 +93,14 @@ async def complete_task(task_id: str, _: str = Depends(require_auth)):
     return {"ok": True}
 
 
+@app.get("/tasks/{task_id}")
+async def get_task_detail(task_id: str, _: str = Depends(require_auth)):
+    d = await tasks.get_detail(task_id)
+    if d is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "task não encontrada")
+    return d
+
+
 @app.get("/digest")
 async def get_digest(_: str = Depends(require_auth)):
     """Digest de cobranças pro app (sem push). Mesmo cálculo do /internal/run-digest."""

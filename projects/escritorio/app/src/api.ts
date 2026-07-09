@@ -2,9 +2,11 @@ import * as SecureStore from "expo-secure-store";
 
 const KEY = "session_token";
 
-// IP da máquina na Wi-Fi (detectado). Se o IP mudar (outra rede/DHCP), atualize:
-// `ipconfig` → IPv4 do adaptador Wi-Fi. NÃO use "localhost" (no celular é o próprio telefone).
-export const BFF_URL = "http://192.168.80.109:8000";
+// IP da máquina na rede local (detectado 2026-07-05: Ethernet 192.168.0.5).
+// Se o IP mudar (outra rede/DHCP), atualize: `ipconfig` → IPv4 do adaptador ativo.
+// NÃO use "localhost" (no celular é o próprio telefone). O celular precisa estar na
+// MESMA rede (mesmo roteador 192.168.0.x) que o PC.
+export const BFF_URL = "http://192.168.0.5:8000";
 
 export async function getToken(): Promise<string | null> {
   return SecureStore.getItemAsync(KEY);
@@ -30,7 +32,7 @@ export async function login(password: string): Promise<string> {
   return data.token;
 }
 
-export async function capture(text: string): Promise<string> {
+export async function capture(text: string, profile?: string): Promise<string> {
   const token = await getToken();
   const r = await fetch(`${BFF_URL}/capture`, {
     method: "POST",
@@ -38,7 +40,7 @@ export async function capture(text: string): Promise<string> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, profile }),
   });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   const data = (await r.json()) as { reply: string };
@@ -108,4 +110,17 @@ export async function getDigest(): Promise<Digest> {
   const r = await fetch(`${BFF_URL}/digest`, { headers: await authHeaders() });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   return (await r.json()) as Digest;
+}
+
+// ---- Detalhe de tarefa (com descrição, tipo ClickUp) ----
+export type TaskDetail = Task & {
+  priority?: string | null;
+  description?: string;
+  url?: string | null;
+};
+
+export async function getTaskDetail(id: string): Promise<TaskDetail> {
+  const r = await fetch(`${BFF_URL}/tasks/${id}`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+  return (await r.json()) as TaskDetail;
 }

@@ -1,3 +1,14 @@
+import { Feather } from "@expo/vector-icons";
+import { useFonts, Fraunces_500Medium } from "@expo-google-fonts/fraunces";
+import {
+  IBMPlexMono_500Medium,
+} from "@expo-google-fonts/ibm-plex-mono";
+import {
+  SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+} from "@expo-google-fonts/space-grotesk";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
@@ -15,25 +26,36 @@ import {
 import { getToken, login, registerDevice } from "./src/api";
 import { registerForPushToken } from "./src/notifications";
 import Capture from "./src/screens/Capture";
+import Chat from "./src/screens/Chat";
+import Home from "./src/screens/Home";
 import Revisao from "./src/screens/Revisao";
 import Tasks from "./src/screens/Tasks";
-import { colors, spacing } from "./src/theme";
+import { colors, fonts, spacing } from "./src/theme";
 import { AppButton, Card, Field } from "./src/ui";
 
-type Tab = "capturar" | "tarefas" | "revisao";
+type Tab = "home" | "capturar" | "tarefas" | "chat" | "revisao";
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: "capturar", label: "Capturar", icon: "✍️" },
-  { key: "tarefas", label: "Tarefas", icon: "📋" },
-  { key: "revisao", label: "Revisão", icon: "🔔" },
+  { key: "home", label: "Home", icon: "home" },
+  { key: "capturar", label: "Capturar", icon: "feather" },
+  { key: "tarefas", label: "Tarefas", icon: "check-square" },
+  { key: "chat", label: "Chat", icon: "message-circle" },
 ];
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Fraunces_500Medium,
+    SpaceGrotesk_400Regular,
+    SpaceGrotesk_500Medium,
+    SpaceGrotesk_600SemiBold,
+    SpaceGrotesk_700Bold,
+    IBMPlexMono_500Medium,
+  });
   const [ready, setReady] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<Tab>("capturar");
+  const [tab, setTab] = useState<Tab>("home");
 
   useEffect(() => {
     getToken().then((t) => {
@@ -64,10 +86,10 @@ export default function App() {
     }
   }
 
-  if (!ready) {
+  if (!ready || !fontsLoaded) {
     return (
       <SafeAreaView style={[styles.screen, styles.center]}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <Text style={styles.brand}>escritório</Text>
       </SafeAreaView>
     );
@@ -76,7 +98,7 @@ export default function App() {
   if (!authed) {
     return (
       <SafeAreaView style={styles.screen}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={[styles.center, { flex: 1, paddingHorizontal: spacing.xl }]}
@@ -84,7 +106,7 @@ export default function App() {
           <Text style={styles.brand}>escritório</Text>
           <Text style={styles.tagline}>seu comando pessoal</Text>
           <Card style={{ width: "100%", marginTop: spacing.xl, gap: spacing.md }}>
-            <Text style={styles.label}>Senha</Text>
+            <Text style={styles.label}>SENHA</Text>
             <Field
               secureTextEntry
               autoCapitalize="none"
@@ -99,18 +121,42 @@ export default function App() {
     );
   }
 
-  const current = TABS.find((t) => t.key === tab)!;
+  const isFull = tab === "home" || tab === "chat";
+  const title = tab === "revisao" ? "Revisão" : TABS.find((t) => t.key === tab)?.label ?? "";
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar style="dark" />
-      <View style={styles.header}>
-        <Text style={styles.brand}>escritório</Text>
-        <Text style={styles.section}>{current.label}</Text>
-      </View>
+      <StatusBar style="light" />
+      {tab !== "home" && (
+        <View style={styles.header}>
+          {tab === "revisao" ? (
+            <Pressable
+              onPress={() => setTab("home")}
+              hitSlop={8}
+              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+            >
+              <Feather name="chevron-left" size={20} color={colors.text} />
+              <Text style={styles.brand}>escritório</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.brand}>escritório</Text>
+          )}
+          <Text style={styles.section}>{title}</Text>
+        </View>
+      )}
 
-      <View style={styles.content}>
-        {tab === "capturar" ? <Capture /> : tab === "tarefas" ? <Tasks /> : <Revisao />}
+      <View style={[styles.content, isFull && { paddingHorizontal: 0 }]}>
+        {tab === "home" ? (
+          <Home onOpenTab={(t) => setTab(t as Tab)} />
+        ) : tab === "capturar" ? (
+          <Capture />
+        ) : tab === "tarefas" ? (
+          <Tasks />
+        ) : tab === "chat" ? (
+          <Chat />
+        ) : (
+          <Revisao />
+        )}
       </View>
 
       <View style={styles.tabbar}>
@@ -118,7 +164,11 @@ export default function App() {
           const active = t.key === tab;
           return (
             <Pressable key={t.key} onPress={() => setTab(t.key)} style={styles.tabItem}>
-              <Text style={[styles.tabIcon, { opacity: active ? 1 : 0.4 }]}>{t.icon}</Text>
+              <Feather
+                name={t.icon as any}
+                size={21}
+                color={active ? colors.primary : colors.textMuted}
+              />
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
             </Pressable>
           );
@@ -135,9 +185,9 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0,
   },
   center: { alignItems: "center", justifyContent: "center" },
-  brand: { fontSize: 26, fontWeight: "800", color: colors.text, letterSpacing: -0.5 },
-  tagline: { color: colors.textMuted, marginTop: 4 },
-  label: { fontSize: 13, color: colors.textMuted, fontWeight: "600" },
+  brand: { fontFamily: fonts.uiBold, fontSize: 24, color: colors.text, letterSpacing: -0.5 },
+  tagline: { fontFamily: fonts.serif, color: colors.textMuted, marginTop: 6, fontSize: 15 },
+  label: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, letterSpacing: 1 },
   header: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
@@ -146,18 +196,17 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     justifyContent: "space-between",
   },
-  section: { color: colors.textMuted, fontSize: 15, fontWeight: "600" },
+  section: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 15 },
   content: { flex: 1, paddingHorizontal: spacing.lg },
   tabbar: {
     flexDirection: "row",
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.sm,
     paddingBottom: spacing.md,
   },
-  tabItem: { flex: 1, alignItems: "center", gap: 2, paddingVertical: 4 },
-  tabIcon: { fontSize: 20 },
-  tabLabel: { fontSize: 11, color: colors.textMuted },
-  tabLabelActive: { color: colors.primary, fontWeight: "700" },
+  tabItem: { flex: 1, alignItems: "center", gap: 4, paddingVertical: 4 },
+  tabLabel: { fontFamily: fonts.ui, fontSize: 10.5, color: colors.textMuted },
+  tabLabelActive: { color: colors.primary, fontFamily: fonts.uiSemi },
 });

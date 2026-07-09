@@ -1,6 +1,8 @@
-import { ReactNode } from "react";
+import { Feather } from "@expo/vector-icons";
+import { ReactNode, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -11,7 +13,7 @@ import {
   ViewStyle,
 } from "react-native";
 
-import { colors, radius, shadow, spacing } from "./theme";
+import { colors, fonts, radius, shadow, spacing } from "./theme";
 
 export function Card({
   children,
@@ -69,6 +71,49 @@ export function Field(props: TextInputProps) {
   );
 }
 
+export function Skeleton({
+  height = 64,
+  style,
+}: {
+  height?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const op = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(op, { toValue: 0.85, duration: 750, useNativeDriver: true }),
+        Animated.timing(op, { toValue: 0.4, duration: 750, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [op]);
+  return <Animated.View style={[styles.skeleton, { height, opacity: op }, style]} />;
+}
+
+export function ErrorState({
+  message,
+  hint,
+  onRetry,
+}: {
+  message: string;
+  hint?: string;
+  onRetry: () => void;
+}) {
+  return (
+    <View style={styles.errWrap}>
+      <Feather name="wifi-off" size={28} color={colors.textMuted} />
+      <Text style={styles.errText}>{message}</Text>
+      {hint ? <Text style={styles.errHint}>{hint}</Text> : null}
+      <Pressable onPress={onRetry} style={styles.errBtn}>
+        <Feather name="refresh-cw" size={14} color={colors.text} />
+        <Text style={styles.errBtnText}>Tentar de novo</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.card,
@@ -87,7 +132,7 @@ const styles = StyleSheet.create({
   },
   btnPrimary: { backgroundColor: colors.primary },
   btnGhost: { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border },
-  btnText: { fontSize: 16, fontWeight: "600" },
+  btnText: { fontSize: 16, fontFamily: fonts.uiSemi },
   btnTextPrimary: { color: colors.primaryText },
   btnTextGhost: { color: colors.text },
   field: {
@@ -98,6 +143,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontSize: 16,
+    fontFamily: fonts.ui,
     color: colors.text,
   },
+  skeleton: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+  },
+  errWrap: { alignItems: "center", justifyContent: "center", paddingVertical: 48, gap: spacing.sm },
+  errText: { fontFamily: fonts.uiSemi, fontSize: 15, color: colors.text, textAlign: "center" },
+  errHint: { fontFamily: fonts.ui, fontSize: 13, color: colors.textMuted, textAlign: "center", paddingHorizontal: spacing.xl },
+  errBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  errBtnText: { fontFamily: fonts.uiSemi, fontSize: 13, color: colors.text },
 });
