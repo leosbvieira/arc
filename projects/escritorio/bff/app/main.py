@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
@@ -74,6 +75,15 @@ class CaptureOut(BaseModel):
     queued: bool = False
 
 
+class SessionIn(BaseModel):
+    tipo: Literal["leitura", "foco", "treino", "corrida"] = "leitura"
+    livro: str | None = None
+    projeto: str | None = None
+    paginas: int | None = None
+    duracao_s: int
+    notas: str = ""
+
+
 class ChatIn(BaseModel):
     text: str
     mode: str = "Mentor"
@@ -134,6 +144,32 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     cid = store.enqueue_capture(body.text, body.profile, body.client_key)
     store.log_event("capture_in", ref=str(cid))
     return CaptureOut(reply="✅ anotado", queued=True)
+
+
+@app.post("/sessions")
+async def create_session(body: SessionIn, _=Depends(require_auth)):
+    import time as _t
+
+    fim = _t.time()
+    sid = store.add_session(
+        body.tipo,
+        body.projeto or body.livro,
+        body.tipo,
+        fim - body.duracao_s,
+        fim,
+        body.duracao_s,
+        body.paginas,
+        body.livro,
+    )
+    raw_path = None
+    if body.notas.strip():
+        raw_path = await vault_client.write_raw(body.notas, f"s{sid}")
+    store.log_event(
+        "session_logged",
+        ref=str(sid),
+        meta={"tipo": body.tipo, "s": body.duracao_s},
+    )
+    return {"ok": True, "session_id": sid, "raw_path": raw_path}
 
 
 @app.post("/chat", response_model=ChatOut)

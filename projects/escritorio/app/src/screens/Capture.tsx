@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 
-import { capture } from "../api";
+import { capture, logSession } from "../api";
 import {
   createCaptureClientKey,
   enqueue,
@@ -45,18 +45,11 @@ function parse(raw: string): { kind?: string; book?: string; text: string } {
   return { kind: "comentário", text: t };
 }
 
-const SEED: Item[] = [
-  {
-    id: "s1",
-    kind: "citação",
-    text: "A verdadeira sabedoria está em reconhecer a própria ignorância.",
-  },
-  {
-    id: "s2",
-    kind: "comentário",
-    text: "Conversa com o que o Taleb fala de antifragilidade.",
-  },
-];
+function formatElapsed(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
 
 export default function Capture() {
   const [mode, setMode] = useState<Mode>("captura");
@@ -69,10 +62,14 @@ export default function Capture() {
   const [status, setStatus] = useState("");
 
   // sessão de leitura
-  const [book, setBook] = useState("Antifrágil · p. 85");
-  const [items, setItems] = useState<Item[]>(SEED);
+  const [book, setBook] = useState("");
+  const [pageStart, setPageStart] = useState("");
+  const [pageEnd, setPageEnd] = useState("");
+  const [items, setItems] = useState<Item[]>([]);
   const [entry, setEntry] = useState("");
   const [compiling, setCompiling] = useState(false);
+  const [sessionStart, setSessionStart] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Fila offline (§10): reenvia pendentes ao montar e sempre que o app volta ao foco.
   useEffect(() => {
@@ -90,6 +87,22 @@ export default function Capture() {
       sub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (sessionStart === null) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const update = () => {
+      setElapsedSeconds(
+        Math.floor((Date.now() - sessionStart) / 1000),
+      );
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [sessionStart]);
 
   async function onSend() {
     const t = text.trim();
@@ -153,24 +166,56 @@ export default function Capture() {
   const ankiCount = items.filter((it) => it.anki).length;
 
   function sessionText(): string {
-    const lines = [`livro: ${book}`];
-    for (const it of items) {
-      lines.push(
-        `${it.kind}: ${it.text}${it.anki ? " [★ anki]" : ""}`,
-      );
+    return items
+      .map(
+        (it) =>
+          `${it.kind}: ${it.text}${it.anki ? " [★ anki]" : ""}`,
+      )
+      .join("\n");
+  }
+
+  function paginasLidas(): number | null {
+    const initialText = pageStart.trim();
+    const finalText = pageEnd.trim();
+    if (!initialText || !finalText) return null;
+
+    const initial = Number(initialText);
+    const final = Number(finalText);
+    if (!Number.isFinite(initial) || !Number.isFinite(final)) {
+      return null;
     }
-    return lines.join("\n");
+    return final - initial;
   }
 
   async function compilar() {
-    if (!items.length || compiling) return;
+    if (compiling) return;
+
+    const duracao_s = sessionStart
+      ? Math.round((Date.now() - sessionStart) / 1000)
+      : 0;
+    const payload = {
+      tipo: "leitura",
+      livro: book.trim() || null,
+      paginas: paginasLidas(),
+      duracao_s,
+      notas: sessionText(),
+    };
+
     setCompiling(true);
+    setStatus("");
     try {
-      const clientKey = createCaptureClientKey();
-      const r = await capture(sessionText(), "Leitura", clientKey);
-      Alert.alert("Sessão compilada", r);
-    } catch (e: any) {
-      Alert.alert("Compilar", e?.message ?? "falhou");
+      await logSession(payload);
+      Alert.alert("Sessão compilada", "Sessão registrada.");
+    } catch {
+      await enqueue({
+        kind: "session",
+        payload,
+        ts: Date.now(),
+      });
+      setPending(await pendingCount());
+      setStatus(
+        "sem conexão — sessão guardada, reenvio automático",
+      );
     } finally {
       setCompiling(false);
     }
@@ -247,13 +292,59 @@ export default function Capture() {
         </View>
       ) : (
         <View style={{ flex: 1, paddingTop: spacing.md }}>
+          <View style={styles.sessionFields}>
+            <Field
+              value={book}
+              onChangeText={setBook}
+              placeholder="Livro"
+            />
+            <View style={styles.pagesRow}>
+              <Field
+                style={{ flex: 1 }}
+                value={pageStart}
+                onChangeText={setPageStart}
+                placeholder="Página inicial"
+                keyboardType="number-pad"
+              />
+              <Field
+                style={{ flex: 1 }}
+                value={pageEnd}
+                onChangeText={setPageEnd}
+                placeholder="Página final (opcional)"
+                keyboardType="number-pad"
+              />
+            </View>
+            <AppButton
+              title="▶ iniciar sessão"
+              variant="ghost"
+              onPress={() => setSessionStart(Date.now())}
+            />
+            {sessionStart !== null ? (
+              <View style={styles.timerRow}>
+                <Feather
+                  name="clock"
+                  size={15}
+                  color={colors.primary}
+                />
+                <Text style={styles.timerText}>
+                  {formatElapsed(elapsedSeconds)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
           <View style={styles.bookHead}>
             <Feather
               name="book"
               size={16}
               color={colors.primary}
             />
-            <Text style={styles.bookTitle}>{book}</Text>
+            <Text
+              style={styles.bookTitle}
+              numberOfLines={1}
+            >
+              {book.trim() || "Sessão de leitura"}
+            </Text>
             <Text style={styles.bookCount}>
               {items.length} itens
               {ankiCount ? ` · ★${ankiCount}` : ""}
@@ -339,6 +430,21 @@ export default function Capture() {
             onPress={compilar}
             loading={compiling}
           />
+          {pending > 0 ? (
+            <View style={styles.queueRow}>
+              <Feather
+                name="clock"
+                size={12}
+                color={colors.textMuted}
+              />
+              <Text style={styles.queueText}>
+                {pending} na fila local
+              </Text>
+            </View>
+          ) : null}
+          {status ? (
+            <Text style={styles.status}>{status}</Text>
+          ) : null}
         </View>
       )}
     </View>
@@ -408,12 +514,32 @@ const styles = StyleSheet.create({
     marginTop: -spacing.xs,
   },
 
+  sessionFields: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  pagesRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  timerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+  },
+  timerText: {
+    fontFamily: fonts.mono,
+    fontSize: 18,
+    color: colors.primary,
+  },
   bookHead: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
   bookTitle: {
+    flex: 1,
     fontFamily: fonts.serif,
     fontSize: 17,
     color: colors.text,

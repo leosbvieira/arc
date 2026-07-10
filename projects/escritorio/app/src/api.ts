@@ -74,6 +74,24 @@ export async function capture(
   return data.reply;
 }
 
+export async function logSession(body: {
+  tipo: string;
+  livro?: string | null;
+  projeto?: string | null;
+  paginas?: number | null;
+  duracao_s: number;
+  notas: string;
+}): Promise<{ ok: boolean }> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/sessions`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+  return (await r.json()) as { ok: boolean };
+}
+
 // Chat síncrono: fala com o Hermes no modo escolhido (Mentor/Conselho/Capturas) e
 // devolve a resposta. Rota separada do /capture (que virou fila fire-and-forget).
 export async function chatSend(text: string, mode: string): Promise<string> {

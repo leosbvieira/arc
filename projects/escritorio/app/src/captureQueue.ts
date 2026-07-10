@@ -1,5 +1,5 @@
 import * as SecureStore from "expo-secure-store";
-import { capture } from "./api";
+import { capture, logSession } from "./api";
 
 const IDX = "oq_idx_v2"; // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
 // Limite do SecureStore e em BYTES (~2048). Fatiamos por CARACTERES no pior caso UTF-8:
@@ -120,7 +120,7 @@ async function sendOne(it: QueuedItem): Promise<void> {
       it.payload.client_key,
     );
   } else {
-    throw new Error("kind não suportado"); // kind "session" chega na Task 15
+    await logSession(it.payload);
   }
 }
 
