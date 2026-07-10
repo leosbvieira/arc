@@ -23,6 +23,11 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
+NUDGE_COPY = {
+    "closing": "21h — fechar o dia? 90 segundos bastam: 1 linha + checks.",
+    "review": "domingo 20h — review semanal. Os números da semana te esperam no app.",
+}
+
 
 async def _capture_worker() -> None:
     """Worker de fundo da fila de captura (B6/§10): recupera claims órfãos uma vez,
@@ -147,6 +152,10 @@ class ClosingApproveIn(BaseModel):
     draft_md: str
     template: str = "yoga"
     checks: list[CheckItem] = []
+
+
+class NudgeIn(BaseModel):
+    kind: Literal["closing", "review"]
 
 
 @app.get("/health")
@@ -350,6 +359,25 @@ def _check_internal(token: str) -> None:
             status.HTTP_403_FORBIDDEN,
             "token interno inválido",
         )
+
+
+@app.post("/internal/nudge")
+async def internal_nudge(
+    body: NudgeIn,
+    x_internal_token: str = Header(""),
+):
+    _check_internal(x_internal_token)
+    if store.notif_sent_today(f"nudge_{body.kind}"):
+        return {"skipped": True}
+    text = NUDGE_COPY[body.kind]
+    if body.kind == "review":
+        try:
+            text = text + "\n\n" + tasks.weekly_review_text()
+        except Exception:
+            pass
+    delivered = await telegram.send(text)
+    store.log_notif(f"nudge_{body.kind}", "telegram", delivered)
+    return {"ok": True, "telegram": delivered}
 
 
 @app.post("/internal/notify")
