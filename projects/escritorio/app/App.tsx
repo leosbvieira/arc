@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import {
   Alert,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -24,6 +25,7 @@ import {
 } from "react-native";
 
 import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
+import { flush } from "./src/captureQueue";
 import { registerForPushToken } from "./src/notifications";
 import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
@@ -70,6 +72,21 @@ export default function App() {
     getBffUrl().then(setServer);
   }, []);
 
+  useEffect(() => {
+    if (!authed) return;
+
+    const sync = () => {
+      flush().catch((e) => console.log("capture queue:", e));
+    };
+
+    sync();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") sync();
+    });
+
+    return () => sub.remove();
+  }, [authed]);
+
   async function afterAuth() {
     setAuthed(true);
     try {
@@ -83,7 +100,9 @@ export default function App() {
   async function onLogin() {
     setBusy(true);
     try {
-      await setBffUrl(server);
+      if (server.trim()) {
+        await setBffUrl(server);
+      }
       await login(password);
       await afterAuth();
     } catch (e: any) {

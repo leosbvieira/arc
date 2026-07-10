@@ -75,16 +75,16 @@ export default function Capture() {
   const [sessionStart, setSessionStart] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Fila offline (§10): reenvia pendentes ao montar e sempre que o app volta ao foco.
+  // O flush global fica em App; esta tela só atualiza o badge local no foco.
   useEffect(() => {
     let alive = true;
-    const sync = async () => {
-      const remaining = await flush();
-      if (alive) setPending(remaining);
+    const refreshPending = async () => {
+      const count = await pendingCount();
+      if (alive) setPending(count);
     };
-    sync();
+    refreshPending();
     const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") sync();
+      if (s === "active") refreshPending();
     });
     return () => {
       alive = false;
@@ -118,7 +118,21 @@ export default function Capture() {
     setBusy(true);
     setStatus("");
     try {
-      await flush(); // esvazia pendentes antes do envio novo — preserva a ordem
+      const restantes = await flush();
+      if (restantes > 0) {
+        await enqueue({
+          kind: "capture",
+          payload: { text: t, client_key: clientKey },
+          ts,
+        });
+        setText("");
+        setPending(await pendingCount());
+        setStatus(
+          "sem conexão — guardado no aparelho, reenvio automático",
+        );
+        return;
+      }
+
       const r = await capture(t, undefined, clientKey);
       setReply(r);
       setText("");
@@ -223,10 +237,12 @@ export default function Capture() {
         payload,
         ts,
       });
+      setSessionStart(null);
+      setItems([]);
+      setPageStart("");
+      setPageEnd("");
+      setStatus("sessão guardada — reenvio automático");
       setPending(await pendingCount());
-      setStatus(
-        "sem conexão — sessão guardada, reenvio automático",
-      );
     } finally {
       setCompiling(false);
     }

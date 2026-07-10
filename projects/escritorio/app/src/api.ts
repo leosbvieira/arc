@@ -174,7 +174,7 @@ export async function completeTask(id: string): Promise<void> {
 }
 
 // ---- Digest / Revisão (T-A7) ----
-export type Digest = { count: number; text: string; body: string; tasks: Task[] };
+export type Digest = { count: number; text?: string; body: string; tasks: Task[] };
 
 export async function getDigest(): Promise<Digest> {
   const base = await getBffUrl();
