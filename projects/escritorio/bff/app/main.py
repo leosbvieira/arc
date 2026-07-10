@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from . import (
     capture_pipeline,
+    clickup_client,
     hermes_client,
     push,
     routines,
@@ -201,6 +202,35 @@ async def get_digest(_: str = Depends(require_auth)):
         "body": fresh["body_app"],
         "tasks": fresh["tasks"],
     }
+
+
+@app.get("/review/weekly")
+async def review_weekly(_=Depends(require_auth)):
+    pack = tasks.weekly_review_pack()
+    try:
+        from datetime import time, timedelta, timezone
+        from zoneinfo import ZoneInfo
+
+        local_tz = ZoneInfo("America/Sao_Paulo")
+        today = datetime.now(local_tz).date()
+        monday = today - timedelta(days=today.weekday())
+        monday_local = datetime.combine(
+            monday,
+            time.min,
+            tzinfo=local_tz,
+        )
+        ts_ms = int(
+            monday_local.astimezone(timezone.utc).timestamp() * 1000,
+        )
+        pack["tarefas_concluidas"] = (
+            await clickup_client.count_closed_since(ts_ms)
+        )
+        pack["staging_pendentes"] = await clickup_client.count_open(
+            clickup_client.AREA_LISTS[clickup_client.STAGING],
+        )
+    except Exception:
+        pass
+    return pack
 
 
 @app.get("/closing/routines")

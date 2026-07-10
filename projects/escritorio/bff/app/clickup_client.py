@@ -102,6 +102,27 @@ async def _list_tasks(
     return r.json().get("tasks", [])
 
 
+async def _fetch_list(
+    list_id: str,
+    params: dict | None = None,
+) -> list[dict]:
+    """Busca tarefas de uma lista com os defaults usados por fetch_open."""
+    if params is None:
+        params = {
+            "archived": "false",
+            "subtasks": "false",
+            "include_closed": "false",
+        }
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        r = await client.get(
+            f"{API}/list/{list_id}/task",
+            params=params,
+            headers=_headers(),
+        )
+        r.raise_for_status()
+        return r.json().get("tasks", [])
+
+
 async def find_task_by_marker(list_id: str, marker: str) -> str | None:
     """Procura inclusive tarefas fechadas cujo conteúdo contenha o marker da captura."""
     if not marker:
@@ -125,14 +146,33 @@ async def fetch_open() -> list[dict]:
     senão a tarefa marcada como feita não some da lista.
     """
     out: list[dict] = []
-    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        for area, lid in AREA_LISTS.items():
-            for t in await _list_tasks(client, lid):
-                if ((t.get("status") or {}).get("type")) in ("done", "closed"):
-                    continue
-                t["_area"] = area
-                out.append(t)
+    for area, lid in AREA_LISTS.items():
+        for task in await _fetch_list(lid):
+            if ((task.get("status") or {}).get("type")) in ("done", "closed"):
+                continue
+            task["_area"] = area
+            out.append(task)
     return out
+
+
+async def count_open(list_id: str) -> int:
+    """Quantidade retornada pelo ClickUp para uma lista aberta."""
+    return len(await _fetch_list(list_id))
+
+
+async def count_closed_since(ts_ms: int) -> int:
+    """Tarefas fechadas desde ts_ms em todas as listas de área."""
+    total = 0
+    for list_id in AREA_LISTS.values():
+        listed = await _fetch_list(
+            list_id,
+            params={
+                "include_closed": "true",
+                "date_done_gt": str(ts_ms),
+            },
+        )
+        total += sum(1 for task in listed if task.get("date_done"))
+    return total
 
 
 async def get_task(task_id: str) -> dict:

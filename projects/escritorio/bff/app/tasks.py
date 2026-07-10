@@ -160,12 +160,85 @@ async def create(name: str, area: str) -> Task:
 
 async def complete(task_id: str) -> bool:
     if _use_clickup():
-        return await clickup_client.complete(task_id)
+        ok = await clickup_client.complete(task_id)
+        if ok:
+            store.log_event("task_completed", ref=task_id)
+        return ok
     for t in _MOCK:
         if t.id == task_id:
             t.status = "done"
+            store.log_event("task_completed", ref=task_id)
             return True
     return False
+
+
+def weekly_review_pack(today: str | None = None) -> dict:
+    """Números da semana ISO corrente, com fronteira local em America/Sao_Paulo."""
+    from datetime import date, datetime, time, timedelta
+    from zoneinfo import ZoneInfo
+
+    local_tz = ZoneInfo("America/Sao_Paulo")
+    ref = date.fromisoformat(today) if today else datetime.now(local_tz).date()
+    monday = ref - timedelta(days=ref.weekday())
+    since_iso = monday.isoformat()
+    since_ts = datetime.combine(monday, time.min, tzinfo=local_tz).timestamp()
+
+    por_rotina: dict[str, dict] = {}
+    for row in store.get_checks_since(since_iso):
+        item = por_rotina.setdefault(
+            row["rotina"],
+            {"feitos": 0, "dias": 0},
+        )
+        item["dias"] += 1
+        item["feitos"] += 1 if row["feito"] else 0
+
+    pct = (
+        round(
+            100
+            * sum(item["feitos"] / item["dias"] for item in por_rotina.values())
+            / len(por_rotina)
+        )
+        if por_rotina
+        else 0
+    )
+    sessoes = [
+        session
+        for session in store.list_sessions_since(since_ts)
+        if session["tipo"] == "leitura"
+    ]
+    iso_week = ref.isocalendar()
+
+    return {
+        "week": f"{iso_week.year}-W{iso_week.week:02d}",
+        "desde": since_iso,
+        "scorecard": {"pct": pct, "por_rotina": por_rotina},
+        "dailies": store.count_events_since("closing_approved", since_ts),
+        "capturas": store.count_events_since("capture_done", since_ts),
+        "sessoes_leitura": {
+            "n": len(sessoes),
+            "min_total": sum(session["duracao_s"] for session in sessoes) // 60,
+        },
+        "tarefas_concluidas": None,
+        "staging_pendentes": None,
+    }
+
+
+def weekly_review_text(today: str | None = None) -> str:
+    """Texto compacto do nudge semanal; métricas ClickUp ficam no endpoint."""
+    pack = weekly_review_pack(today)
+    rotinas = " · ".join(
+        f"{rotina} {dados['feitos']}/{dados['dias']}"
+        for rotina, dados in sorted(
+            pack["scorecard"]["por_rotina"].items(),
+        )
+    )
+    return (
+        f"semana {pack['week']} — scorecard {pack['scorecard']['pct']}%\n"
+        f"{rotinas or 'sem checks registrados'}\n"
+        f"dailies {pack['dailies']}/7 · capturas {pack['capturas']} · "
+        f"leitura {pack['sessoes_leitura']['n']} sessões "
+        f"({pack['sessoes_leitura']['min_total']} min)"
+    )
 
 
 # --- digest v2 (C10/C11 + lei 7) --------------------------------------------
