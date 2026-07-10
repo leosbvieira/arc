@@ -120,7 +120,7 @@ def _from_clickup(t: dict) -> _Task:
     por 'parada há Xd' (staleness) a gente liga depois de ver os dados reais, senão
     inunda a Revisão com tudo que não foi tocado em 3 dias.
     """
-    status = (t.get("status") or {}).get("status")  # ClickUp: status é objeto {status: "..."}
+    status = (t.get("status") or {}).get("status")
     assignees = t.get("assignees") or []
     return _Task(
         id=str(t["id"]),
@@ -145,7 +145,7 @@ def _grouped(tasks: list[_Task]) -> dict:
 async def list_by_area() -> dict:
     if _use_clickup():
         return _grouped([_from_clickup(t) for t in await clickup_client.fetch_open()])
-    return _grouped(_open())  # mock
+    return _grouped(_open())
 
 
 async def create(name: str, area: str) -> Task:
@@ -271,7 +271,8 @@ def render_digest_lines(tasks: list[Task], for_channel: str) -> list[str]:
         if for_channel == "telegram" and _norm(t.area or "") in _sensitive_areas():
             lines.append(f"{m} 1 pendência de saúde ({atraso}) — abre o app")
         else:
-            lines.append(f"{m} {t.name} · {t.area} ({atraso})")
+            safe_name = t.name.replace(chr(10), " ")
+            lines.append(f"{m} {safe_name} · {t.area} ({atraso})")
     return lines
 
 
@@ -330,7 +331,7 @@ async def run_digest() -> dict:
         src = [_from_clickup(t) for t in raw]
         staging_count, staging_oldest = _staging_metrics(raw, staging)
     else:
-        src = _open()  # mock: sem lista Staging
+        src = _open()
 
     selected = [t for t in cadence.select(src) if t.area != staging]
     tasks = [_display(t) for t in selected]
@@ -341,7 +342,7 @@ async def run_digest() -> dict:
         extra.append(sl)
     extra.extend(routine_lines())
     n_failed = len(store.failed_captures())
-    if n_failed:                                   # linha neutra: nunca o conteúdo (lei 7)
+    if n_failed:
         extra.append(f"⚠ {n_failed} capturas não processadas — abrir o app")
 
     body_telegram = "\n".join([*render_digest_lines(tasks, "telegram"), *extra])
@@ -351,11 +352,17 @@ async def run_digest() -> dict:
 
 
 async def get_detail(task_id: str) -> dict | None:
-    """Detalhe de 1 tarefa (com descrição) pro app abrir ao tocar. None se não achar."""
+    """Detalhe de 1 tarefa (com descrição) pro app abrir ao tocar.
+
+    Fail-closed: uma tarefa fora das listas próprias não é exposta pelo BFF.
+    """
     if _use_clickup():
         t = await clickup_client.get_task(task_id)
         lst = t.get("list") or {}
-        t["_area"] = clickup_client.LIST_AREA.get(str(lst.get("id")), lst.get("name") or "Staging")
+        list_id = str(lst.get("id"))
+        if list_id not in clickup_client.AREA_LISTS.values():
+            return None
+        t["_area"] = clickup_client.LIST_AREA[list_id]
         base = _display(_from_clickup(t)).model_dump()
         base["priority"] = (t.get("priority") or {}).get("priority") if t.get("priority") else None
         base["description"] = (t.get("text_content") or t.get("description") or "").strip()

@@ -133,7 +133,7 @@ def test_endpoint_enriquece_pack_com_clickup(tmp_path, monkeypatch):
 def test_clickup_contagens_usam_fetch_list(monkeypatch):
     calls = []
 
-    async def fake_fetch_list(list_id, params=None):
+    async def fake_fetch_list(list_id, params=None, *, client=None):
         calls.append((list_id, params))
         if params is None:
             return [{"id": "1"}, {"id": "2"}, {"id": "3"}]
@@ -145,8 +145,9 @@ def test_clickup_contagens_usam_fetch_list(monkeypatch):
     monkeypatch.setattr(clickup_client, "_fetch_list", fake_fetch_list)
 
     assert asyncio.run(clickup_client.count_open("staging-list")) == 3
-    assert asyncio.run(clickup_client.count_closed_since(123456)) == len(
-        clickup_client.AREA_LISTS,
+    # W11: count_closed_since exclui a lista de triagem Staging.
+    assert asyncio.run(clickup_client.count_closed_since(123456)) == (
+        len(clickup_client.AREA_LISTS) - 1
     )
     assert calls[0] == ("staging-list", None)
     assert all(

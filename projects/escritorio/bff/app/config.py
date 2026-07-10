@@ -2,9 +2,13 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# .env fica na raiz do bff/ (um nível acima do pacote app/). Caminho ABSOLUTO pra o
-# .env ser lido independentemente de onde o uvicorn é iniciado (CWD não importa).
 _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
+DEFAULTS: dict[str, str] = {
+    "app_password": "troque-esta-senha",
+    "jwt_secret": "dev-only-secret-troque-no-.env-com-string-longa",
+    "internal_token": "troque-token-interno",
+}
 
 
 class Settings(BaseSettings):
@@ -13,8 +17,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     # auth single-user
-    app_password: str = "troque-esta-senha"
-    jwt_secret: str = "dev-only-secret-troque-no-.env-com-string-longa"
+    app_password: str = DEFAULTS["app_password"]
+    jwt_secret: str = DEFAULTS["jwt_secret"]
     jwt_ttl_hours: int = 720
 
     # Hermes (em mock por padrão, pra rodar sem o VPS)
@@ -22,37 +26,34 @@ class Settings(BaseSettings):
     hermes_base_url: str = "http://localhost:8080"
     hermes_api_key: str = ""
     hermes_profile_capture: str = "Capturas"
-    # Integração real = chamar a CLI do Hermes em oneshot (`hermes -z`), não HTTP.
-    hermes_bin: str = "hermes"        # caminho do hermes.exe (ou "hermes" se no PATH)
-    hermes_timeout: int = 150         # segundos por chamada (o agente pode usar tools)
-    capture_worker_interval: float = 5.0   # segundos entre rodadas do worker da fila (B6/§10)
+    hermes_bin: str = "hermes"
+    hermes_timeout: int = 150
+    capture_worker_interval: float = 5.0
 
-    # ClickUp (fonte real das tarefas — porta REST, não MCP)
-    tasks_source: str = "mock"          # "mock" | "clickup"
-    clickup_token: str = ""             # pk_...
-    clickup_verify_ssl: str = "true"    # "true" | "false" | caminho do .pem da CA
+    # ClickUp
+    tasks_source: str = "mock"
+    clickup_token: str = ""
+    clickup_verify_ssl: str = "true"
 
-    # Vault (escrita determinística via GitHub Contents API — o BFF segura a caneta)
-    github_pat: str = ""                        # PAT fine-grained com Contents:write no repo do vault
-    vault_repo: str = "leosbvieira/aeternum"    # owner/repo do vault
-    vault_branch: str = "main"                  # branch alvo das escritas
+    # Vault
+    github_pat: str = ""
+    vault_repo: str = "leosbvieira/aeternum"
+    vault_branch: str = "main"
 
     # push
     expo_push_url: str = "https://exp.host/--/api/v2/push/send"
 
-    # Telegram (canal do digest no P1, spec §6). Vazios = canal desligado (send() no-op).
-    # Gate manual (Q3): copiar token do bot do Hermes + chat_id pro .env.
+    # Telegram
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
-    # Digest v2 (C10/C11): knobs de cobrança. sensitive_areas é CSV (parse em tasks.py):
-    # linhas dessas áreas saem neutralizadas no Telegram (lockscreen mostra tudo, lei 7).
+    # Digest v2
     staging_age_days: int = 3
     routine_miss_threshold: int = 3
     sensitive_areas: str = "Corpo,Saúde Mental"
 
-    # server-to-server (cron do Hermes -> /internal/notify)
-    internal_token: str = "troque-token-interno"
+    # server-to-server
+    internal_token: str = DEFAULTS["internal_token"]
 
     db_path: str = "data.db"
 

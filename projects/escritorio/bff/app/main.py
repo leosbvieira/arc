@@ -19,7 +19,7 @@ from . import (
     vault_client,
 )
 from .auth import make_token, require_auth
-from .config import settings
+from .config import DEFAULTS, settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +29,33 @@ NUDGE_COPY = {
 }
 
 
+def _guard_default_secrets() -> None:
+    if any(
+        getattr(settings, field) == default
+        for field, default in DEFAULTS.items()
+    ):
+        raise RuntimeError("segredos default detectados — configure o .env")
+
+
 async def _capture_worker() -> None:
-    """Worker de fundo da fila de captura (B6/§10): recupera claims órfãos uma vez,
-    drena pending_captures em loop e dorme `capture_worker_interval`.
+    """Worker de fundo da fila de captura (B6/§10): recupera claims órfãos e
+    reapresenta failed uma vez no startup, drena pending_captures em loop e
+    dorme `capture_worker_interval`.
 
     NUNCA derruba o processo durante uma rodada — process_pending já isola cada item;
-    o try aqui cobre falha de infra (ex.: DB), logada SEM conteúdo (lei 7).
+    os try aqui cobrem falha de infra (ex.: DB), logada SEM conteúdo (lei 7).
     CancelledError é BaseException e escapa do `except Exception` → shutdown limpo.
     """
-    store.recover_processing()
+    try:
+        store.recover_processing()
+    except Exception:  # noqa: BLE001 - recuperação não derruba o worker
+        logger.exception("worker de captura: recuperação de processing falhou")
+
+    try:
+        store.retry_failed_captures()
+    except Exception:  # noqa: BLE001 - reapresentação não derruba o worker
+        logger.exception("worker de captura: reapresentação de failed falhou")
+
     while True:
         try:
             await capture_pipeline.process_pending()
@@ -50,9 +68,18 @@ async def fire_due_schedules() -> None:
     import time as _t
 
     for item in store.due_schedules(_t.time()):
-        ok = await telegram.send(f"⏰ {item['ref']}")
-        store.mark_schedule_fired(item["id"])
-        store.log_notif("hora_marcada", "telegram", ok)
+        ok = False
+        try:
+            ok = await telegram.send(f"⏰ {item['ref']}")
+            if ok:
+                store.mark_schedule_fired(item["id"])
+        except Exception:  # noqa: BLE001 - um item ruim não aborta o tick
+            logger.exception("scheduler: item falhou")
+
+        try:
+            store.log_notif("hora_marcada", "telegram", ok)
+        except Exception:  # noqa: BLE001 - um log ruim não aborta os demais itens
+            logger.exception("scheduler: log de notificação falhou")
 
 
 async def _scheduler_worker() -> None:
@@ -68,6 +95,7 @@ async def _scheduler_worker() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _guard_default_secrets()
     store.init_db()
     worker = asyncio.create_task(_capture_worker())
     scheduler = asyncio.create_task(_scheduler_worker())
@@ -180,16 +208,22 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     return CaptureOut(reply="✅ anotado", queued=True)
 
 
+@app.post("/captures/retry-failed")
+async def retry_failed_captures(_: str = Depends(require_auth)):
+    return {"requeued": store.retry_failed_captures()}
+
+
 @app.post("/sessions")
 async def create_session(body: SessionIn, _=Depends(require_auth)):
     import time as _t
 
     fim = _t.time()
+    inicio = fim - body.duracao_s
     result = store.add_session(
         body.tipo,
         body.projeto or body.livro,
         body.tipo,
-        fim - body.duracao_s,
+        inicio,
         fim,
         body.duracao_s,
         body.paginas,
@@ -200,11 +234,19 @@ async def create_session(body: SessionIn, _=Depends(require_auth)):
     sid, created = result
 
     if not created:
-        return {"ok": True, "session_id": sid, "raw_path": None}
+        inicio = store.get_session_inicio(sid)
 
     raw_path = None
     if body.notas.strip():
-        raw_path = await vault_client.write_raw(body.notas, f"s{sid}")
+        raw_path = await vault_client.write_raw(
+            body.notas,
+            f"s{sid}",
+            ts=inicio,
+        )
+
+    if not created:
+        return {"ok": True, "session_id": sid, "raw_path": raw_path}
+
     store.log_event(
         "session_logged",
         ref=str(sid),
@@ -325,9 +367,10 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
     import hashlib
 
     today = date.today().isoformat()
+    raw_hash = hashlib.sha1(body.raw_text.encode("utf-8")).hexdigest()[:8]
     raw_path = await vault_client.write_raw(
         body.raw_text,
-        f"f{today.replace('-', '')}",
+        f"f{today}-{raw_hash}",
     )
     marker = (
         f"<!-- fechamento:{today}:"

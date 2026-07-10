@@ -1,4 +1,4 @@
-"""Canal Telegram do P1 (spec §6). Texto plano; conteudo ja chega neutralizado pelo chamador."""
+"""Canal Telegram do P1. Texto plano; conteúdo já chega neutralizado pelo chamador."""
 import logging
 
 import httpx
@@ -6,7 +6,7 @@ import httpx
 from .config import settings
 
 logger = logging.getLogger(__name__)
-_transport: httpx.AsyncBaseTransport | None = None   # testes injetam MockTransport
+_transport: httpx.AsyncBaseTransport | None = None
 
 
 async def send(text: str) -> bool:
@@ -16,9 +16,15 @@ async def send(text: str) -> bool:
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
     try:
         async with httpx.AsyncClient(timeout=15, transport=_transport) as c:
-            r = await c.post(url, json={"chat_id": settings.telegram_chat_id,
-                                        "text": text, "disable_web_page_preview": True})
+            r = await c.post(
+                url,
+                json={
+                    "chat_id": settings.telegram_chat_id,
+                    "text": text,
+                    "disable_web_page_preview": True,
+                },
+            )
         return r.status_code == 200 and r.json().get("ok", False)
-    except httpx.HTTPError as e:
+    except Exception as e:  # noqa: BLE001 - canal nunca propaga falha ao chamador
         logger.warning("telegram falhou: %s", type(e).__name__)
         return False

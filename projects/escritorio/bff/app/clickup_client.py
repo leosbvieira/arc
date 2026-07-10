@@ -11,9 +11,6 @@ from .config import settings
 
 API = "https://api.clickup.com/api/v2"
 
-# área -> list_id (space Personal 90133461895). As 10 áreas normativas do Aeternum
-# (Spec §8/D14): Trabalho mantida + 3 renomeadas (Finanças→Finance, Saúde→Corpo,
-# Pessoal→Responsabilidade) + 6 criadas. Setup real em scripts/setup_clickup.py (2026-07-09).
 AREA_LISTS: dict[str, str] = {
     "Trabalho": "901327729093",
     "Staging": "901327803429",
@@ -28,10 +25,6 @@ AREA_LISTS: dict[str, str] = {
 }
 LIST_AREA: dict[str, str] = {v: k for k, v in AREA_LISTS.items()}
 
-# list_id -> status de fechamento REAL da lista (GET /list/{id} statuses[] type done/closed).
-# Literal por lista, NÃO comprehension: o nome do status "concluído" pode variar por lista;
-# hoje as 10 fecham em "complete" (confirmado via API no setup 2026-07-09), mas o mapa mantém
-# isso auditável e à prova de divergência futura. complete() resolve o status por aqui.
 DONE_STATUS: dict[str, str] = {
     "901327729093": "complete",
     "901327803429": "complete",
@@ -45,38 +38,34 @@ DONE_STATUS: dict[str, str] = {
     "901327803434": "complete",
 }
 
-# Lista de triagem: capturas caem aqui antes de virar tarefa de área. "Staging" já está em
-# AREA_LISTS (Task 6), então _staging_metrics no digest opera com dados reais. A const dá o
-# nome canônico p/ quem referencia a triagem sem hardcodar a string.
 STAGING = "Staging"
+
+_LIST_DEFAULT_PARAMS = {
+    "archived": "false",
+    "subtasks": "false",
+    "include_closed": "false",
+}
 
 
 def _headers() -> dict:
-    # token pessoal do ClickUp vai cru no Authorization (sem "Bearer")
-    return {"Authorization": settings.clickup_token, "Content-Type": "application/json"}
+    return {
+        "Authorization": settings.clickup_token,
+        "Content-Type": "application/json",
+    }
 
 
 def ssl_verify():
-    """SSL: True normal; False ignora (rede com proxy MITM); ou caminho pro .pem da CA.
-
-    Público (sem `_`) porque scripts/setup_clickup.py importa este helper — o bloco SSL
-    é a única forma correta de falar com o ClickUp atrás do proxy MITM corporativo.
-    """
+    """SSL: True normal; False ignora; ou caminho pro .pem da CA."""
     v = (settings.clickup_verify_ssl or "true").lower()
     if v == "false":
         return False
     if v == "true":
         return True
-    return settings.clickup_verify_ssl  # caminho do bundle .pem
+    return settings.clickup_verify_ssl
 
 
 def days_from_ms(ms) -> int | None:
-    """Dias de calendário de hoje até a data do timestamp (ms). 0=hoje, <0 passado.
-
-    ClickUp guarda due_date "só data" num horário fixo (aparece ~04:00). Por isso
-    comparamos por DATA de calendário (local), não por delta bruto — senão "vence
-    hoje de manhã" viraria "atrasada 1d".
-    """
+    """Dias de calendário de hoje até a data do timestamp (ms)."""
     if ms in (None, "", 0, "0"):
         return None
     due = datetime.fromtimestamp(int(ms) / 1000).date()
@@ -105,22 +94,27 @@ async def _list_tasks(
 async def _fetch_list(
     list_id: str,
     params: dict | None = None,
+    *,
+    client: httpx.AsyncClient | None = None,
 ) -> list[dict]:
-    """Busca tarefas de uma lista com os defaults usados por fetch_open."""
-    if params is None:
-        params = {
-            "archived": "false",
-            "subtasks": "false",
-            "include_closed": "false",
-        }
-    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+    """Busca tarefas com defaults explícitos, usando client compartilhado quando dado."""
+    merged_params = {**_LIST_DEFAULT_PARAMS, **(params or {})}
+
+    if client is not None:
         r = await client.get(
             f"{API}/list/{list_id}/task",
-            params=params,
+            params=merged_params,
             headers=_headers(),
         )
         r.raise_for_status()
         return r.json().get("tasks", [])
+
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as owned_client:
+        return await _fetch_list(
+            list_id,
+            params=merged_params,
+            client=owned_client,
+        )
 
 
 async def find_task_by_marker(list_id: str, marker: str) -> str | None:
@@ -139,19 +133,15 @@ async def find_task_by_marker(list_id: str, marker: str) -> str | None:
 
 
 async def fetch_open() -> list[dict]:
-    """Tarefas abertas das 10 áreas; cada dict ganha '_area'.
-
-    ⚠ include_closed=false só corta status tipo 'closed'. As concluídas viram tipo
-    'done' (ex.: status 'complete') e ainda vêm no GET — por isso filtramos aqui,
-    senão a tarefa marcada como feita não some da lista.
-    """
+    """Tarefas abertas das 10 áreas; cada dict ganha `_area`."""
     out: list[dict] = []
-    for area, lid in AREA_LISTS.items():
-        for task in await _fetch_list(lid):
-            if ((task.get("status") or {}).get("type")) in ("done", "closed"):
-                continue
-            task["_area"] = area
-            out.append(task)
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        for area, list_id in AREA_LISTS.items():
+            for task in await _fetch_list(list_id, client=client):
+                if ((task.get("status") or {}).get("type")) in ("done", "closed"):
+                    continue
+                task["_area"] = area
+                out.append(task)
     return out
 
 
@@ -161,17 +151,21 @@ async def count_open(list_id: str) -> int:
 
 
 async def count_closed_since(ts_ms: int) -> int:
-    """Tarefas fechadas desde ts_ms em todas as listas de área."""
+    """Tarefas fechadas desde ts_ms, excluindo a lista de triagem Staging."""
     total = 0
-    for list_id in AREA_LISTS.values():
-        listed = await _fetch_list(
-            list_id,
-            params={
-                "include_closed": "true",
-                "date_done_gt": str(ts_ms),
-            },
-        )
-        total += sum(1 for task in listed if task.get("date_done"))
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        for area, list_id in AREA_LISTS.items():
+            if area == STAGING:
+                continue
+            listed = await _fetch_list(
+                list_id,
+                params={
+                    "include_closed": "true",
+                    "date_done_gt": str(ts_ms),
+                },
+                client=client,
+            )
+            total += sum(1 for task in listed if task.get("date_done"))
     return total
 
 
@@ -190,10 +184,7 @@ async def create(
     due_ts: float | None = None,
     description: str | None = None,
 ) -> dict:
-    """Cria uma task na list da área. `due_ts` (epoch em SEGUNDOS) vira `due_date` em ms
-    com `due_date_time` (hora marcada, não só o dia); `description` guarda o link do Raw e
-    o marker de idempotência da captura (Task 9). `tags`/`due_ts`/`description` são opcionais
-    pra não quebrar quem chama posicional (tasks.create)."""
+    """Cria uma task na list da área."""
     lid = AREA_LISTS[area]
     body: dict = {"name": name}
     if tags:
@@ -204,24 +195,33 @@ async def create(
     if description is not None:
         body["description"] = description
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        r = await client.post(f"{API}/list/{lid}/task", json=body, headers=_headers())
+        r = await client.post(
+            f"{API}/list/{lid}/task",
+            json=body,
+            headers=_headers(),
+        )
         r.raise_for_status()
-        t = r.json()
-        t["_area"] = area
-        return t
+        task = r.json()
+        task["_area"] = area
+        return task
 
 
 async def complete(task_id: str) -> bool:
-    """Fecha a task no status de conclusão REAL da lista dela (DONE_STATUS), não num literal
-    fixo — o nome do status 'done' varia por lista. Descobre a lista pelo próprio GET da task
-    (`list.id`) e cai em 'complete' (done default do ClickUp) se a lista não estiver mapeada."""
+    """Fecha somente tasks pertencentes às listas próprias do Aeternum."""
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        g = await client.get(f"{API}/task/{task_id}", headers=_headers())
-        g.raise_for_status()
-        list_id = str((g.json().get("list") or {}).get("id"))
-        r = await client.put(
+        response = await client.get(
+            f"{API}/task/{task_id}",
+            headers=_headers(),
+        )
+        response.raise_for_status()
+        list_id = str((response.json().get("list") or {}).get("id"))
+
+        if list_id not in AREA_LISTS.values():
+            return False
+
+        response = await client.put(
             f"{API}/task/{task_id}",
             json={"status": DONE_STATUS.get(list_id, "complete")},
             headers=_headers(),
         )
-        return r.status_code == 200
+        return response.status_code == 200

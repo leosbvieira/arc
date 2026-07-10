@@ -160,7 +160,7 @@ def add_session(
     """Insere uma sessão e devolve seu id.
 
     `return_created=True` também devolve se esta chamada inseriu a linha. Isso
-    permite ao endpoint evitar repetir Raw e telemetria após um retry deduplicado.
+    permite ao endpoint evitar repetir telemetria após um retry deduplicado.
     """
     with closing(_connect()) as con:
         if session_key is not None:
@@ -203,6 +203,18 @@ def add_session(
         return (sid, True) if return_created else sid
 
 
+def get_session_inicio(session_id: int) -> float:
+    """Recupera o início persistido para manter o caminho Raw estável em retries."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT inicio FROM sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        raise LookupError("sessão não encontrada")
+    return float(row["inicio"])
+
+
 def list_sessions_since(ts: float) -> list[dict]:
     with closing(_connect()) as con:
         rows = con.execute(
@@ -229,7 +241,8 @@ def log_event(evento: str, ref: str = "", meta: dict | None = None) -> None:
 def count_events_since(evento: str, ts: float) -> int:
     with closing(_connect()) as con:
         row = con.execute(
-            "SELECT COUNT(*) FROM telemetry WHERE evento = ? AND ts >= ?",
+            "SELECT COUNT(DISTINCT ref) FROM telemetry "
+            "WHERE evento = ? AND ts >= ?",
             (evento, ts),
         ).fetchone()
     return int(row[0])
