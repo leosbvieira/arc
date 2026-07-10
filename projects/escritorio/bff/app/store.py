@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS routine_checks (
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, projeto TEXT,
   categoria TEXT, inicio REAL NOT NULL, fim REAL NOT NULL,
-  duracao_s INTEGER NOT NULL, paginas INTEGER, livro TEXT
+  duracao_s INTEGER NOT NULL, paginas INTEGER, livro TEXT, session_key TEXT
 );
 CREATE TABLE IF NOT EXISTS telemetry (
   ts REAL NOT NULL, evento TEXT NOT NULL, ref TEXT DEFAULT '', meta_json TEXT DEFAULT '{}'
@@ -74,6 +74,18 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with closing(_connect()) as con:
         con.executescript(_SCHEMA)
+
+        # Migração idempotente para bancos criados antes do session_key. O índice
+        # vem depois do ALTER porque CREATE TABLE IF NOT EXISTS não adiciona coluna.
+        session_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(sessions)")
+        }
+        if "session_key" not in session_columns:
+            con.execute("ALTER TABLE sessions ADD COLUMN session_key TEXT")
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_session_key "
+            "ON sessions(session_key)"
+        )
 
         # Migração idempotente para bancos criados antes do client_key. O índice
         # vem depois do ALTER porque CREATE TABLE IF NOT EXISTS não adiciona coluna.
@@ -132,16 +144,63 @@ def get_checks_since(data_inicio: str) -> list[dict]:
 # --- sessions ---------------------------------------------------------------
 
 
-def add_session(tipo, projeto, categoria, inicio, fim, duracao_s, paginas, livro) -> int:
+def add_session(
+    tipo,
+    projeto,
+    categoria,
+    inicio,
+    fim,
+    duracao_s,
+    paginas,
+    livro,
+    *,
+    return_created=False,
+    session_key=None,
+) -> int | tuple[int, bool]:
+    """Insere uma sessão e devolve seu id.
+
+    `return_created=True` também devolve se esta chamada inseriu a linha. Isso
+    permite ao endpoint evitar repetir Raw e telemetria após um retry deduplicado.
+    """
     with closing(_connect()) as con:
-        cur = con.execute(
-            "INSERT INTO sessions "
-            "(tipo, projeto, categoria, inicio, fim, duracao_s, paginas, livro) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (tipo, projeto, categoria, inicio, fim, duracao_s, paginas, livro),
-        )
+        if session_key is not None:
+            # Serializa select+insert entre escritores. Se uma resposta se perdeu,
+            # o retry encontra exatamente a sessão originalmente registrada.
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute(
+                "SELECT id FROM sessions WHERE session_key = ?",
+                (session_key,),
+            ).fetchone()
+            if row is not None:
+                con.commit()
+                sid = int(row["id"])
+                return (sid, False) if return_created else sid
+            cur = con.execute(
+                "INSERT INTO sessions "
+                "(tipo, projeto, categoria, inicio, fim, duracao_s, paginas, "
+                "livro, session_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    tipo,
+                    projeto,
+                    categoria,
+                    inicio,
+                    fim,
+                    duracao_s,
+                    paginas,
+                    livro,
+                    session_key,
+                ),
+            )
+        else:
+            cur = con.execute(
+                "INSERT INTO sessions "
+                "(tipo, projeto, categoria, inicio, fim, duracao_s, paginas, livro) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (tipo, projeto, categoria, inicio, fim, duracao_s, paginas, livro),
+            )
         con.commit()
-        return int(cur.lastrowid)
+        sid = int(cur.lastrowid)
+        return (sid, True) if return_created else sid
 
 
 def list_sessions_since(ts: float) -> list[dict]:

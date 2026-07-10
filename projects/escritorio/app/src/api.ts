@@ -81,6 +81,7 @@ export async function logSession(body: {
   paginas?: number | null;
   duracao_s: number;
   notas: string;
+  session_key?: string | null;
 }): Promise<{ ok: boolean }> {
   const base = await getBffUrl();
   const r = await fetch(`${base}/sessions`, {

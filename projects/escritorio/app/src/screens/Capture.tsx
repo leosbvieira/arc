@@ -51,6 +51,10 @@ function formatElapsed(seconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
 }
 
+function createSessionKey(ts: number): string {
+  return `session:${createCaptureClientKey(ts)}`;
+}
+
 export default function Capture() {
   const [mode, setMode] = useState<Mode>("captura");
 
@@ -188,10 +192,12 @@ export default function Capture() {
   }
 
   async function compilar() {
-    if (compiling) return;
+    if (compiling || (!sessionStart && !items.length)) return;
 
+    const ts = Date.now();
+    const sessionKey = createSessionKey(ts);
     const duracao_s = sessionStart
-      ? Math.round((Date.now() - sessionStart) / 1000)
+      ? Math.round((ts - sessionStart) / 1000)
       : 0;
     const payload = {
       tipo: "leitura",
@@ -199,18 +205,23 @@ export default function Capture() {
       paginas: paginasLidas(),
       duracao_s,
       notas: sessionText(),
+      session_key: sessionKey,
     };
 
     setCompiling(true);
     setStatus("");
     try {
       await logSession(payload);
+      setSessionStart(null);
+      setItems([]);
+      setPageStart("");
+      setPageEnd("");
       Alert.alert("Sessão compilada", "Sessão registrada.");
     } catch {
       await enqueue({
         kind: "session",
         payload,
-        ts: Date.now(),
+        ts,
       });
       setPending(await pendingCount());
       setStatus(

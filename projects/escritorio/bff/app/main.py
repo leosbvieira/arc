@@ -82,6 +82,7 @@ class SessionIn(BaseModel):
     paginas: int | None = None
     duracao_s: int
     notas: str = ""
+    session_key: str | None = None
 
 
 class ChatIn(BaseModel):
@@ -151,7 +152,7 @@ async def create_session(body: SessionIn, _=Depends(require_auth)):
     import time as _t
 
     fim = _t.time()
-    sid = store.add_session(
+    result = store.add_session(
         body.tipo,
         body.projeto or body.livro,
         body.tipo,
@@ -160,7 +161,14 @@ async def create_session(body: SessionIn, _=Depends(require_auth)):
         body.duracao_s,
         body.paginas,
         body.livro,
+        return_created=True,
+        session_key=body.session_key,
     )
+    sid, created = result
+
+    if not created:
+        return {"ok": True, "session_id": sid, "raw_path": None}
+
     raw_path = None
     if body.notas.strip():
         raw_path = await vault_client.write_raw(body.notas, f"s{sid}")

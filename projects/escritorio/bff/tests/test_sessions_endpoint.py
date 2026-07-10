@@ -88,3 +88,44 @@ def test_paginas_none_quando_final_vazio(client, monkeypatch):
     assert r.status_code == 200
     rows = store.list_sessions_since(0)
     assert rows[0]["paginas"] is None
+
+
+def test_retry_com_session_key_deduplica_sessao_e_raw(client, monkeypatch):
+    written = []
+
+    async def fake_raw(text, capture_id):
+        written.append({"text": text, "capture_id": capture_id})
+        return "1- Inbox/Raw/raw-cs1.md"
+
+    monkeypatch.setattr(main.vault_client, "write_raw", fake_raw)
+    payload = {
+        "tipo": "leitura",
+        "livro": "Antifragil",
+        "paginas": 12,
+        "duracao_s": 1800,
+        "notas": "quote: o vento apaga a vela",
+        "session_key": "session-test-15",
+    }
+
+    first = client.post("/sessions", json=payload)
+    retry = client.post("/sessions", json=payload)
+
+    assert first.status_code == 200
+    assert retry.status_code == 200
+    assert first.json()["session_id"] == retry.json()["session_id"]
+    assert first.json()["raw_path"] == "1- Inbox/Raw/raw-cs1.md"
+    assert retry.json() == {
+        "ok": True,
+        "session_id": first.json()["session_id"],
+        "raw_path": None,
+    }
+
+    rows = store.list_sessions_since(0)
+    assert len(rows) == 1
+    assert rows[0]["session_key"] == "session-test-15"
+    assert written == [
+        {
+            "text": "quote: o vento apaga a vela",
+            "capture_id": f"s{first.json()['session_id']}",
+        },
+    ]
