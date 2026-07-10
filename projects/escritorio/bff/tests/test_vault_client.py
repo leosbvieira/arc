@@ -81,3 +81,9 @@ async def test_erro_vira_vault_error(monkeypatch):
     monkeypatch.setattr(vc, "_client", lambda: _client(handler))
     with pytest.raises(vc.VaultError):
         await vc.put_file("x.md", "y", "m")
+
+
+async def test_sem_pat_falha_nomeada(monkeypatch):
+    monkeypatch.setattr(settings, "github_pat", "")
+    with pytest.raises(vc.VaultError, match="vault_nao_configurado"):
+        await vc.write_raw("qualquer", 1)

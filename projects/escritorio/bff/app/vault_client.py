@@ -16,6 +16,9 @@ class VaultError(RuntimeError):
 
 
 def _client() -> httpx.AsyncClient:
+    if not settings.github_pat:
+        # fail-fast nomeado: sem PAT o httpx falharia com LocalProtocolError opaco
+        raise VaultError("vault_nao_configurado")
     return httpx.AsyncClient(
         base_url="https://api.github.com",
         headers={"Authorization": f"Bearer {settings.github_pat}",
