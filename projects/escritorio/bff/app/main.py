@@ -41,16 +41,40 @@ async def _capture_worker() -> None:
         await asyncio.sleep(settings.capture_worker_interval)
 
 
+async def fire_due_schedules() -> None:
+    import time as _t
+
+    for item in store.due_schedules(_t.time()):
+        ok = await telegram.send(f"⏰ {item['ref']}")
+        store.mark_schedule_fired(item["id"])
+        store.log_notif("hora_marcada", "telegram", ok)
+
+
+async def _scheduler_worker() -> None:
+    # Scheduler não usa recover: horários vencidos enquanto o PC estava desligado
+    # são retornados por due_schedules(quando <= agora) no próximo tick do worker.
+    while True:
+        try:
+            await fire_due_schedules()
+        except Exception:  # noqa: BLE001 - a rodada nunca derruba o loop
+            logger.exception("scheduler")
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.init_db()
     worker = asyncio.create_task(_capture_worker())
+    scheduler = asyncio.create_task(_scheduler_worker())
     try:
         yield
     finally:
         worker.cancel()
+        scheduler.cancel()
         with suppress(asyncio.CancelledError):
             await worker
+        with suppress(asyncio.CancelledError):
+            await scheduler
 
 
 app = FastAPI(title="escritório BFF", lifespan=lifespan)
