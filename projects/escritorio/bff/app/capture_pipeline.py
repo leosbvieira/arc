@@ -119,9 +119,23 @@ async def process_pending() -> int:
             await _process_one(row)
             done += 1
         except Exception as e:  # noqa: BLE001 - a fila NUNCA derruba o worker
-            # Qualquer falha incrementa a tentativa e devolve o item para pending;
-            # no teto ele vira failed, mas permanece persistido. Apenas a classe
-            # sanitizada do erro vai para o banco/log (lei 7).
+            if (
+                isinstance(e, vault_client.VaultError)
+                and str(e) == "vault_nao_configurado"
+            ):
+                store.mark_capture(
+                    row["id"],
+                    status="pending",
+                    error=type(e).__name__,
+                )
+                logger.warning(
+                    "vault sem configuração; worker aguardará antes de processar a fila"
+                )
+                break
+
+            # Qualquer outra falha incrementa a tentativa e devolve o item para
+            # pending; no teto ele vira failed, mas permanece persistido. Apenas a
+            # classe sanitizada do erro vai para o banco/log (lei 7).
             store.mark_capture(
                 row["id"],
                 bump_attempts=True,

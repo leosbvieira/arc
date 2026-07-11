@@ -389,6 +389,8 @@ def mark_capture(
         if error is not None:
             sets.append("last_error = ?")
             params.append(error)
+        elif status == "done":
+            sets.append("last_error = NULL")
         if not sets:
             return
         con.execute(
@@ -396,7 +398,6 @@ def mark_capture(
             (*params, id),
         )
         con.commit()
-
 
 def retry_failed_captures() -> int:
     with closing(_connect()) as con:

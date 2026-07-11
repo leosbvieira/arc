@@ -2,7 +2,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+_PROJECT_DIR = Path(__file__).resolve().parent.parent
+_ENV_FILE = _PROJECT_DIR / ".env"
 
 DEFAULTS: dict[str, str] = {
     "app_password": "troque-esta-senha",
@@ -55,7 +56,7 @@ class Settings(BaseSettings):
     # server-to-server
     internal_token: str = DEFAULTS["internal_token"]
 
-    db_path: str = "data.db"
+    db_path: str = str(_PROJECT_DIR / "data.db")
 
 
 settings = Settings()
