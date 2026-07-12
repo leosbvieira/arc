@@ -142,6 +142,24 @@ def semana(ref: date | None = None) -> dict:
     return _semana(semanas.get(segunda_da_semana(ref or date.today())), nomes)
 
 
+def resumo_periodo(inicio: date, fim: date) -> dict:
+    """{ganho, desconto, saldo} das semanas ISO cuja SEGUNDA cai em [inicio, fim].
+
+    Reusa `_por_semana` e `_semana`: a regra de desconto permanece em um único lugar.
+    """
+    nomes = nomes_por_slug()
+    semanas = _por_semana(store.get_checks_since(_INICIO_DOS_TEMPOS))
+    totais = {"ganho": 0, "desconto": 0, "saldo": 0}
+
+    for seg in sorted(semanas):
+        if inicio <= seg <= fim:
+            dados = _semana(semanas[seg], nomes)
+            for campo in totais:
+                totais[campo] += dados[campo]
+
+    return totais
+
+
 def padroes_por_semana() -> dict[date, dict[str, int]]:
     """{segunda: {slug: delta}} de toda a história. O digest usa isto pra dizer o
     desconto REAL de um padrão sem recalcular a regra por conta própria."""

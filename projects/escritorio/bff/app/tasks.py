@@ -11,10 +11,11 @@ POST /internal/notify (D-14). As regras de cadência são as mesmas nos dois cas
 
 import unicodedata
 from dataclasses import dataclass
+from datetime import date
 
 from pydantic import BaseModel
 
-from . import cadence, clickup_client, store
+from . import cadence, clickup_client, pontos, store
 from .config import settings
 
 AREAS = ["Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
@@ -184,19 +185,10 @@ async def complete(task_id: str) -> bool:
     return False
 
 
-def weekly_review_pack(today: str | None = None) -> dict:
-    """Números da semana ISO corrente, com fronteira local em America/Sao_Paulo."""
-    from datetime import date, datetime, time, timedelta
-    from zoneinfo import ZoneInfo
-
-    local_tz = ZoneInfo("America/Sao_Paulo")
-    ref = date.fromisoformat(today) if today else datetime.now(local_tz).date()
-    monday = ref - timedelta(days=ref.weekday())
-    since_iso = monday.isoformat()
-    since_ts = datetime.combine(monday, time.min, tzinfo=local_tz).timestamp()
-
+def _scorecard(checks: list[dict]) -> dict:
+    """Agrega checks por rotina; semanal e mensal compartilham esta mesma regra."""
     por_rotina: dict[str, dict] = {}
-    for row in store.get_checks_since(since_iso):
+    for row in checks:
         item = por_rotina.setdefault(
             row["rotina"],
             {"feitos": 0, "dias": 0},
@@ -213,6 +205,22 @@ def weekly_review_pack(today: str | None = None) -> dict:
         if por_rotina
         else 0
     )
+    return {"pct": pct, "por_rotina": por_rotina}
+
+
+def weekly_review_pack(today: str | None = None) -> dict:
+    """Números da semana ISO corrente, com fronteira local em America/Sao_Paulo."""
+    from datetime import date, datetime, time, timedelta
+    from zoneinfo import ZoneInfo
+
+    local_tz = ZoneInfo("America/Sao_Paulo")
+    ref = date.fromisoformat(today) if today else datetime.now(local_tz).date()
+    monday = ref - timedelta(days=ref.weekday())
+    since_iso = monday.isoformat()
+    since_ts = datetime.combine(monday, time.min, tzinfo=local_tz).timestamp()
+
+    checks_da_semana = store.get_checks_since(since_iso)
+    scorecard = _scorecard(checks_da_semana)
     sessoes = [
         session
         for session in store.list_sessions_since(since_ts)
@@ -220,10 +228,35 @@ def weekly_review_pack(today: str | None = None) -> dict:
     ]
     iso_week = ref.isocalendar()
 
+    # Uma leitura histórica é compartilhada por todos os objetivos ligados a rotina.
+    from . import objetivos as objetivos_dominio
+
+    checks_dos_objetivos = store.get_checks_since("0001-01-01")
+    objetivos_semana = []
+    for objetivo in store.list_objetivos():
+        marcas = (
+            []
+            if objetivo.get("rotina_slug")
+            else store.marcas_do_objetivo(objetivo["id"])
+        )
+        atual = objetivos_dominio.progresso(
+            objetivo,
+            checks_dos_objetivos,
+            marcas,
+            ref,
+        )["semana_atual"]
+        objetivos_semana.append({
+            "nome": objetivo["nome"],
+            "n_semana": atual["n"],
+            "alvo": atual["alvo"],
+            "pct": atual["pct"],
+        })
+
     return {
         "week": f"{iso_week.year}-W{iso_week.week:02d}",
         "desde": since_iso,
-        "scorecard": {"pct": pct, "por_rotina": por_rotina},
+        "scorecard": scorecard,
+        "objetivos": objetivos_semana,
         "dailies": store.count_events_since("closing_approved", since_ts),
         "capturas": store.count_events_since("capture_done", since_ts),
         "sessoes_leitura": {
@@ -233,6 +266,117 @@ def weekly_review_pack(today: str | None = None) -> dict:
         "tarefas_concluidas": None,
         "staging_pendentes": None,
     }
+
+
+def is_primeiro_domingo(ref: date) -> bool:
+    """Primeiro domingo é o domingo que ainda cai nos sete primeiros dias."""
+    return ref.weekday() == 6 and ref.day <= 7
+
+
+def monthly_review_pack(today: str | None = None) -> dict:
+    """Números finais do mês civil anterior, em America/Sao_Paulo."""
+    from datetime import datetime, time, timedelta
+    from zoneinfo import ZoneInfo
+
+    local_tz = ZoneInfo("America/Sao_Paulo")
+    ref = date.fromisoformat(today) if today else datetime.now(local_tz).date()
+
+    inicio_mes_atual = ref.replace(day=1)
+    fim = inicio_mes_atual - timedelta(days=1)
+    inicio = fim.replace(day=1)
+
+    inicio_iso = inicio.isoformat()
+    fim_iso = fim.isoformat()
+    since_ts = datetime.combine(
+        inicio,
+        time.min,
+        tzinfo=local_tz,
+    ).timestamp()
+    until_ts = datetime.combine(
+        inicio_mes_atual,
+        time.min,
+        tzinfo=local_tz,
+    ).timestamp()
+
+    # get_checks_since não possui limite final; a comparação ISO fecha a janela.
+    checks = [
+        row
+        for row in store.get_checks_since(inicio_iso)
+        if row["data"] <= fim_iso
+    ]
+    sessoes = [
+        session
+        for session in store.list_sessions_since(since_ts, until_ts)
+        if session["tipo"] == "leitura"
+    ]
+
+    objetivos_do_mes = []
+    for objetivo in store.list_objetivos():
+        rotina_slug = objetivo.get("rotina_slug")
+        if rotina_slug:
+            datas = {
+                row["data"]
+                for row in checks
+                if row["rotina"] == rotina_slug and bool(row["feito"])
+            }
+        else:
+            datas = {
+                marcada_em
+                for marcada_em in store.marcas_do_objetivo(objetivo["id"])
+                if inicio_iso <= marcada_em <= fim_iso
+            }
+
+        objetivos_do_mes.append({
+            "nome": objetivo["nome"],
+            "total_no_mes": len(datas),
+        })
+
+    return {
+        "mes": inicio.strftime("%Y-%m"),
+        "scorecard": _scorecard(checks),
+        "dailies": store.count_events_since(
+            "closing_approved",
+            since_ts,
+            until_ts,
+        ),
+        "capturas": store.count_events_since(
+            "capture_done",
+            since_ts,
+            until_ts,
+        ),
+        "sessoes_leitura": {
+            "n": len(sessoes),
+            "min_total": sum(
+                session["duracao_s"]
+                for session in sessoes
+            ) // 60,
+        },
+        "pontos": pontos.resumo_periodo(inicio, fim),
+        "objetivos": objetivos_do_mes,
+        "patrimonio": (
+            "preencher a nota mensal de patrimônio no vault (manual)"
+        ),
+    }
+
+
+def monthly_review_text(today: str | None = None) -> str:
+    """Texto factual do bloco mensal fundido ao review do primeiro domingo."""
+    pack = monthly_review_pack(today)
+    objetivos_texto = " · ".join(
+        f"{objetivo['nome']} {objetivo['total_no_mes']}"
+        for objetivo in pack["objetivos"]
+    )
+
+    return (
+        f"mês {pack['mes']} · scorecard {pack['scorecard']['pct']}%\n"
+        f"pontos: +{pack['pontos']['ganho']} "
+        f"−{pack['pontos']['desconto']}\n"
+        f"dailies {pack['dailies']} · capturas {pack['capturas']} · "
+        f"leitura {pack['sessoes_leitura']['n']} sessões "
+        f"({pack['sessoes_leitura']['min_total']} min)\n"
+        f"objetivos: {objetivos_texto or 'sem objetivos ativos'}\n"
+        f"🏦 patrimônio: {pack['patrimonio']}"
+    )
 
 
 def weekly_review_text(today: str | None = None) -> str:

@@ -15,6 +15,7 @@ from . import (
     clickup_client,
     hermes_client,
     notify,
+    objetivos,
     pontos,
     push,
     routines,
@@ -349,6 +350,78 @@ class ReorderIn(BaseModel):
     ordem: list[ReorderItem]
 
 
+class ObjetivoCreateIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    nome: str
+    rotina_slug: str | None = None
+    alvo_semana: int | None = None
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, valor: str) -> str:
+        nome = valor.strip()
+        if not nome:
+            raise ValueError("nome não pode ser vazio")
+        return nome
+
+    @field_validator("rotina_slug")
+    @classmethod
+    def validar_rotina_slug(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        slug = valor.strip()
+        if not slug:
+            raise ValueError("rotina_slug não pode ser vazio")
+        return slug
+
+    @field_validator("alvo_semana", mode="before")
+    @classmethod
+    def validar_alvo(cls, valor):
+        if valor is None:
+            return None
+        if isinstance(valor, bool) or not isinstance(valor, int):
+            raise ValueError("alvo_semana deve ser inteiro")
+        if not 1 <= valor <= 7:
+            raise ValueError("alvo_semana deve estar entre 1 e 7")
+        return valor
+
+
+class ObjetivoPatchIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    nome: str | None = None
+    alvo_semana: int | None = None
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, valor: str | None) -> str | None:
+        if valor is None:
+            raise ValueError("nome não pode ser nulo")
+        nome = valor.strip()
+        if not nome:
+            raise ValueError("nome não pode ser vazio")
+        return nome
+
+    @field_validator("alvo_semana", mode="before")
+    @classmethod
+    def validar_alvo(cls, valor):
+        # null remove o alvo semanal; ausência mantém o valor atual.
+        if valor is None:
+            return None
+        if isinstance(valor, bool) or not isinstance(valor, int):
+            raise ValueError("alvo_semana deve ser inteiro")
+        if not 1 <= valor <= 7:
+            raise ValueError("alvo_semana deve estar entre 1 e 7")
+        return valor
+
+
+class ObjetivoMarcaIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    data: str | None = None
+
+
 class TemaIn(BaseModel):
     texto: str
     semana: str | None = None
@@ -563,6 +636,40 @@ async def review_weekly(_=Depends(require_auth)):
         ts_ms = int(
             monday_local.astimezone(timezone.utc).timestamp() * 1000,
         )
+        pack["tarefas_concluidas"] = (
+            await clickup_client.count_closed_since(ts_ms)
+        )
+        pack["staging_pendentes"] = await clickup_client.count_open(
+            clickup_client.AREA_LISTS[clickup_client.STAGING],
+        )
+    except Exception:
+        pass
+    return pack
+
+
+@app.get("/review/monthly")
+async def review_monthly(_=Depends(require_auth)):
+    pack = tasks.monthly_review_pack()
+    try:
+        from datetime import time, timedelta, timezone
+        from zoneinfo import ZoneInfo
+
+        local_tz = ZoneInfo("America/Sao_Paulo")
+        today = datetime.now(local_tz).date()
+        inicio_mes_atual = today.replace(day=1)
+        fim_mes_anterior = inicio_mes_atual - timedelta(days=1)
+        inicio_mes_anterior = fim_mes_anterior.replace(day=1)
+        inicio_local = datetime.combine(
+            inicio_mes_anterior,
+            time.min,
+            tzinfo=local_tz,
+        )
+        ts_ms = int(
+            inicio_local.astimezone(timezone.utc).timestamp() * 1000,
+        )
+
+        # A API do ClickUp não oferece limite final neste agregado. Portanto,
+        # tarefas_concluidas é a aproximação factual "desde o início do mês anterior".
         pack["tarefas_concluidas"] = (
             await clickup_client.count_closed_since(ts_ms)
         )
@@ -799,6 +906,97 @@ async def post_shutdown(body: ShutdownIn, _=Depends(require_auth)):
     return {"ok": True, "data": hoje, "prioridades": salvo["prioridades"], "feito": True}
 
 
+@app.get("/objetivos")
+async def get_objetivos(_=Depends(require_auth)):
+    return {"objetivos": await objetivos.listar(date.today())}
+
+
+@app.post("/objetivos")
+async def post_objetivo(
+    body: ObjetivoCreateIn,
+    _=Depends(require_auth),
+):
+    if body.rotina_slug is not None:
+        slugs = {
+            rotina["slug"]
+            for rotina in store.list_routines()
+        }
+        if body.rotina_slug not in slugs:
+            raise HTTPException(422, "rotina_slug inexistente")
+
+    criado = store.create_objetivo(
+        body.nome,
+        rotina_slug=body.rotina_slug,
+        alvo_semana=body.alvo_semana,
+    )
+    return {"objetivo": criado}
+
+
+@app.patch("/objetivos/{objetivo_id}")
+async def patch_objetivo(
+    objetivo_id: int,
+    body: ObjetivoPatchIn,
+    _=Depends(require_auth),
+):
+    campos = {}
+    if "nome" in body.model_fields_set:
+        campos["nome"] = body.nome
+    if "alvo_semana" in body.model_fields_set:
+        campos["alvo_semana"] = body.alvo_semana
+
+    atualizado = store.update_objetivo(objetivo_id, **campos)
+    if atualizado is None:
+        raise HTTPException(404, "objetivo não encontrado")
+    return {"objetivo": atualizado}
+
+
+@app.delete("/objetivos/{objetivo_id}")
+async def delete_objetivo(
+    objetivo_id: int,
+    _=Depends(require_auth),
+):
+    if not store.delete_objetivo(objetivo_id):
+        raise HTTPException(404, "objetivo não encontrado")
+    return {"ok": True}
+
+
+def _objetivo_manual_ativo(objetivo_id: int) -> dict:
+    """Valida existência e fonte antes de qualquer alteração de marca."""
+    objetivo = store.get_objetivo(objetivo_id)
+    if not objetivo or not objetivo["ativo"]:
+        raise HTTPException(404, "objetivo não encontrado")
+    if objetivo.get("rotina_slug"):
+        raise HTTPException(
+            422,
+            "objetivo ligado a rotina deriva exclusivamente dos checks",
+        )
+    return objetivo
+
+
+@app.post("/objetivos/{objetivo_id}/marcar")
+async def marcar_objetivo(
+    objetivo_id: int,
+    body: ObjetivoMarcaIn,
+    _=Depends(require_auth),
+):
+    _objetivo_manual_ativo(objetivo_id)
+    marcada_em = _data_ref(body.data).isoformat()
+    inseriu = store.marcar_objetivo(objetivo_id, marcada_em)
+    return {"ok": True, "ja_estava": not inseriu}
+
+
+@app.post("/objetivos/{objetivo_id}/desmarcar")
+async def desmarcar_objetivo(
+    objetivo_id: int,
+    body: ObjetivoMarcaIn,
+    _=Depends(require_auth),
+):
+    _objetivo_manual_ativo(objetivo_id)
+    marcada_em = _data_ref(body.data).isoformat()
+    removeu = store.desmarcar_objetivo(objetivo_id, marcada_em)
+    return {"ok": True, "estava_marcado": removeu}
+
+
 @app.get("/agenda")
 async def get_agenda(
     dia: str | None = Query(default=None, alias="data"),
@@ -918,7 +1116,10 @@ async def internal_nudge(
     if body.kind == "review":
         try:
             text = text + "\n\n" + tasks.weekly_review_text()
+            if tasks.is_primeiro_domingo(date.today()):
+                text = text + "\n\n" + tasks.monthly_review_text()
         except Exception:
+            # O nudge-base ainda é entregue se algum agregado estiver indisponível.
             pass
     entrega = await notify.notificar(f"nudge_{body.kind}", text)
     return {"ok": True, **entrega}

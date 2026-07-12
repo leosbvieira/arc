@@ -96,6 +96,19 @@ CREATE TABLE IF NOT EXISTS temas (
   texto TEXT NOT NULL,
   criado REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS objetivos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nome TEXT NOT NULL,
+  rotina_slug TEXT,
+  alvo_semana INTEGER,
+  criado REAL NOT NULL,
+  ativo INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS objetivo_marcas (
+  objetivo_id INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (objetivo_id, data)
+);
 """
 
 
@@ -438,12 +451,20 @@ def get_session_inicio(session_id: int) -> float:
     return float(row["inicio"])
 
 
-def list_sessions_since(ts: float) -> list[dict]:
+def list_sessions_since(
+    ts: float,
+    until_ts: float | None = None,
+) -> list[dict]:
+    """Lista sessões numa janela semiaberta; sem limite preserva o contrato atual."""
+    consulta = "SELECT * FROM sessions WHERE inicio >= ?"
+    parametros: tuple = (ts,)
+    if until_ts is not None:
+        consulta += " AND inicio < ?"
+        parametros += (until_ts,)
+    consulta += " ORDER BY inicio"
+
     with closing(_connect()) as con:
-        rows = con.execute(
-            "SELECT * FROM sessions WHERE inicio >= ? ORDER BY inicio",
-            (ts,),
-        ).fetchall()
+        rows = con.execute(consulta, parametros).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -461,13 +482,27 @@ def log_event(evento: str, ref: str = "", meta: dict | None = None) -> None:
         con.commit()
 
 
-def count_events_since(evento: str, ts: float) -> int:
+def count_events_since(
+    evento: str,
+    ts: float,
+    until_ts: float | None = None,
+) -> int:
+    """Conta referências distintas dentro de uma janela semiaberta opcional.
+
+    O limite exclusivo permite fechar meses civis sem mudar o comportamento dos
+    chamadores existentes, que continuam omitindo ``until_ts``.
+    """
+    consulta = (
+        "SELECT COUNT(DISTINCT ref) FROM telemetry "
+        "WHERE evento = ? AND ts >= ?"
+    )
+    parametros: tuple = (evento, ts)
+    if until_ts is not None:
+        consulta += " AND ts < ?"
+        parametros += (until_ts,)
+
     with closing(_connect()) as con:
-        row = con.execute(
-            "SELECT COUNT(DISTINCT ref) FROM telemetry "
-            "WHERE evento = ? AND ts >= ?",
-            (evento, ts),
-        ).fetchone()
+        row = con.execute(consulta, parametros).fetchone()
     return int(row[0])
 
 
@@ -858,3 +893,127 @@ def delete_tema(id: int) -> bool:
         cur = con.execute("DELETE FROM temas WHERE id = ?", (id,))
         con.commit()
         return cur.rowcount > 0
+
+
+# --- objetivos acumulativos --------------------------------------------------
+
+
+def create_objetivo(
+    nome: str,
+    rotina_slug: str | None = None,
+    alvo_semana: int | None = None,
+) -> dict:
+    """Cria um objetivo preservando desde o início sua fonte de progresso."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "INSERT INTO objetivos "
+            "(nome, rotina_slug, alvo_semana, criado, ativo) "
+            "VALUES (?, ?, ?, ?, 1)",
+            (nome, rotina_slug, alvo_semana, time.time()),
+        )
+        con.commit()
+        objetivo_id = int(cur.lastrowid)
+    return get_objetivo(objetivo_id)
+
+
+def list_objetivos(*, incluir_inativos: bool = False) -> list[dict]:
+    """Lista ativos por padrão; inativos continuam disponíveis para histórico."""
+    consulta = "SELECT * FROM objetivos"
+    if not incluir_inativos:
+        consulta += " WHERE ativo = 1"
+    consulta += " ORDER BY id"
+
+    with closing(_connect()) as con:
+        rows = con.execute(consulta).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_objetivo(id: int) -> dict | None:
+    """Obtém inclusive um objetivo inativo, necessário para consultar sua história."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM objetivos WHERE id = ?",
+            (id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_objetivo(id: int, **campos) -> dict | None:
+    """Atualiza somente nome e alvo; a fonte não muda no meio do histórico."""
+    permitidos = ("nome", "alvo_semana")
+    invalidos = set(campos) - set(permitidos)
+    if invalidos:
+        raise ValueError(
+            "campos não atualizáveis: " + ", ".join(sorted(invalidos)),
+        )
+
+    alteracoes = {
+        campo: campos[campo]
+        for campo in permitidos
+        if campo in campos
+    }
+    if not alteracoes:
+        atual = get_objetivo(id)
+        return atual if atual and atual["ativo"] else None
+
+    atribuicoes = ", ".join(f"{campo} = ?" for campo in alteracoes)
+    parametros = (*alteracoes.values(), id)
+
+    with closing(_connect()) as con:
+        cur = con.execute(
+            f"UPDATE objetivos SET {atribuicoes} "
+            "WHERE id = ? AND ativo = 1",
+            parametros,
+        )
+        con.commit()
+
+    return get_objetivo(id) if cur.rowcount > 0 else None
+
+
+def delete_objetivo(id: int) -> bool:
+    """Desativa sem apagar as marcações, que permanecem como história factual."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE objetivos SET ativo = 0 "
+            "WHERE id = ? AND ativo = 1",
+            (id,),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def marcar_objetivo(id: int, data: str) -> bool:
+    """Marca uma data uma única vez e informa se uma linha nova foi inserida."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO objetivo_marcas (objetivo_id, data) "
+            "SELECT ?, ? WHERE EXISTS ("
+            "SELECT 1 FROM objetivos WHERE id = ? AND ativo = 1"
+            ")",
+            (id, data, id),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def desmarcar_objetivo(id: int, data: str) -> bool:
+    """Remove uma marca específica e informa se ela existia."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "DELETE FROM objetivo_marcas "
+            "WHERE objetivo_id = ? AND data = ?",
+            (id, data),
+        )
+        con.commit()
+        return cur.rowcount > 0
+
+
+def marcas_do_objetivo(id: int) -> list[str]:
+    """Devolve as datas ISO em ordem determinística."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT data FROM objetivo_marcas "
+            "WHERE objetivo_id = ? ORDER BY data",
+            (id,),
+        ).fetchall()
+    return [row["data"] for row in rows]
