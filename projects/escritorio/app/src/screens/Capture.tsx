@@ -36,7 +36,10 @@ function parse(raw: string): { kind?: string; book?: string; text: string } {
   const after = () =>
     t.includes(":") ? t.slice(t.indexOf(":") + 1).trim() : t;
   if (l.startsWith("livro")) return { book: after(), text: "" };
-  if (l.startsWith("cita")) return { kind: "citação", text: after() };
+  // Hooks falados da spec B7: "quote" = citação verbatim; "comentário" = pensamento.
+  if (l.startsWith("quote") || l.startsWith("cita")) {
+    return { kind: "citação", text: after() };
+  }
   if (l.startsWith("coment")) {
     return { kind: "comentário", text: after() };
   }

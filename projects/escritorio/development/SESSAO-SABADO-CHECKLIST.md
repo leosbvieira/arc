@@ -78,7 +78,14 @@ Em `C:\Users\Leonardo\Documents\LeonardoLifeMain`:
 
 ## 9. Teu conteúdo (sem código)
 
+- [ ] **D16 — carregar as recorrências financeiras no ClickUp** (lista Finance está **vazia**: o motor de cobrança
+      roda e não tem o que cobrar). Você decidiu na 5ª rodada: *"No d16 1., eu sugiro recriar"* — recriar à mão,
+      planilha do Drive = referência de conferência. Boletos do mês, cartões, Unimed, condomínio, NFs, IR.
+      **É o item de maior retorno por menor esforço em todo o sistema hoje.**
 - [ ] Plano de 10 anos → vault (hierarquia D19, `05 - Projetos`/estrutura da spec)
+- [x] **Punição por pontos (A3.3): MANTIDA** — decidido 12/jul, contra a recomendação do GPT-5.6 de cortar.
+      Vira o item 4 do P2 (`AETERNUM-P2-BACKLOG.md`), depois do rito das 5h30 existir.
 
 ---
-*Backlog P2 consolidado: ver `.superpowers/sdd/progress.md` (seção ONDA FINAL) e os reports em `.superpowers/sdd/`.*
+*Backlog P2 consolidado: `development/AETERNUM-P2-BACKLOG.md` (auditoria de fidelidade 12/jul + debate Claude × GPT-5.6).*
+*Ledger de execução: `.superpowers/sdd/progress.md` (seção ONDA FINAL).*
