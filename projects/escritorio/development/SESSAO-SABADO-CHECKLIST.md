@@ -78,10 +78,15 @@ Em `C:\Users\Leonardo\Documents\LeonardoLifeMain`:
 
 ## 9. Teu conteúdo (sem código)
 
-- [ ] **D16 — carregar as recorrências financeiras no ClickUp** (lista Finance está **vazia**: o motor de cobrança
-      roda e não tem o que cobrar). Você decidiu na 5ª rodada: *"No d16 1., eu sugiro recriar"* — recriar à mão,
-      planilha do Drive = referência de conferência. Boletos do mês, cartões, Unimed, condomínio, NFs, IR.
-      **É o item de maior retorno por menor esforço em todo o sistema hoje.**
+- [x] **D16 — carga financeira INICIADA (12/jul).** Finance saiu de **0 → 26 tasks**: condomínio (dia 5) e aluguel
+      (dia 10) com **12 ocorrências mensais cada**, até jul/2027 (saída **B** — a API do ClickUp não define
+      recorrência), + "Pagar cartões" provisório + a tarefa de lembrete abaixo. **1ª cobrança real: 5/ago.**
+- [ ] **Ligar a recorrência nativa** das contas na UI do ClickUp e **apagar as ocorrências em lote**
+      → task no ClickUp: [86ajg8bvr](https://app.clickup.com/t/86ajg8bvr) (prioridade alta, vence 18/jul).
+      Alternativa: saída **C** (o motor do BFF trata "vence a cada N dias") — era a decisão em aberto nº1 do D16.
+- [ ] **Completar a carga (falta o dado, não o trabalho):** os **nomes dos 8 cartões** (viram tarefas separadas,
+      decisão de 12/jul), **Unimed** (dia), **NFs** (emitir ou pagar? cadência?), **checklist do IR**.
+      A `Pagamento Mensal.xlsx` não está no disco (deve estar no Drive) — me passa a lista e eu crio tudo.
 - [ ] Plano de 10 anos → vault (hierarquia D19, `05 - Projetos`/estrutura da spec)
 - [x] **Punição por pontos (A3.3): MANTIDA** — decidido 12/jul, contra a recomendação do GPT-5.6 de cortar.
       Vira o item 4 do P2 (`AETERNUM-P2-BACKLOG.md`), depois do rito das 5h30 existir.
