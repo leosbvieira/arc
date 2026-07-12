@@ -148,9 +148,21 @@ async def list_by_area() -> dict:
     return _grouped(_open())
 
 
-async def create(name: str, area: str) -> Task:
+async def create(
+    name: str,
+    area: str,
+    due_ts: float | None = None,
+    com_hora: bool = True,
+) -> Task:
     if _use_clickup():
-        return _display(_from_clickup(await clickup_client.create(name, area)))
+        criado = await clickup_client.create(
+            name,
+            area,
+            due_ts=due_ts,
+            due_date_time=com_hora,
+        )
+        return _display(_from_clickup(criado))
+    # O mock mantém o contrato histórico: due é integração externa, não estado local.
     global _next
     t = _Task(f"t{_next}", name, area, due_offset=0)
     _next += 1
@@ -396,6 +408,15 @@ async def run_digest() -> dict:
     if sl:
         extra.append(sl)
     extra.extend(routine_lines())
+    try:
+        from datetime import date
+
+        from . import agenda
+
+        extra.extend(agenda.linhas_digest(await agenda.do_dia(date.today())))
+    except Exception:
+        # A agenda é best-effort: uma fonte externa não cala a cobrança factual (lei 4).
+        pass
     n_failed = len(store.failed_captures())
     if n_failed:
         extra.append(f"⚠ {n_failed} capturas não processadas — abrir o app")

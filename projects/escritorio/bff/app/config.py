@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     clickup_token: str = ""
     clickup_verify_ssl: str = "true"
 
+    # Calendários ICS. As URLs são segredos e ficam somente no ambiente, conforme a lei 7.
+    gcal_ics_url: str = ""
+    outlook_ics_url: str = ""
+    ics_timeout: int = 15
+    ics_cache_ttl: int = 900
+
     # Vault
     github_pat: str = ""
     vault_repo: str = "leosbvieira/aeternum"

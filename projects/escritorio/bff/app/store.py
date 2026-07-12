@@ -85,6 +85,17 @@ CREATE TABLE IF NOT EXISTS shutdown (
   prioridades TEXT NOT NULL DEFAULT '[]',
   feito_em REAL
 );
+CREATE TABLE IF NOT EXISTS ics_cache (
+  fonte TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  fetched REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS temas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  semana TEXT NOT NULL,
+  texto TEXT NOT NULL,
+  criado REAL NOT NULL
+);
 """
 
 
@@ -784,3 +795,66 @@ def save_shutdown(data: str, prioridades: list[str]) -> dict:
         )
         con.commit()
     return get_shutdown(data)
+
+
+# Cache ICS -----------------------------------------------------------------
+
+
+def set_ics_cache(fonte: str, payload: str) -> None:
+    """Guarda a última leitura válida sem registrar a URL secreta, conforme a lei 7."""
+    with closing(_connect()) as con:
+        con.execute(
+            "INSERT OR REPLACE INTO ics_cache (fonte, payload, fetched) "
+            "VALUES (?, ?, ?)",
+            (fonte, payload, time.time()),
+        )
+        con.commit()
+
+
+def get_ics_cache(fonte: str) -> dict | None:
+    """Retorna o payload e sua idade; a decisão de aceitar cache velho é do cliente."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT payload, fetched FROM ics_cache WHERE fonte = ?",
+            (fonte,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# Temas da semana -----------------------------------------------------------
+
+
+def add_tema(semana: str, texto: str) -> dict:
+    """Registra um tema factual para aparecer todos os dias da semana, conforme a lei 4."""
+    criado = time.time()
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "INSERT INTO temas (semana, texto, criado) VALUES (?, ?, ?)",
+            (semana, texto, criado),
+        )
+        con.commit()
+        tema_id = int(cur.lastrowid)
+    return {
+        "id": tema_id,
+        "semana": semana,
+        "texto": texto,
+        "criado": criado,
+    }
+
+
+def list_temas(semana: str) -> list[dict]:
+    """Lista os temas na ordem em que foram registrados."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM temas WHERE semana = ? ORDER BY criado, id",
+            (semana,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def delete_tema(id: int) -> bool:
+    """Remove pelo identificador e informa factualmente se algo existia."""
+    with closing(_connect()) as con:
+        cur = con.execute("DELETE FROM temas WHERE id = ?", (id,))
+        con.commit()
+        return cur.rowcount > 0

@@ -183,6 +183,7 @@ async def create(
     tags: list[str] | None = None,
     due_ts: float | None = None,
     description: str | None = None,
+    due_date_time: bool = True,
 ) -> dict:
     """Cria uma task na list da área."""
     lid = AREA_LISTS[area]
@@ -191,7 +192,7 @@ async def create(
         body["tags"] = tags
     if due_ts is not None:
         body["due_date"] = int(due_ts * 1000)
-        body["due_date_time"] = True
+        body["due_date_time"] = due_date_time
     if description is not None:
         body["description"] = description
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:

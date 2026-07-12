@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, time as _time, timedelta
 from typing import Literal
@@ -9,6 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 
 from . import (
+    agenda,
     capture_pipeline,
     clickup_client,
     hermes_client,
@@ -167,6 +169,32 @@ class NotifyIn(BaseModel):
 class CreateTaskIn(BaseModel):
     name: str
     area: str
+    due: str | None = None
+    hora: str | None = None
+
+    @field_validator("due")
+    @classmethod
+    def validar_due(cls, valor: str | None) -> str | None:
+        """Falha fechado: uma data ambígua não pode criar cobrança no dia errado."""
+        if valor is None:
+            return None
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor):
+            raise ValueError("due inválido; use YYYY-MM-DD")
+        try:
+            date.fromisoformat(valor)
+        except ValueError:
+            raise ValueError("due inválido; use YYYY-MM-DD") from None
+        return valor
+
+    @field_validator("hora")
+    @classmethod
+    def validar_hora(cls, valor: str | None) -> str | None:
+        """Aceita somente hora civil explícita para o scheduler não precisar adivinhar."""
+        if valor is None:
+            return None
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", valor):
+            raise ValueError("hora inválida; use HH:MM")
+        return valor
 
 
 class ClosingDraftIn(BaseModel):
@@ -321,6 +349,37 @@ class ReorderIn(BaseModel):
     ordem: list[ReorderItem]
 
 
+class TemaIn(BaseModel):
+    texto: str
+    semana: str | None = None
+
+    @field_validator("texto")
+    @classmethod
+    def validar_texto(cls, valor: str) -> str:
+        """Tema vazio não cria lembrete sem informação, conforme a lei 4."""
+        texto = valor.strip()
+        if not texto:
+            raise ValueError("texto não pode ser vazio")
+        return texto
+
+    @field_validator("semana")
+    @classmethod
+    def validar_semana(cls, valor: str | None) -> str | None:
+        """A chave explícita evita gravar o tema em uma semana inferida incorretamente."""
+        if valor is not None and not re.fullmatch(r"\d{4}-W\d{2}", valor):
+            raise ValueError("semana inválida; use YYYY-Www")
+        return valor
+
+
+def _semana_tema(valor: str | None) -> str:
+    """Valida a query com o mesmo contrato fail-closed usado pelo modelo."""
+    if valor is None:
+        return agenda.semana_iso(date.today())
+    if not re.fullmatch(r"\d{4}-W\d{2}", valor):
+        raise HTTPException(422, "semana inválida; use YYYY-Www")
+    return valor
+
+
 @app.get("/health")
 async def health():
     return {"ok": True, "mock": settings.hermes_mock}
@@ -418,7 +477,27 @@ async def get_tasks(_: str = Depends(require_auth)):
 async def create_task(body: CreateTaskIn, _: str = Depends(require_auth)):
     if body.area not in tasks.AREAS:
         raise HTTPException(422, f"área inválida; use {tasks.AREAS}")
-    t = await tasks.create(body.name, body.area)
+    due_ref = (
+        date.fromisoformat(body.due)
+        if body.due
+        else date.today() if body.hora else None
+    )
+    com_hora = body.hora is not None
+    due_ts = None
+    if due_ref is not None:
+        horario = _time.fromisoformat(body.hora) if body.hora else _time.min
+        due_ts = datetime.combine(due_ref, horario, tzinfo=TZ).timestamp()
+
+    t = await tasks.create(
+        body.name,
+        body.area,
+        due_ts=due_ts,
+        com_hora=com_hora,
+    )
+    if com_hora:
+        # O ref chega à lockscreen; área sensível nunca carrega o nome, conforme a lei 7.
+        ref_txt = body.name if not tasks.eh_sensivel(body.area) else tasks.NEUTRO
+        store.add_schedule(due_ts, "minha", ref_txt)
     return t.model_dump()
 
 
@@ -607,6 +686,18 @@ async def abertura(
     # abertura de outro dia devolve o estado daquele dia, mas não reescreve o calendário.
     tarefas_due = await tasks.due_hoje() if ref == date.today() else []
 
+    temas = store.list_temas(agenda.semana_iso(ref))
+    calendario: list[dict] = []
+    fontes_calendario = {"gcal": "erro", "outlook": "erro"}
+    try:
+        agenda_dia = await agenda.do_dia(ref, incluir_hora_marcada=False)
+        calendario = agenda_dia["eventos"]
+        fontes_calendario = agenda_dia["fontes"]
+        temas = agenda_dia["temas"]
+    except Exception:  # noqa: BLE001 - a abertura não depende de uma fonte externa
+        # Degrada com estado explícito e preserva a pauta local, conforme a lei 4.
+        logger.exception("abertura: agenda externa indisponível")
+
     inicio = datetime.combine(ref, _time.min, tzinfo=TZ).timestamp()
     fim = datetime.combine(ref + timedelta(days=1), _time.min, tzinfo=TZ).timestamp()
     horarios = [
@@ -622,7 +713,13 @@ async def abertura(
         "template": template,
         "rotinas_manha": rotinas_manha,
         "prioridades_de_ontem": ontem["prioridades"] if ontem else [],
-        "hoje": {"tarefas_due": tarefas_due, "horarios": horarios},
+        "temas": temas,
+        "hoje": {
+            "tarefas_due": tarefas_due,
+            "horarios": horarios,
+            "calendario": calendario,
+            "fontes_calendario": fontes_calendario,
+        },
         "checkin": {
             "feito": bool(linha and linha["checkin_em"]),
             "energia": linha["energia"] if linha else None,
@@ -700,6 +797,42 @@ async def post_shutdown(body: ShutdownIn, _=Depends(require_auth)):
     salvo = store.save_shutdown(hoje, body.prioridades)
     store.log_event("shutdown", ref=hoje, meta={"n": len(body.prioridades)})
     return {"ok": True, "data": hoje, "prioridades": salvo["prioridades"], "feito": True}
+
+
+@app.get("/agenda")
+async def get_agenda(
+    dia: str | None = Query(default=None, alias="data"),
+    _=Depends(require_auth),
+):
+    """Entrega a agenda e explicita o estado de cada fonte externa."""
+    ref = _data_ref(dia)
+    resposta = await agenda.do_dia(ref)
+    resposta["tarefas_due"] = (
+        await tasks.due_hoje() if ref == date.today() else []
+    )
+    return resposta
+
+
+@app.get("/temas")
+async def get_temas(
+    semana: str | None = Query(default=None),
+    _=Depends(require_auth),
+):
+    chave = _semana_tema(semana)
+    return {"semana": chave, "temas": store.list_temas(chave)}
+
+
+@app.post("/temas")
+async def post_tema(body: TemaIn, _=Depends(require_auth)):
+    semana = body.semana or agenda.semana_iso(date.today())
+    return store.add_tema(semana, body.texto)
+
+
+@app.delete("/temas/{tema_id}")
+async def remove_tema(tema_id: int, _=Depends(require_auth)):
+    if not store.delete_tema(tema_id):
+        raise HTTPException(404, "tema não encontrado")
+    return {"ok": True}
 
 
 @app.get("/closing/routines")

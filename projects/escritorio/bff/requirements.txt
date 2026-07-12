@@ -1,6 +1,8 @@
 fastapi
 uvicorn[standard]
 httpx
+icalendar  # parser dos feeds privados Google/Outlook
+recurring-ical-events  # expansão segura de RRULE dos calendários
 pydantic
 pydantic-settings
 PyJWT
