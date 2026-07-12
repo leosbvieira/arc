@@ -1,6 +1,6 @@
 import time
 
-from app import main, store
+from app import main, store, telegram
 from app.config import settings
 
 
@@ -13,7 +13,7 @@ async def test_dispara_vencidos_uma_vez(tmp_path, monkeypatch):
         sent.append(text)
         return True
 
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     store.add_schedule(
         time.time() - 5,
         "minha",
@@ -51,7 +51,7 @@ async def test_falha_de_entrega_permanece_due_ate_retry_ok(
         marked.append(schedule_id)
         original_mark(schedule_id)
 
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(main.store, "log_notif", spy_log_notif)
     monkeypatch.setattr(main.store, "mark_schedule_fired", spy_mark)
     schedule_id = store.add_schedule(
@@ -106,7 +106,7 @@ async def test_item_ruim_nao_aborta_os_demais_do_tick(tmp_path, monkeypatch):
     def fake_log_notif(evento, canal, entregue):
         notifications.append((evento, canal, entregue))
 
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(main.store, "log_notif", fake_log_notif)
 
     await main.fire_due_schedules()

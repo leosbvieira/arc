@@ -262,13 +262,30 @@ def _sensitive_areas() -> set[str]:
     return {_norm(a) for a in settings.sensitive_areas.split(",") if a.strip()}
 
 
+def eh_sensivel(area: str) -> bool:
+    """Lei 7 FAIL-CLOSED: a área é sensível? Ponto único da regra — o digest e a camada
+    de notificação (notify.py) perguntam AQUI, ninguém reimplementa a dobra."""
+    return _norm(area or "") in _sensitive_areas()
+
+
+# O preview (lockscreen do Telegram, corpo do push) é a superfície que qualquer um vê
+# sem destravar o telefone. Item sensível vira ISTO — fato de que existe algo, zero
+# conteúdo, e ainda acionável. Mesma promessa da linha neutra do digest.
+NEUTRO = "1 item sensível — abre o app"
+
+
+def neutralizar(texto: str, *, sensivel: bool = False) -> str:
+    """O corpo que vai pro preview. `sensivel=True` → nada de conteúdo (lei 7)."""
+    return NEUTRO if sensivel else texto
+
+
 def render_digest_lines(tasks: list[Task], for_channel: str) -> list[str]:
     """for_channel: 'telegram' neutraliza áreas sensíveis (lei 7); 'app' mostra tudo."""
     lines = []
     for t in sorted(tasks, key=lambda x: -(x.days_overdue or 0)):
         m = MARKER.get(t.severity, "🟡")
         atraso = f"{t.days_overdue}d de atraso" if (t.days_overdue or 0) > 0 else "no prazo"
-        if for_channel == "telegram" and _norm(t.area or "") in _sensitive_areas():
+        if for_channel == "telegram" and eh_sensivel(t.area):
             lines.append(f"{m} 1 pendência de saúde ({atraso}) — abre o app")
         else:
             safe_name = t.name.replace(chr(10), " ")
@@ -387,6 +404,93 @@ async def run_digest() -> dict:
     body_app = "\n".join([*render_digest_lines(tasks, "app"), *extra])
     return {"tasks": tasks, "body_telegram": body_telegram,
             "body_app": body_app, "lines_extra": extra}
+
+
+# --- os dois ritos (P2 itens 5 e 6): abertura do dia e Shutdown das 19h -------
+# Aqui não se renderiza TEXTO: estes dois devolvem DADO, porque quem desenha é o app.
+# (O digest, acima, é o contrário — ele existe para virar mensagem.)
+
+AGUARDANDO = "aguardando"   # a tag que o pipeline de captura põe numa cobrança
+
+
+def _tags(t: dict) -> set[str]:
+    """Nomes das tags de uma task do ClickUp, dobrados (a tag é digitada por humano)."""
+    return {
+        _norm(tag.get("name") or "")
+        for tag in (t.get("tags") or [])
+        if isinstance(tag, dict)
+    }
+
+
+async def _source() -> tuple[list[_Task], list[dict]]:
+    """(tarefas internas, json cru do ClickUp). O cru é o que carrega tag e date_created —
+    campos que o _Task não guarda e que os ritos precisam."""
+    if _use_clickup():
+        raw = await clickup_client.fetch_open()
+        return [_from_clickup(t) for t in raw], raw
+    return _open(), []
+
+
+async def due_hoje() -> list[dict]:
+    """As tarefas que HOJE cobra: vencendo hoje e as já vencidas (uma atrasada continua
+    sendo coisa de hoje). Sem due → não é pauta da manhã, é backlog."""
+    src, _ = await _source()
+    return [
+        _display(t).model_dump()
+        for t in src
+        if t.due_offset is not None and t.due_offset <= 0
+    ]
+
+
+def _follow_up_do_scheduler(item: dict) -> dict:
+    """Item de hora marcada no shape de tarefa (o app renderiza UMA lista de follow-ups).
+    `id` prefixado e `origem` explícita: isto NÃO é uma task do ClickUp e não pode ser
+    mandado pro POST /tasks/{id}/complete."""
+    return {
+        "id": f"sched-{item['id']}",
+        "name": item["ref"],
+        "area": "Aguardando",
+        "status": "open",
+        "due": None,
+        "last_done": None,
+        "assignee": None,
+        "days_overdue": None,
+        "severity": cadence.tone_name(None),
+        "origem": "scheduler",
+        "quando": item["quando"],
+    }
+
+
+async def shutdown_pack() -> dict:
+    """Os dados do Shutdown (A2/19h): o que fica aberto no trabalho, o que está esperando
+    resposta de terceiro e o tamanho da fila de triagem.
+
+    `staging` é DADO, não a linha de texto do digest (`staging_line`): a mesma métrica,
+    duas superfícies. E o gate de idade (`staging_age_days`) NÃO se aplica aqui — o digest
+    só cobra staging quando envelhece; o Shutdown mostra o número sempre, é um painel.
+    """
+    src, raw = await _source()
+
+    trabalho = [
+        _display(t).model_dump() | {"origem": "clickup"}
+        for t in src
+        if t.area == "Trabalho"
+    ]
+
+    por_id = {str(t.get("id")): t for t in raw}
+    follow_ups = [
+        _display(t).model_dump() | {"origem": "clickup"}
+        for t in src
+        if AGUARDANDO in _tags(por_id.get(t.id, {}))
+    ]
+    follow_ups += [_follow_up_do_scheduler(i) for i in store.pending_schedules()]
+
+    n, mais_velho = _staging_metrics(raw, clickup_client.STAGING)
+    return {
+        "trabalho_aberto": trabalho,
+        "follow_ups": follow_ups,
+        "staging": {"n": n, "mais_velho_d": mais_velho},
+    }
 
 
 async def get_detail(task_id: str) -> dict | None:

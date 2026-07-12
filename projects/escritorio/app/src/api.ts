@@ -362,3 +362,108 @@ export async function closingApprove(body: {
   if (!r.ok) throw new Error(`approve: ${r.status}`);
   return r.json();
 }
+
+// ---- Abertura do dia (P2-5) ----
+// O toque das 5h30 (template do dia) é DE MANHÃ, não às 21h. As rotinas da manhã
+// também: `checkRoutine` marca UMA rotina a qualquer hora — o fechamento noturno
+// respeita o que já foi marcado, não zera.
+export type Template = "yoga" | "corrida";
+export type Nivel = "baixa" | "media" | "alta";
+
+export type RotinaDoDia = {
+  id: number;
+  slug: string;
+  nome: string;
+  passos: string[];
+  feito: boolean;
+};
+
+export type Horario = { hora: string; ref: string };
+
+export type Checkin = {
+  feito: boolean;
+  energia: string | null;
+  clareza: string | null;
+  prioridade_1: string | null;
+};
+
+export type Abertura = {
+  data: string;
+  template: Template | null; // null = ainda não respondeu o toque das 5h30
+  rotinas_manha: RotinaDoDia[];
+  prioridades_de_ontem: string[]; // vêm do Shutdown de ontem; [] se não houve
+  hoje: { tarefas_due: Task[]; horarios: Horario[] };
+  checkin: Checkin;
+};
+
+export async function getAbertura(): Promise<Abertura> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/abertura`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`abertura: ${r.status}`);
+  return (await r.json()) as Abertura;
+}
+
+export async function setTemplateDia(template: Template): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/dia/template`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ template }),
+  });
+  if (!r.ok) throw new Error(`template: ${r.status}`);
+}
+
+export async function checkRoutine(slug: string, feito: boolean): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/routines/check`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ slug, feito }),
+  });
+  if (!r.ok) throw new Error(`check: ${r.status}`);
+}
+
+export async function postCheckin(body: {
+  energia: Nivel;
+  clareza: Nivel;
+  prioridade_1: string;
+}): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/abertura/checkin`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`checkin: ${r.status}`);
+}
+
+// ---- Shutdown das 19h (P2-6) ----
+// Rito de ENCERRAR O TRABALHO — não confundir com o fechamento noturno das 21h
+// (diário + rotinas). O entregável daqui são as 3 prioridades de amanhã, que
+// reaparecem na Abertura de amanhã como `prioridades_de_ontem`.
+export type Shutdown = {
+  data: string;
+  trabalho_aberto: Task[];
+  follow_ups: Task[];
+  // mais_velho_d vem null quando o staging está vazio (n === 0).
+  staging: { n: number; mais_velho_d: number | null };
+  prioridades: string[];
+  feito: boolean;
+};
+
+export async function getShutdown(): Promise<Shutdown> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/shutdown`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`shutdown: ${r.status}`);
+  return (await r.json()) as Shutdown;
+}
+
+export async function postShutdown(prioridades: string[]): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/shutdown`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ prioridades: prioridades.slice(0, 3) }),
+  });
+  if (!r.ok) throw new Error(`shutdown: ${r.status}`);
+}

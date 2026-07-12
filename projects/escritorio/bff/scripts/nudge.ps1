@@ -1,4 +1,4 @@
-param([ValidateSet("closing", "review")][string]$Kind = "closing")
+param([ValidateSet("toque", "checkin", "shutdown", "closing", "review")][string]$Kind = "closing")
 $bff = "http://127.0.0.1:8000"
 $envFile = "C:\Users\Leonardo\GitHub\Arc\projects\escritorio\bff\.env"
 $token = (Select-String -Path $envFile -Pattern '^INTERNAL_TOKEN=(.+)$').Matches[0].Groups[1].Value.Trim().Trim('"').Trim("'")

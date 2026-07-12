@@ -1,8 +1,9 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
-from datetime import date, datetime
+from datetime import date, datetime, time as _time, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
@@ -11,12 +12,12 @@ from . import (
     capture_pipeline,
     clickup_client,
     hermes_client,
+    notify,
     pontos,
     push,
     routines,
     store,
     tasks,
-    telegram,
     vault_client,
 )
 from .auth import make_token, require_auth
@@ -24,7 +25,13 @@ from .config import DEFAULTS, settings
 
 logger = logging.getLogger(__name__)
 
+TZ = ZoneInfo("America/Sao_Paulo")
+
+# Tom: seco e factual (lei 4 — o sistema não motiva, não envergonha; diz o fato e o custo).
 NUDGE_COPY = {
+    "toque": "5h30 — dia yoga ou dia corrida?",
+    "checkin": "8h20 — check-in: energia, clareza, prioridade nº1. 60 segundos.",
+    "shutdown": "19h — Shutdown: fechar o trabalho, follow-ups, 3 prioridades de amanhã.",
     "closing": "21h — fechar o dia? 90 segundos bastam: 1 linha + checks.",
     "review": "domingo 20h — review semanal. Os números da semana te esperam no app.",
 }
@@ -66,21 +73,17 @@ async def _capture_worker() -> None:
 
 
 async def fire_due_schedules() -> None:
+    """O ⏰ da hora marcada. Sai pela camada única (notify): push primeiro, Telegram de
+    ponte. Quem loga em `notif_log` é o `notificar` — o canal REAL usado."""
     import time as _t
 
     for item in store.due_schedules(_t.time()):
-        ok = False
         try:
-            ok = await telegram.send(f"⏰ {item['ref']}")
-            if ok:
+            entrega = await notify.notificar("hora_marcada", f"⏰ {item['ref']}")
+            if entrega["push"] or entrega["telegram"]:
                 store.mark_schedule_fired(item["id"])
         except Exception:  # noqa: BLE001 - um item ruim não aborta o tick
             logger.exception("scheduler: item falhou")
-
-        try:
-            store.log_notif("hora_marcada", "telegram", ok)
-        except Exception:  # noqa: BLE001 - um log ruim não aborta os demais itens
-            logger.exception("scheduler: log de notificação falhou")
 
 
 async def _scheduler_worker() -> None:
@@ -184,7 +187,47 @@ class ClosingApproveIn(BaseModel):
 
 
 class NudgeIn(BaseModel):
-    kind: Literal["closing", "review"]
+    kind: Literal["toque", "checkin", "shutdown", "closing", "review"]
+
+
+# --- o dia (A1a toque 5h30 + A1b check-in 8h20) e o Shutdown (A2, 19h) -------
+# `data` é opcional em todos: o app normalmente não manda (é sempre hoje), mas o campo
+# existe pra corrigir o dia anterior sem depender do relógio do servidor.
+
+
+class DiaTemplateIn(BaseModel):
+    template: Literal["yoga", "corrida"]
+    data: str | None = None
+
+
+class CheckinIn(BaseModel):
+    energia: Literal["baixa", "media", "alta"]
+    clareza: Literal["baixa", "media", "alta"]
+    prioridade_1: str = ""
+    data: str | None = None
+
+    @field_validator("prioridade_1")
+    @classmethod
+    def _prioridade(cls, v: str) -> str:
+        return v.strip()
+
+
+class RoutineCheckIn(BaseModel):
+    slug: str
+    feito: bool
+    data: str | None = None
+
+
+class ShutdownIn(BaseModel):
+    prioridades: list[str] = []
+
+    @field_validator("prioridades")
+    @classmethod
+    def _prioridades(cls, v: list[str]) -> list[str]:
+        limpas = [p.strip() for p in v if p and p.strip()]
+        if len(limpas) > 3:
+            raise ValueError("máximo 3 prioridades")
+        return limpas
 
 
 # --- rotinas (dado editável; P2 item 2) -------------------------------------
@@ -501,6 +544,164 @@ async def reorder_routines(body: ReorderIn, _=Depends(require_auth)):
     return {"ok": True, "updated": n}
 
 
+# --- o dia: abertura (A1a + A1b) e o check avulso de rotina ------------------
+# O buraco que isto fecha: o template de dia ("dia yoga / dia corrida") já existia em
+# código, mas só aparecia na tela de FECHAMENTO das 21h — o Leo marcava "acordar 5h30"
+# à noite, retroativamente. A abertura traz o template pra manhã, onde ele é decisão;
+# o POST /routines/check permite marcar UMA rotina na hora em que ela acontece.
+
+
+def _data_ref(valor: str | None) -> date:
+    """`data` opcional (YYYY-MM-DD) → date. Ausente = hoje. Inválida = 422 (fail-closed:
+    não se chuta um dia; escrever no dia errado corromperia o histórico do scorecard)."""
+    try:
+        return date.fromisoformat(valor) if valor else date.today()
+    except (TypeError, ValueError):
+        raise HTTPException(422, "data inválida; use YYYY-MM-DD") from None
+
+
+def _template_do_dia(data: str) -> str | None:
+    dia = store.get_dia(data)
+    return dia["template"] if dia else None
+
+
+@app.post("/dia/template")
+async def dia_template(body: DiaTemplateIn, _=Depends(require_auth)):
+    """O toque das 5h30 (A1a): ele responde qual é o dia. Idempotente — e não apaga o
+    check-in de 8h20 se por algum motivo o toque vier depois."""
+    ref = _data_ref(body.data)
+    dia = store.set_dia_template(ref.isoformat(), body.template)
+    store.log_event("dia_template", ref=ref.isoformat(), meta={"t": body.template})
+    return {"ok": True, "dia": dia}
+
+
+@app.get("/abertura")
+async def abertura(
+    dia: str | None = Query(default=None, alias="data"),
+    _=Depends(require_auth),
+):
+    """O pack da manhã. Junta as 4 coisas que ele precisa ver antes de começar o dia:
+    o template escolhido, as rotinas da MANHÃ (com o que já está marcado), o que o
+    Shutdown de ontem deixou planejado, e o que hoje cobra (tarefas + hora marcada)."""
+    ref = _data_ref(dia)
+    data = ref.isoformat()
+    linha = store.get_dia(data)
+    template = linha["template"] if linha else None
+
+    checks = store.get_checks_on(data)
+    rotinas_manha = [
+        {
+            "id": r["id"],
+            "slug": r["slug"],
+            "nome": r["nome"],
+            "passos": r["passos"],
+            "feito": checks.get(r["slug"], False),
+        }
+        for r in routines.do_dia(store.list_routines(), ref, template)
+        if r["bloco"] == "manha"
+    ]
+
+    ontem = store.get_shutdown((ref - timedelta(days=1)).isoformat())
+
+    # `due_hoje` é relativo a HOJE (o due vem do ClickUp em dias até vencer). Pedir a
+    # abertura de outro dia devolve o estado daquele dia, mas não reescreve o calendário.
+    tarefas_due = await tasks.due_hoje() if ref == date.today() else []
+
+    inicio = datetime.combine(ref, _time.min, tzinfo=TZ).timestamp()
+    fim = datetime.combine(ref + timedelta(days=1), _time.min, tzinfo=TZ).timestamp()
+    horarios = [
+        {
+            "hora": datetime.fromtimestamp(item["quando"], TZ).strftime("%H:%M"),
+            "ref": item["ref"],
+        }
+        for item in store.schedules_between(inicio, fim)
+    ]
+
+    return {
+        "data": data,
+        "template": template,
+        "rotinas_manha": rotinas_manha,
+        "prioridades_de_ontem": ontem["prioridades"] if ontem else [],
+        "hoje": {"tarefas_due": tarefas_due, "horarios": horarios},
+        "checkin": {
+            "feito": bool(linha and linha["checkin_em"]),
+            "energia": linha["energia"] if linha else None,
+            "clareza": linha["clareza"] if linha else None,
+            "prioridade_1": linha["prioridade_1"] if linha else None,
+        },
+    }
+
+
+@app.post("/abertura/checkin")
+async def abertura_checkin(body: CheckinIn, _=Depends(require_auth)):
+    """O check-in das 8h20 (A1b): estado (energia/clareza) + a prioridade nº1 do dia."""
+    ref = _data_ref(body.data)
+    dia = store.set_checkin(
+        ref.isoformat(),
+        body.energia,
+        body.clareza,
+        body.prioridade_1,
+    )
+    store.log_event("checkin", ref=ref.isoformat())
+    return {"ok": True, "dia": dia}
+
+
+@app.post("/routines/check")
+async def check_routine(body: RoutineCheckIn, _=Depends(require_auth)):
+    """Marca UMA rotina, a qualquer hora do dia — é isto que quebra o "marcar 5h30 às 21h".
+
+    O `template` da linha vem da tabela `dia`; se o toque das 5h30 ainda não veio, grava
+    com 'yoga' (o default). Escrita parcial: a PK (data, rotina) deixa esta linha conviver
+    com o que o fechamento das 21h gravar depois — e o fechamento NÃO apaga esta aqui.
+    """
+    ref = _data_ref(body.data)
+    data = ref.isoformat()
+    if not any(r["slug"] == body.slug for r in store.list_routines()):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "rotina não encontrada")
+
+    template = _template_do_dia(data) or "yoga"
+    store.record_checks(data, template, [(body.slug, body.feito)])
+    return {
+        "ok": True,
+        "data": data,
+        "slug": body.slug,
+        "feito": body.feito,
+        "template": template,
+    }
+
+
+# --- Shutdown (A2, 19h): encerrar o TRABALHO ---------------------------------
+# Dois ritos diferentes (decisão do Leo): o Shutdown das 19h fecha o trabalho e planeja
+# amanhã; o fechamento das 21h (abaixo) é o diário + as rotinas. As prioridades salvas
+# aqui são o que o GET /abertura de amanhã mostra em `prioridades_de_ontem`.
+
+
+@app.get("/shutdown")
+async def get_shutdown(
+    dia: str | None = Query(default=None, alias="data"),
+    _=Depends(require_auth),
+):
+    ref = _data_ref(dia)
+    pack = await tasks.shutdown_pack()
+    salvo = store.get_shutdown(ref.isoformat())
+    return {
+        "data": ref.isoformat(),
+        **pack,
+        "prioridades": salvo["prioridades"] if salvo else [],
+        "feito": bool(salvo and salvo["feito_em"]),
+    }
+
+
+@app.post("/shutdown")
+async def post_shutdown(body: ShutdownIn, _=Depends(require_auth)):
+    """As (até 3) prioridades de AMANHÃ. Gravadas sob a data de HOJE — é o Shutdown de
+    hoje que planeja amanhã, e é a abertura de amanhã que lê o Shutdown de ontem."""
+    hoje = date.today().isoformat()
+    salvo = store.save_shutdown(hoje, body.prioridades)
+    store.log_event("shutdown", ref=hoje, meta={"n": len(body.prioridades)})
+    return {"ok": True, "data": hoje, "prioridades": salvo["prioridades"], "feito": True}
+
+
 @app.get("/closing/routines")
 async def closing_routines(
     template: str = "yoga",
@@ -586,9 +787,8 @@ async def internal_nudge(
             text = text + "\n\n" + tasks.weekly_review_text()
         except Exception:
             pass
-    delivered = await telegram.send(text)
-    store.log_notif(f"nudge_{body.kind}", "telegram", delivered)
-    return {"ok": True, "telegram": delivered}
+    entrega = await notify.notificar(f"nudge_{body.kind}", text)
+    return {"ok": True, **entrega}
 
 
 @app.post("/internal/notify")
@@ -615,14 +815,15 @@ async def internal_run_digest(x_internal_token: str = Header(default="")):
         return {"skipped": "digest ja enviado hoje"}
     result = await tasks.run_digest()
     has_content = bool(result["tasks"]) or bool(result.get("lines_extra"))
-    delivered = False
+    entrega = {"push": False, "telegram": False}
     if has_content:
-        delivered = await telegram.send(result["body_telegram"])
-        store.log_notif("digest", "telegram", delivered)
+        # `body_telegram` já vem neutralizado POR LINHA (áreas sensíveis) — é o corpo
+        # de preview, e serve aos dois canais. O app lê o body_app inteiro no /digest.
+        entrega = await notify.notificar("digest", result["body_telegram"])
     store.save_digest_run(
         today,
         result["body_app"],
         len(result["tasks"]),
-        delivered,
+        entrega["push"] or entrega["telegram"],
     )
-    return {"count": len(result["tasks"]), "telegram": delivered}
+    return {"count": len(result["tasks"]), "telegram": entrega["telegram"]}

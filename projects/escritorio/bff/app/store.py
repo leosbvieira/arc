@@ -72,6 +72,19 @@ CREATE TABLE IF NOT EXISTS scheduler (
   id INTEGER PRIMARY KEY AUTOINCREMENT, quando REAL NOT NULL, tipo TEXT NOT NULL,
   ref TEXT NOT NULL, disparado INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS dia (
+  data TEXT PRIMARY KEY,
+  template TEXT,
+  energia TEXT,
+  clareza TEXT,
+  prioridade_1 TEXT,
+  checkin_em REAL
+);
+CREATE TABLE IF NOT EXISTS shutdown (
+  data TEXT PRIMARY KEY,
+  prioridades TEXT NOT NULL DEFAULT '[]',
+  feito_em REAL
+);
 """
 
 
@@ -155,6 +168,17 @@ def get_checks_since(data_inicio: str) -> list[dict]:
             (data_inicio,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_checks_on(data: str) -> dict[str, bool]:
+    """{slug: feito} de UM dia — o que a abertura (A1a/A1b) precisa pra dizer o que já
+    está marcado. A PK (data, rotina) permite escrita parcial: marcar de manhã e fechar
+    à noite convivem na mesma data."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT rotina, feito FROM routine_checks WHERE data = ?", (data,)
+        ).fetchall()
+    return {r["rotina"]: bool(r["feito"]) for r in rows}
 
 
 # --- routines (dado editável; P2 item 2) ------------------------------------
@@ -655,3 +679,108 @@ def mark_schedule_fired(id: int) -> None:
     with closing(_connect()) as con:
         con.execute("UPDATE scheduler SET disparado = 1 WHERE id = ?", (id,))
         con.commit()
+
+
+def pending_schedules() -> list[dict]:
+    """Tudo que ainda não disparou (não só o vencido) — os follow-ups do Shutdown."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM scheduler WHERE disparado = 0 ORDER BY quando, id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def schedules_between(inicio_ts: float, fim_ts: float) -> list[dict]:
+    """Itens de hora marcada de uma janela [início, fim) — os `horarios` da abertura.
+    Traz também os já disparados: é a AGENDA do dia, não uma fila de pendências."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM scheduler WHERE quando >= ? AND quando < ? "
+            "ORDER BY quando, id",
+            (inicio_ts, fim_ts),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- dia (A1a toque das 5h30 + A1b check-in das 8h20) -----------------------
+# Uma linha por data. As duas escritas são UPSERT PARCIAL, não REPLACE cego: o toque
+# não pode apagar o check-in e o check-in não pode apagar o toque (eles acontecem em
+# horas diferentes do MESMO dia, e ordem nenhuma é garantida).
+
+
+_DIA_COLS = "data, template, energia, clareza, prioridade_1, checkin_em"
+
+
+def get_dia(data: str) -> dict | None:
+    with closing(_connect()) as con:
+        row = con.execute(
+            f"SELECT {_DIA_COLS} FROM dia WHERE data = ?", (data,)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def set_dia_template(data: str, template: str) -> dict:
+    """O toque das 5h30: 'dia yoga' ou 'dia corrida'. Idempotente — reescrever o mesmo
+    template (ou trocar de ideia) não perde o resto da linha."""
+    with closing(_connect()) as con:
+        con.execute(
+            "INSERT INTO dia (data, template) VALUES (?, ?) "
+            "ON CONFLICT(data) DO UPDATE SET template = excluded.template",
+            (data, template),
+        )
+        con.commit()
+    return get_dia(data)
+
+
+def set_checkin(
+    data: str,
+    energia: str | None,
+    clareza: str | None,
+    prioridade_1: str | None,
+) -> dict:
+    """O check-in das 8h20. `checkin_em` é o carimbo de que ele ACONTECEU."""
+    with closing(_connect()) as con:
+        con.execute(
+            "INSERT INTO dia (data, energia, clareza, prioridade_1, checkin_em) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(data) DO UPDATE SET "
+            "energia = excluded.energia, clareza = excluded.clareza, "
+            "prioridade_1 = excluded.prioridade_1, checkin_em = excluded.checkin_em",
+            (data, energia, clareza, prioridade_1, time.time()),
+        )
+        con.commit()
+    return get_dia(data)
+
+
+# --- shutdown (A2, 19h) ------------------------------------------------------
+
+
+def get_shutdown(data: str) -> dict | None:
+    """`prioridades` volta como lista (no banco é JSON). São as prioridades de AMANHÃ —
+    é isto que o GET /abertura do dia seguinte lê em `prioridades_de_ontem`."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT data, prioridades, feito_em FROM shutdown WHERE data = ?", (data,)
+        ).fetchone()
+    if row is None:
+        return None
+    r = dict(row)
+    try:
+        prioridades = json.loads(r.get("prioridades") or "[]")
+    except (TypeError, ValueError):
+        prioridades = []
+    r["prioridades"] = prioridades if isinstance(prioridades, list) else []
+    return r
+
+
+def save_shutdown(data: str, prioridades: list[str]) -> dict:
+    """Salva o plano de amanhã e marca o rito como feito. REPLACE: refazer o Shutdown no
+    mesmo dia substitui o plano (o último é o que vale)."""
+    with closing(_connect()) as con:
+        con.execute(
+            "INSERT OR REPLACE INTO shutdown (data, prioridades, feito_em) "
+            "VALUES (?, ?, ?)",
+            (data, json.dumps(list(prioridades)), time.time()),
+        )
+        con.commit()
+    return get_shutdown(data)

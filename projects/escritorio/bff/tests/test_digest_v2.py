@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, store, tasks
+from app import store, tasks, telegram
 from app.config import settings
 from app.main import app, require_auth
 from app.tasks import Task, render_digest_lines, routine_lines, staging_line
@@ -83,7 +83,7 @@ def test_run_digest_dedupe_persiste_e_neutraliza(client, monkeypatch):
     async def fake_send(text):
         sent.append(text)
         return True
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(tasks, "_open", _only("Marcar psiquiatra", "Corpo", -3))
 
     r1 = client.post("/internal/run-digest", headers=HDR)
@@ -104,7 +104,7 @@ def test_falha_de_entrega_nao_consome_o_dia(client, monkeypatch):
     async def fake_send(text):
         sent.append(text)
         return next(outcomes)
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(tasks, "_open", _only("Pagar boleto", "Finanças", -1))
 
     assert client.post("/internal/run-digest", headers=HDR).json()["telegram"] is False
@@ -117,7 +117,7 @@ def test_envia_so_com_linha_extra(client, monkeypatch):
     async def fake_send(text):
         sent.append(text)
         return True
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(tasks, "_open", lambda: [])                 # zero tarefas
     monkeypatch.setattr(tasks, "routine_lines",
                         lambda today=None: ["🔁 academia: 3 furos nos últimos 7 dias"])
@@ -135,7 +135,7 @@ def test_envia_so_com_staging(client, monkeypatch):
     async def fake_send(text):
         sent.append(text)
         return True
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(tasks, "_open", lambda: [])
     monkeypatch.setattr(tasks, "routine_lines", lambda today=None: [])
     monkeypatch.setattr(tasks, "staging_line",
@@ -151,7 +151,7 @@ def test_nada_acionavel_nao_envia(client, monkeypatch):
     async def fake_send(text):
         sent.append(text)
         return True
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     monkeypatch.setattr(tasks, "_open", lambda: [])
     monkeypatch.setattr(tasks, "routine_lines", lambda today=None: [])
 

@@ -24,6 +24,7 @@ import {
   View,
 } from "react-native";
 
+import Abertura from "./src/screens/Abertura";
 import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
 import { flush } from "./src/captureQueue";
 import { registerForPushToken } from "./src/notifications";
@@ -33,13 +34,24 @@ import Fechar from "./src/screens/Fechar";
 import Home from "./src/screens/Home";
 import Revisao from "./src/screens/Revisao";
 import Rotinas from "./src/screens/Rotinas";
+import Shutdown from "./src/screens/Shutdown";
 import Tasks from "./src/screens/Tasks";
 import { colors, fonts, spacing } from "./src/theme";
 import { AppButton, Card, Field } from "./src/ui";
 
-type Tab = "home" | "capturar" | "tarefas" | "chat" | "revisao" | "fechar" | "rotinas";
+type Tab =
+  | "home"
+  | "capturar"
+  | "tarefas"
+  | "chat"
+  | "revisao"
+  | "abertura"
+  | "shutdown"
+  | "fechar"
+  | "rotinas";
 
-// A tabbar fica só com 4 — revisão/fechar/rotinas entram pela Home e voltam pelo chevron.
+// A tabbar fica só com 4 — revisão/abertura/shutdown/fechar/rotinas entram pela
+// Home e voltam pelo chevron.
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "home", label: "Home", icon: "home" },
   { key: "capturar", label: "Capturar", icon: "feather" },
@@ -47,10 +59,12 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "chat", label: "Chat", icon: "message-circle" },
 ];
 
-const SUBSCREENS: Tab[] = ["revisao", "fechar", "rotinas"];
+const SUBSCREENS: Tab[] = ["revisao", "abertura", "shutdown", "fechar", "rotinas"];
 
 const TITLES: Partial<Record<Tab, string>> = {
   revisao: "Revisão",
+  abertura: "Abertura",
+  shutdown: "Shutdown",
   fechar: "Fechar o dia",
   rotinas: "Rotinas",
 };
@@ -200,6 +214,10 @@ export default function App() {
           <Tasks />
         ) : tab === "chat" ? (
           <Chat />
+        ) : tab === "abertura" ? (
+          <Abertura />
+        ) : tab === "shutdown" ? (
+          <Shutdown />
         ) : tab === "fechar" ? (
           <Fechar />
         ) : tab === "rotinas" ? (

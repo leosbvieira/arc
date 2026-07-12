@@ -79,12 +79,17 @@ def vale_no_dia(routine: dict, d: date) -> bool:
     return dias == TODOS or dia_sigla(d) in _csv(dias)
 
 
-def vale_no_template(routine: dict, template: str) -> bool:
+def vale_no_template(routine: dict, template: str | None) -> bool:
+    """`template=None` = o toque das 5h30 ainda não veio: o sistema NÃO sabe se é dia
+    yoga ou dia corrida, então só valem as rotinas que independem do template. Ele não
+    inventa um dia que o Leo não escolheu (e a corrida não some do dia dele por default)."""
     templates = (routine.get("templates") or TODOS).strip()
+    if template is None:
+        return templates == TODOS
     return templates == TODOS or _fold(template) in _csv(templates)
 
 
-def do_dia(rotinas: list[dict], d: date, template: str) -> list[dict]:
+def do_dia(rotinas: list[dict], d: date, template: str | None) -> list[dict]:
     """Filtra as rotinas ativas que valem NAQUELE dia, naquele template.
 
     Preserva a ordem de entrada (store.list_routines já ordena por bloco/ordem/id),

@@ -1,11 +1,25 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { Bloco, ClosingRotina, closingApprove, closingDraft, closingRoutines } from "../api";
+import {
+  Bloco,
+  ClosingRotina,
+  Template,
+  closingApprove,
+  closingDraft,
+  closingRoutines,
+  getAbertura,
+  setTemplateDia,
+} from "../api";
 import { colors, fonts, spacing } from "../theme";
 
 // As rotinas já vêm filtradas pelo BFF (dia da semana + template). Não filtre aqui.
 // Os passos são roteiro: aparecem numerados em cinza, SEM checkbox próprio — quem
 // conta no fechamento é o item pai, binário.
+//
+// O template NÃO se escolhe aqui: é o toque das 5h30, na Abertura. Aqui a gente só
+// lê (`GET /abertura`). O seletor só aparece como fallback, se o dia não foi marcado.
+// E as rotinas da manhã já podem estar marcadas — o estado da manhã manda; montar a
+// tela NÃO zera nada.
 const BLOCOS: { key: Bloco; label: string }[] = [
   { key: "manha", label: "Manhã" },
   { key: "dia", label: "Dia" },
@@ -13,7 +27,9 @@ const BLOCOS: { key: Bloco; label: string }[] = [
 ];
 
 export default function Fechar() {
-  const [template, setTemplate] = useState<"yoga" | "corrida">("yoga");
+  const [template, setTemplate] = useState<Template | null>(null);
+  const [feitoManha, setFeitoManha] = useState<Record<string, boolean>>({});
+  const [loadingDia, setLoadingDia] = useState(true);
   const [routines, setRoutines] = useState<ClosingRotina[]>([]);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [dump, setDump] = useState("");
@@ -21,28 +37,62 @@ export default function Fechar() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
-  const [loadingRoutines, setLoadingRoutines] = useState(true);
+  const [loadingRoutines, setLoadingRoutines] = useState(false);
   const [routinesErr, setRoutinesErr] = useState("");
   const [routinesReload, setRoutinesReload] = useState(0);
+
+  // O dia (template) e o que já foi marcado de manhã vêm da abertura.
+  useEffect(() => {
+    let alive = true;
+
+    getAbertura()
+      .then((a) => {
+        if (!alive) return;
+        setTemplate(a.template);
+        setFeitoManha(
+          Object.fromEntries(a.rotinas_manha.map((r) => [r.slug, r.feito])),
+        );
+      })
+      .catch(() => {
+        // sem abertura, cai no seletor de fallback abaixo.
+        if (alive) setTemplate(null);
+      })
+      .finally(() => {
+        if (alive) setLoadingDia(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
 
+    if (template === null) {
+      setLoadingRoutines(false);
+      setRoutines([]);
+      return;
+    }
+
     setLoadingRoutines(true);
     setRoutines([]);
-    setChecks({});
     setRoutinesErr("");
 
     closingRoutines(template)
       .then((rs) => {
         if (!alive) return;
         setRoutines(rs);
-        setChecks(Object.fromEntries(rs.map((r) => [r.slug, false])));
+        // NÃO zera: o que já está marcado (na tela ou desde a manhã) fica marcado.
+        setChecks((current) =>
+          Object.fromEntries(
+            rs.map((r) => [r.slug, current[r.slug] ?? feitoManha[r.slug] ?? false]),
+          ),
+        );
       })
       .catch(() => {
         if (!alive) return;
         setRoutines([]);
-        setChecks({});
         setRoutinesErr("sem conexão com o BFF");
       })
       .finally(() => {
@@ -52,9 +102,10 @@ export default function Fechar() {
     return () => {
       alive = false;
     };
-  }, [template, routinesReload]);
+  }, [template, routinesReload, feitoManha]);
 
   const gerar = async () => {
+    if (!template) return;
     setBusy(true);
     setErr("");
     try {
@@ -67,6 +118,7 @@ export default function Fechar() {
   };
 
   const aprovar = async (md: string) => {
+    if (!template) return;
     setBusy(true);
     setErr("");
     try {
@@ -87,13 +139,13 @@ export default function Fechar() {
     }
   };
 
-  const selectTemplate = (next: "yoga" | "corrida") => {
+  // Fallback: o dia não foi marcado de manhã. Marca agora, e grava (é o mesmo dia).
+  const selectTemplate = (next: Template) => {
     if (next === template) return;
-    setLoadingRoutines(true);
-    setRoutines([]);
-    setChecks({});
-    setRoutinesErr("");
     setTemplate(next);
+    setTemplateDia(next).catch(() => {
+      /* offline: segue com o template local, o approve leva o template junto */
+    });
   };
 
   const retryRoutines = () => {
@@ -103,9 +155,9 @@ export default function Fechar() {
 
   // Lista vazia agora é legítima (ex.: só tem rotina de quarta e hoje é terça) —
   // o que trava o fechamento é não ter conseguido carregar, não ter zero rotinas.
-  const routinesUnavailable = loadingRoutines || !!routinesErr;
-  const dumpActionsDisabled =
-    busy || routinesUnavailable || !dump.trim();
+  const routinesUnavailable =
+    loadingDia || template === null || loadingRoutines || !!routinesErr;
+  const dumpActionsDisabled = busy || routinesUnavailable || !dump.trim();
 
   if (done) {
     return (
@@ -119,24 +171,30 @@ export default function Fechar() {
 
   return (
     <ScrollView style={{ flex: 1, padding: 16 }}>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {(["yoga", "corrida"] as const).map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => selectTemplate(t)}
-            style={{
-              padding: 8,
-              borderRadius: 8,
-              backgroundColor:
-                template === t ? colors.primary : colors.card,
-            }}
-          >
-            <Text style={{ color: template === t ? colors.primaryText : colors.text }}>
-              dia {t}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      {loadingDia ? (
+        <ActivityIndicator color={colors.primary} style={{ alignSelf: "flex-start" }} />
+      ) : template === null ? (
+        <>
+          <Text style={{ color: colors.textMuted, fontFamily: fonts.ui }}>
+            o dia não foi marcado de manhã — qual foi?
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            {(["yoga", "corrida"] as const).map((t) => (
+              <Pressable
+                key={t}
+                onPress={() => selectTemplate(t)}
+                style={{ padding: 8, borderRadius: 8, backgroundColor: colors.card }}
+              >
+                <Text style={{ color: colors.text }}>dia {t}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : (
+        <Text style={{ color: colors.textMuted, fontFamily: fonts.mono, fontSize: 11 }}>
+          dia {template}
+        </Text>
+      )}
 
       <Text style={{ color: colors.textMuted, marginTop: 16 }}>
         rotinas de hoje
@@ -146,6 +204,10 @@ export default function Fechar() {
           color={colors.primary}
           style={{ alignSelf: "flex-start", marginTop: 8 }}
         />
+      ) : template === null ? (
+        <Text style={{ color: colors.textMuted, marginTop: 8, fontFamily: fonts.ui }}>
+          marca o dia acima pra ver as rotinas.
+        </Text>
       ) : routines.length === 0 && !routinesErr ? (
         <Text style={{ color: colors.textMuted, marginTop: 8, fontFamily: fonts.ui }}>
           nenhuma rotina vale hoje — dá pra criar as tuas em Rotinas.

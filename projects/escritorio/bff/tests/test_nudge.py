@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, store
+from app import store, telegram
 from app.config import settings
 from app.main import app
 
@@ -21,7 +21,7 @@ def test_nudge_closing(client, monkeypatch):
         sent.append(text)
         return True
 
-    monkeypatch.setattr(main.telegram, "send", fake_send)
+    monkeypatch.setattr(telegram, "send", fake_send)
     r = client.post(
         "/internal/nudge",
         json={"kind": "closing"},
