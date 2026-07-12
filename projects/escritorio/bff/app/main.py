@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from pydantic import BaseModel, field_validator
 
 from . import (
     capture_pipeline,
@@ -186,6 +186,97 @@ class NudgeIn(BaseModel):
     kind: Literal["closing", "review"]
 
 
+# --- rotinas (dado editável; P2 item 2) -------------------------------------
+# Os validadores normalizam a entrada do app e falham fechado (422) em bloco/dia/
+# template inválido. `slug` NUNCA vem do app: é derivado do nome no create e, depois
+# disso, é imutável — ele é a chave que amarra o histórico em routine_checks.
+
+
+class RoutineIn(BaseModel):
+    nome: str
+    bloco: str
+    dias: str = "*"
+    templates: str = "*"
+    passos: list[str] = []
+
+    @field_validator("nome")
+    @classmethod
+    def _nome(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("nome vazio")
+        return v.strip()
+
+    @field_validator("bloco")
+    @classmethod
+    def _bloco(cls, v: str) -> str:
+        return routines.norm_bloco(v)
+
+    @field_validator("dias")
+    @classmethod
+    def _dias(cls, v: str) -> str:
+        return routines.norm_dias(v)
+
+    @field_validator("templates")
+    @classmethod
+    def _templates(cls, v: str) -> str:
+        return routines.norm_templates(v)
+
+    @field_validator("passos")
+    @classmethod
+    def _passos(cls, v: list[str]) -> list[str]:
+        return routines.norm_passos(v)
+
+
+class RoutinePatch(BaseModel):
+    """Patch parcial. Campos ausentes ficam como estão (model_dump(exclude_unset)).
+    `slug` no body é ignorado de propósito — não é um campo aqui."""
+
+    nome: str | None = None
+    bloco: str | None = None
+    dias: str | None = None
+    templates: str | None = None
+    passos: list[str] | None = None
+    ordem: int | None = None
+
+    @field_validator("nome")
+    @classmethod
+    def _nome(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not v.strip():
+            raise ValueError("nome vazio")
+        return v.strip()
+
+    @field_validator("bloco")
+    @classmethod
+    def _bloco(cls, v: str | None) -> str | None:
+        return routines.norm_bloco(v) if v is not None else None
+
+    @field_validator("dias")
+    @classmethod
+    def _dias(cls, v: str | None) -> str | None:
+        return routines.norm_dias(v) if v is not None else None
+
+    @field_validator("templates")
+    @classmethod
+    def _templates(cls, v: str | None) -> str | None:
+        return routines.norm_templates(v) if v is not None else None
+
+    @field_validator("passos")
+    @classmethod
+    def _passos(cls, v: list[str] | None) -> list[str] | None:
+        return routines.norm_passos(v) if v is not None else None
+
+
+class ReorderItem(BaseModel):
+    id: int
+    ordem: int
+
+
+class ReorderIn(BaseModel):
+    ordem: list[ReorderItem]
+
+
 @app.get("/health")
 async def health():
     return {"ok": True, "mock": settings.hermes_mock}
@@ -352,9 +443,77 @@ async def review_weekly(_=Depends(require_auth)):
     return pack
 
 
+# --- rotinas: CRUD (a tela de Rotinas do app) --------------------------------
+
+
+@app.get("/routines")
+async def list_routines(_=Depends(require_auth)):
+    return {"routines": store.list_routines()}
+
+
+@app.post("/routines")
+async def create_routine(body: RoutineIn, _=Depends(require_auth)):
+    return (
+        store.create_routine(
+            body.nome,
+            body.bloco,
+            body.dias,
+            body.templates,
+            body.passos,
+        )
+    )
+
+
+@app.patch("/routines/{routine_id}")
+async def patch_routine(
+    routine_id: int,
+    body: RoutinePatch,
+    _=Depends(require_auth),
+):
+    campos = body.model_dump(exclude_unset=True, exclude_none=True)
+    r = store.update_routine(routine_id, **campos)
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "rotina não encontrada")
+    return r
+
+
+@app.delete("/routines/{routine_id}")
+async def delete_routine(routine_id: int, _=Depends(require_auth)):
+    """Soft delete: some da lista e do fechamento, mas os checks já gravados (que
+    referenciam o slug) continuam contando no scorecard das semanas passadas."""
+    if not store.delete_routine(routine_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "rotina não encontrada")
+    return {"ok": True}
+
+
+@app.post("/routines/reorder")
+async def reorder_routines(body: ReorderIn, _=Depends(require_auth)):
+    n = store.reorder_routines([(i.id, i.ordem) for i in body.ordem])
+    return {"ok": True, "updated": n}
+
+
 @app.get("/closing/routines")
-async def closing_routines(template: str = "yoga", _=Depends(require_auth)):
-    return {"routines": routines.ROUTINES.get(template, routines.ROUTINES["yoga"])}
+async def closing_routines(
+    template: str = "yoga",
+    dia: str | None = Query(default=None, alias="date"),
+    _=Depends(require_auth),
+):
+    """Só o que vale NAQUELE dia: filtra por dia da semana + template + ativo.
+
+    Devolve objetos (antes eram strings): o app precisa do `slug` (chave dos checks),
+    do `bloco` (a manhã não aparece no fechamento das 21h) e dos `passos` (roteiro —
+    NÃO são checks; quem conta no scorecard é o item pai)."""
+    try:
+        ref = date.fromisoformat(dia) if dia else date.today()
+    except ValueError:
+        raise HTTPException(422, "date inválida; use YYYY-MM-DD") from None
+    do_dia = routines.do_dia(store.list_routines(), ref, template)
+    return {
+        "routines": [
+            {k: r[k] for k in ("id", "slug", "nome", "bloco", "passos")}
+            for r in do_dia
+        ]
+    }
 
 
 @app.post("/closing/draft")

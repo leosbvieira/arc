@@ -197,17 +197,107 @@ export async function getTaskDetail(id: string): Promise<TaskDetail> {
   return (await r.json()) as TaskDetail;
 }
 
+// ---- Rotinas (P2-2) ----
+// Rotinas deixaram de ser 6 checks hardcoded no BFF: agora são editáveis pelo Leo
+// (CRUD na tela Rotinas). `slug` é a chave estável — é ele que vai nos checks do
+// fechamento. `passos` é só roteiro (ordem dos produtos do skincare, etc.): NÃO
+// conta no scorecard, quem conta é o item pai, binário.
+export type Bloco = "manha" | "dia" | "noite";
+
+export type Rotina = {
+  id: number;
+  slug: string;
+  nome: string;
+  bloco: Bloco;
+  dias: string; // "*" (todo dia) | csv "seg,ter,qua,qui,sex,sab,dom"
+  templates: string; // "*" (ambos) | csv "yoga,corrida"
+  passos: string[]; // ORDENADO; pode ser []
+  ordem: number;
+  origem: "exemplo" | "leo";
+};
+
+export type RotinaInput = {
+  nome: string;
+  bloco: Bloco;
+  dias?: string;
+  templates?: string;
+  passos?: string[];
+};
+
+export async function listRoutines(): Promise<Rotina[]> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/routines`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`routines: ${r.status}`);
+  return ((await r.json()) as { routines: Rotina[] }).routines;
+}
+
+export async function createRoutine(body: RotinaInput): Promise<Rotina> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/routines`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`routines: ${r.status}`);
+  return (await r.json()) as Rotina;
+}
+
+export async function updateRoutine(
+  id: number,
+  patch: Partial<RotinaInput & { ordem: number }>,
+): Promise<Rotina> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/routines/${id}`, {
+    method: "PATCH",
+    headers: await authHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`routines: ${r.status}`);
+  return (await r.json()) as Rotina;
+}
+
+export async function deleteRoutine(id: number): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/routines/${id}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`routines: ${r.status}`);
+}
+
+export async function reorderRoutines(
+  ordem: { id: number; ordem: number }[],
+): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/routines/reorder`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ ordem }),
+  });
+  if (!r.ok) throw new Error(`routines: ${r.status}`);
+}
+
 // ---- Fechamento noturno (A3) ----
 export type CheckItem = { rotina: string; feito: boolean };
 
-export async function closingRoutines(template: string): Promise<string[]> {
+// Rotinas que valem HOJE — o BFF já filtra por dia da semana + template. Não
+// filtre de novo no app. Vêm como objetos (antes era string[]).
+export type ClosingRotina = {
+  id: number;
+  slug: string;
+  nome: string;
+  bloco: Bloco;
+  passos: string[];
+};
+
+export async function closingRoutines(template: string): Promise<ClosingRotina[]> {
   const base = await getBffUrl();
   const r = await fetch(
     `${base}/closing/routines?template=${encodeURIComponent(template)}`,
     { headers: await authHeaders() },
   );
   if (!r.ok) throw new Error(`routines: ${r.status}`);
-  return (await r.json()).routines;
+  return ((await r.json()) as { routines: ClosingRotina[] }).routines;
 }
 
 export async function closingDraft(

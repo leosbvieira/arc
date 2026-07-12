@@ -35,6 +35,18 @@ CREATE TABLE IF NOT EXISTS routine_checks (
   data TEXT NOT NULL, rotina TEXT NOT NULL, feito INTEGER NOT NULL,
   template TEXT NOT NULL, PRIMARY KEY (data, rotina)
 );
+CREATE TABLE IF NOT EXISTS routines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL UNIQUE,
+  nome TEXT NOT NULL,
+  bloco TEXT NOT NULL,
+  dias TEXT NOT NULL DEFAULT '*',
+  templates TEXT NOT NULL DEFAULT '*',
+  passos TEXT NOT NULL DEFAULT '[]',
+  ordem INTEGER NOT NULL DEFAULT 0,
+  origem TEXT NOT NULL DEFAULT 'leo',
+  ativo INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, projeto TEXT,
   categoria TEXT, inicio REAL NOT NULL, fim REAL NOT NULL,
@@ -100,6 +112,10 @@ def init_db() -> None:
         )
         con.commit()
 
+    # Semente das rotinas: conexão própria (BEGIN IMMEDIATE não pode nascer dentro
+    # da transação do schema) e só num banco vazio — ver _seed_routines.
+    _seed_routines()
+
 
 # --- devices (push tokens) --------------------------------------------------
 
@@ -139,6 +155,178 @@ def get_checks_since(data_inicio: str) -> list[dict]:
             (data_inicio,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- routines (dado editável; P2 item 2) ------------------------------------
+# `slug` é a chave ESTÁVEL: é o que vai em routine_checks.rotina e o que amarra o
+# histórico do scorecard. Nasce no create e NUNCA é reescrito. Delete é SOFT
+# (ativo=0) pelo mesmo motivo: apagar a rotina não pode apagar o passado dela.
+
+# manha < dia < noite; depois `ordem`; depois `id` (desempate estável).
+_ROUTINE_ORDER = (
+    "CASE bloco WHEN 'manha' THEN 0 WHEN 'dia' THEN 1 ELSE 2 END, ordem, id"
+)
+_ROUTINE_COLS = "id, slug, nome, bloco, dias, templates, passos, ordem, origem"
+
+
+def _routine(row: sqlite3.Row) -> dict:
+    """Row → dict do contrato: `passos` volta como lista (no banco é JSON)."""
+    r = dict(row)
+    try:
+        passos = json.loads(r.get("passos") or "[]")
+    except (TypeError, ValueError):
+        passos = []
+    r["passos"] = passos if isinstance(passos, list) else []
+    return r
+
+
+def _seed_routines() -> int:
+    """Semeia os exemplos SÓ num banco vazio (idempotente; init_db roda a cada boot).
+
+    BEGIN IMMEDIATE serializa o count+insert entre escritores: dois processos subindo
+    juntos não podem semear duas vezes (o UNIQUE do slug seguraria, mas aqui a gente
+    nem chega lá). Banco já semeado ou com rotinas do Leo → no-op, nunca sobrescreve.
+    """
+    from .routines import SEED
+
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT 1 FROM routines LIMIT 1").fetchone() is not None:
+            con.commit()
+            return 0
+        con.executemany(
+            "INSERT INTO routines "
+            "(slug, nome, bloco, dias, templates, passos, ordem, origem, ativo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'exemplo', 1)",
+            [
+                (slug, nome, bloco, dias, templates, json.dumps(passos), i)
+                for i, (slug, nome, bloco, dias, templates, passos)
+                in enumerate(SEED, start=1)
+            ],
+        )
+        con.commit()
+    return len(SEED)
+
+
+def list_routines(*, incluir_inativas: bool = False) -> list[dict]:
+    where = "" if incluir_inativas else "WHERE ativo = 1"
+    with closing(_connect()) as con:
+        rows = con.execute(
+            f"SELECT {_ROUTINE_COLS} FROM routines {where} ORDER BY {_ROUTINE_ORDER}"
+        ).fetchall()
+    return [_routine(r) for r in rows]
+
+
+def get_routine(id: int, *, incluir_inativas: bool = False) -> dict | None:
+    where = "" if incluir_inativas else "AND ativo = 1"
+    with closing(_connect()) as con:
+        row = con.execute(
+            f"SELECT {_ROUTINE_COLS} FROM routines WHERE id = ? {where}", (id,)
+        ).fetchone()
+    return _routine(row) if row is not None else None
+
+
+def _unique_slug(con: sqlite3.Connection, base: str) -> str:
+    """Sufixa -2, -3... na colisão. Compara contra TODAS as rotinas (inclusive as
+    soft-deletadas): o slug de uma rotina apagada ainda é referenciado pelos checks
+    antigos, então reciclá-lo misturaria dois históricos."""
+    tomados = {
+        r["slug"] for r in con.execute(
+            "SELECT slug FROM routines WHERE slug = ? OR slug LIKE ? || '-%'",
+            (base, base),
+        )
+    }
+    if base not in tomados:
+        return base
+    n = 2
+    while f"{base}-{n}" in tomados:
+        n += 1
+    return f"{base}-{n}"
+
+
+def create_routine(
+    nome: str,
+    bloco: str,
+    dias: str = "*",
+    templates: str = "*",
+    passos: list[str] | None = None,
+    *,
+    origem: str = "leo",
+) -> dict:
+    from .routines import slugify
+
+    with closing(_connect()) as con:
+        # slug único + ordem = max+1 do bloco: as duas leituras precisam ser
+        # atômicas com o insert, senão dois creates simultâneos colidem.
+        con.execute("BEGIN IMMEDIATE")
+        slug = _unique_slug(con, slugify(nome))
+        row = con.execute(
+            "SELECT COALESCE(MAX(ordem), 0) FROM routines WHERE bloco = ?", (bloco,)
+        ).fetchone()
+        cur = con.execute(
+            "INSERT INTO routines "
+            "(slug, nome, bloco, dias, templates, passos, ordem, origem, ativo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+            (
+                slug, nome, bloco, dias, templates,
+                json.dumps(passos or []), int(row[0]) + 1, origem,
+            ),
+        )
+        con.commit()
+        new = con.execute(
+            f"SELECT {_ROUTINE_COLS} FROM routines WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    return _routine(new)
+
+
+def update_routine(id: int, **campos) -> dict | None:
+    """Patch parcial. `slug` e `origem` NÃO são atualizáveis — o slug é a chave do
+    histórico e a origem diz quem criou. Devolve None se a rotina não existe (ou já
+    foi soft-deletada)."""
+    permitidos = ("nome", "bloco", "dias", "templates", "passos", "ordem")
+    sets, params = [], []
+    for campo in permitidos:
+        if campo not in campos or campos[campo] is None:
+            continue
+        valor = campos[campo]
+        sets.append(f"{campo} = ?")
+        params.append(json.dumps(valor) if campo == "passos" else valor)
+
+    with closing(_connect()) as con:
+        if sets:
+            cur = con.execute(
+                f"UPDATE routines SET {', '.join(sets)} WHERE id = ? AND ativo = 1",
+                (*params, id),
+            )
+            con.commit()
+            if cur.rowcount == 0:
+                return None
+        row = con.execute(
+            f"SELECT {_ROUTINE_COLS} FROM routines WHERE id = ? AND ativo = 1", (id,)
+        ).fetchone()
+    return _routine(row) if row is not None else None
+
+
+def delete_routine(id: int) -> bool:
+    """Soft delete. A linha fica (o slug continua amarrando os checks antigos), some
+    das listagens e do fechamento."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE routines SET ativo = 0 WHERE id = ? AND ativo = 1", (id,)
+        )
+        con.commit()
+        return cur.rowcount == 1
+
+
+def reorder_routines(pares: list[tuple[int, int]]) -> int:
+    """Reordena em lote (drag-and-drop do app). Ignora ids inexistentes/inativos."""
+    with closing(_connect()) as con:
+        cur = con.executemany(
+            "UPDATE routines SET ordem = ? WHERE id = ? AND ativo = 1",
+            [(int(ordem), int(id)) for id, ordem in pares],
+        )
+        con.commit()
+        return cur.rowcount
 
 
 # --- sessions ---------------------------------------------------------------

@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { closingApprove, closingDraft, closingRoutines } from "../api";
-import { colors } from "../theme";
+import { Bloco, ClosingRotina, closingApprove, closingDraft, closingRoutines } from "../api";
+import { colors, fonts, spacing } from "../theme";
+
+// As rotinas já vêm filtradas pelo BFF (dia da semana + template). Não filtre aqui.
+// Os passos são roteiro: aparecem numerados em cinza, SEM checkbox próprio — quem
+// conta no fechamento é o item pai, binário.
+const BLOCOS: { key: Bloco; label: string }[] = [
+  { key: "manha", label: "Manhã" },
+  { key: "dia", label: "Dia" },
+  { key: "noite", label: "Noite" },
+];
 
 export default function Fechar() {
   const [template, setTemplate] = useState<"yoga" | "corrida">("yoga");
-  const [routines, setRoutines] = useState<string[]>([]);
+  const [routines, setRoutines] = useState<ClosingRotina[]>([]);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [dump, setDump] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
@@ -28,7 +37,7 @@ export default function Fechar() {
       .then((rs) => {
         if (!alive) return;
         setRoutines(rs);
-        setChecks(Object.fromEntries(rs.map((r) => [r, false])));
+        setChecks(Object.fromEntries(rs.map((r) => [r.slug, false])));
       })
       .catch(() => {
         if (!alive) return;
@@ -66,8 +75,8 @@ export default function Fechar() {
         draft_md: md,
         template,
         checks: routines.map((r) => ({
-          rotina: r,
-          feito: !!checks[r],
+          rotina: r.slug,
+          feito: !!checks[r.slug],
         })),
       });
       setDone(true);
@@ -92,8 +101,9 @@ export default function Fechar() {
     setRoutinesReload((current) => current + 1);
   };
 
-  const routinesUnavailable =
-    loadingRoutines || routines.length === 0;
+  // Lista vazia agora é legítima (ex.: só tem rotina de quarta e hoje é terça) —
+  // o que trava o fechamento é não ter conseguido carregar, não ter zero rotinas.
+  const routinesUnavailable = loadingRoutines || !!routinesErr;
   const dumpActionsDisabled =
     busy || routinesUnavailable || !dump.trim();
 
@@ -121,7 +131,9 @@ export default function Fechar() {
                 template === t ? colors.primary : colors.card,
             }}
           >
-            <Text style={{ color: colors.text }}>dia {t}</Text>
+            <Text style={{ color: template === t ? colors.primaryText : colors.text }}>
+              dia {t}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -134,27 +146,68 @@ export default function Fechar() {
           color={colors.primary}
           style={{ alignSelf: "flex-start", marginTop: 8 }}
         />
+      ) : routines.length === 0 && !routinesErr ? (
+        <Text style={{ color: colors.textMuted, marginTop: 8, fontFamily: fonts.ui }}>
+          nenhuma rotina vale hoje — dá pra criar as tuas em Rotinas.
+        </Text>
       ) : (
-        routines.map((r) => (
-          <Pressable
-            key={r}
-            onPress={() =>
-              setChecks((current) => ({
-                ...current,
-                [r]: !current[r],
-              }))
-            }
-            style={{ flexDirection: "row", paddingVertical: 8 }}
-          >
-            <Text
-              style={{
-                color: checks[r] ? colors.primary : colors.textMuted,
-              }}
-            >
-              {checks[r] ? "☑" : "☐"} {r}
-            </Text>
-          </Pressable>
-        ))
+        BLOCOS.map((b) => {
+          const doBloco = routines.filter((r) => r.bloco === b.key);
+          if (doBloco.length === 0) return null;
+          return (
+            <View key={b.key} style={{ marginTop: spacing.md }}>
+              <Text
+                style={{
+                  fontFamily: fonts.mono,
+                  fontSize: 11,
+                  color: colors.textMuted,
+                  textTransform: "uppercase",
+                  letterSpacing: 1.2,
+                }}
+              >
+                {b.label}
+              </Text>
+
+              {doBloco.map((r) => {
+                const on = !!checks[r.slug];
+                return (
+                  <Pressable
+                    key={r.slug}
+                    onPress={() =>
+                      setChecks((current) => ({
+                        ...current,
+                        [r.slug]: !current[r.slug],
+                      }))
+                    }
+                    style={{ paddingVertical: 8 }}
+                  >
+                    <Text style={{ color: on ? colors.primary : colors.textMuted }}>
+                      {on ? "☑" : "☐"} {r.nome}
+                    </Text>
+
+                    {r.passos.length > 0 && (
+                      <View style={{ marginTop: 4, marginLeft: 20 }}>
+                        {r.passos.map((p, i) => (
+                          <Text
+                            key={`${r.slug}-${i}`}
+                            style={{
+                              color: colors.textMuted,
+                              fontFamily: fonts.ui,
+                              fontSize: 12.5,
+                              lineHeight: 18,
+                            }}
+                          >
+                            {i + 1}. {p}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          );
+        })
       )}
 
       {!!routinesErr && (

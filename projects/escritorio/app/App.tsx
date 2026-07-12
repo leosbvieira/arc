@@ -32,18 +32,28 @@ import Chat from "./src/screens/Chat";
 import Fechar from "./src/screens/Fechar";
 import Home from "./src/screens/Home";
 import Revisao from "./src/screens/Revisao";
+import Rotinas from "./src/screens/Rotinas";
 import Tasks from "./src/screens/Tasks";
 import { colors, fonts, spacing } from "./src/theme";
 import { AppButton, Card, Field } from "./src/ui";
 
-type Tab = "home" | "capturar" | "tarefas" | "chat" | "revisao" | "fechar";
+type Tab = "home" | "capturar" | "tarefas" | "chat" | "revisao" | "fechar" | "rotinas";
 
+// A tabbar fica só com 4 — revisão/fechar/rotinas entram pela Home e voltam pelo chevron.
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "home", label: "Home", icon: "home" },
   { key: "capturar", label: "Capturar", icon: "feather" },
   { key: "tarefas", label: "Tarefas", icon: "check-square" },
   { key: "chat", label: "Chat", icon: "message-circle" },
 ];
+
+const SUBSCREENS: Tab[] = ["revisao", "fechar", "rotinas"];
+
+const TITLES: Partial<Record<Tab, string>> = {
+  revisao: "Revisão",
+  fechar: "Fechar o dia",
+  rotinas: "Rotinas",
+};
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -157,15 +167,15 @@ export default function App() {
   }
 
   const isFull = tab === "home" || tab === "chat";
-  const title =
-    tab === "revisao" ? "Revisão" : tab === "fechar" ? "Fechar o dia" : TABS.find((t) => t.key === tab)?.label ?? "";
+  const isSub = SUBSCREENS.includes(tab);
+  const title = TITLES[tab] ?? TABS.find((t) => t.key === tab)?.label ?? "";
 
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
       {tab !== "home" && (
         <View style={styles.header}>
-          {tab === "revisao" || tab === "fechar" ? (
+          {isSub ? (
             <Pressable
               onPress={() => setTab("home")}
               hitSlop={8}
@@ -192,6 +202,8 @@ export default function App() {
           <Chat />
         ) : tab === "fechar" ? (
           <Fechar />
+        ) : tab === "rotinas" ? (
+          <Rotinas />
         ) : (
           <Revisao />
         )}

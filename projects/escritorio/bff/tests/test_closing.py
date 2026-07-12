@@ -41,5 +41,9 @@ def test_approve_grava_exatamente_o_aprovado_com_link_e_marker(client, monkeypat
     assert {(x["rotina"], x["feito"]) for x in rows} == {("yoga", 1), ("academia", 0)}
 
 def test_routines_por_template(client):
+    # P2 item 2: as rotinas viraram DADO (tabela `routines`) e o endpoint devolve
+    # OBJETOS ({id, slug, nome, bloco, passos}), não mais strings. O slug continua
+    # sendo a chave que vai em routine_checks.rotina — por isso é ele que se olha aqui.
     r = client.get("/closing/routines", params={"template": "corrida"})
-    assert "corrida" in r.json()["routines"] and "yoga" not in r.json()["routines"]
+    slugs = [x["slug"] for x in r.json()["routines"]]
+    assert "corrida" in slugs and "yoga" not in slugs
