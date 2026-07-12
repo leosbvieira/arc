@@ -61,6 +61,10 @@ O que a rotina precisa passar a ter:
 | `passos[]` | sequência **ordenada** — skincare tem ordem certa de produtos; hoje é 1 caixinha |
 | `origem` | `exemplo` (semeado pelo sistema) vs `leo` (criado por ele) — para o sistema nunca sobrescrever o que é dele |
 
+**Sub-passos NÃO contam no scorecard** (decisão do Leo, 12/jul). O passo é **roteiro**: existe pra ele não pular
+produto, e é reordenável. Quem entra na conta — e na punição do item 3 — é o **item pai** (`skincare AM` = 1 check
+binário). Motivo: 3 produtos virando 3 furos infla o placar e deixa a punição hipersensível a ruído.
+
 **Aceite:** tela de Rotinas no app onde ele adiciona/edita/reordena/remove; o toque da manhã mostra só o bloco da
 manhã; o fechamento das 21h mostra só o que era do dia (incluindo a máscara **se for quarta**); o scorecard conta
 sobre a lista **dele**, não sobre a semente.
