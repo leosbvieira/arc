@@ -423,6 +423,38 @@ class ObjetivoMarcaIn(BaseModel):
     data: str | None = None
 
 
+class MovimentoIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    task_id: str
+    area: str
+
+    @field_validator("area")
+    @classmethod
+    def validar_area_triavel(cls, value: str) -> str:
+        """Aceita apenas destinos reais; Staging não é destino de triagem."""
+        if value not in tasks.AREAS or value == "Staging":
+            raise ValueError("area inválida para triagem")
+        return value
+
+
+class TriagemAplicarIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    movimentos: list[MovimentoIn]
+
+    @field_validator("movimentos")
+    @classmethod
+    def validar_movimentos_nao_vazios(
+        cls,
+        value: list[MovimentoIn],
+    ) -> list[MovimentoIn]:
+        """Exige aprovação explícita de pelo menos um movimento."""
+        if not value:
+            raise ValueError("movimentos não pode ser vazio")
+        return value
+
+
 class TemaIn(BaseModel):
     texto: str
     semana: str | None = None
@@ -942,6 +974,25 @@ class AprendizadoStatusIn(BaseModel):
         if value not in {"novo", "aplicado", "arquivado"}:
             raise ValueError("status inválido")
         return value
+
+
+@app.get("/triagem")
+async def triagem(_auth: object = Depends(require_auth)):
+    """Entrega o lote de revisão; nenhuma tarefa é movida neste endpoint (lei 3)."""
+    return await tasks.triagem_pack()
+
+
+@app.post("/triagem/aplicar")
+async def triagem_aplicar(
+    body: TriagemAplicarIn,
+    _auth: object = Depends(require_auth),
+):
+    """Aplica somente os movimentos enviados explicitamente pelo Leo."""
+    movimentos = [
+        (movimento.task_id, movimento.area)
+        for movimento in body.movimentos
+    ]
+    return {"resultados": await tasks.aplicar_triagem(movimentos)}
 
 
 @app.get("/aprendizados")

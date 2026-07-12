@@ -15,7 +15,7 @@ from datetime import date
 
 from pydantic import BaseModel
 
-from . import cadence, clickup_client, pontos, store
+from . import cadence, clickup_client, hermes_client, pontos, store
 from .config import settings
 
 AREAS = ["Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
@@ -649,6 +649,152 @@ async def due_hoje() -> list[dict]:
         for t in src
         if t.due_offset is not None and t.due_offset <= 0
     ]
+
+
+# --- triagem em lote do Staging (P2 item 13) ----------------------------------
+# Lei 3: a IA só PROPÕE (triagem_pack); mover é sempre um POST explícito do Leo
+# (aplicar_triagem). Um item ruim nunca aborta o lote.
+
+AREAS_TRIAGEM = [area for area in AREAS if area != clickup_client.STAGING]
+
+
+async def triagem_pack() -> dict:
+    """Monta os itens do Staging com propostas, nunca decisões, de destino.
+
+    Se o Hermes estiver indisponível, todas as propostas ficam vazias e o Leo
+    ainda pode realizar a triagem manualmente.
+    """
+    src, raw = await _source()
+    itens_staging = [
+        tarefa for tarefa in src if tarefa.area == clickup_client.STAGING
+    ]
+    raw_por_id = {
+        item.get("id"): item
+        for item in raw
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+
+    try:
+        propostas_raw = await hermes_client.propose_triage(
+            [
+                {"id": tarefa.id, "titulo": tarefa.name}
+                for tarefa in itens_staging
+            ],
+            areas=AREAS_TRIAGEM,
+        )
+        propostas = {
+            proposta.get("id"): proposta.get("area")
+            for proposta in propostas_raw
+            if isinstance(proposta, dict)
+        }
+    except Exception:
+        # A degradação não registra a exceção, pois sua mensagem pode conter captura.
+        propostas = {}
+
+    itens = []
+    for tarefa in itens_staging:
+        area_proposta = propostas.get(tarefa.id)
+        if area_proposta not in AREAS_TRIAGEM:
+            area_proposta = None
+
+        item_raw = raw_por_id.get(tarefa.id, {})
+        itens.append(
+            {
+                "id": tarefa.id,
+                "name": tarefa.name,
+                "idade_d": _age_days(item_raw.get("date_created")),
+                "area_proposta": area_proposta,
+            }
+        )
+
+    return {"itens": itens, "n": len(itens)}
+
+
+async def aplicar_triagem(
+    movimentos: list[tuple[str, str]],
+) -> list[dict]:
+    """Aplica movimentos aprovados pelo Leo, isolando falhas por tarefa.
+
+    Cada item é conferido novamente no Staging imediatamente antes do movimento;
+    assim, uma proposta antiga não move uma tarefa que já saiu da triagem.
+    """
+    resultados: list[dict] = []
+
+    if _use_clickup():
+        for task_id, area in movimentos:
+            try:
+                task = await clickup_client.get_task(task_id)
+                task_list = task.get("list")
+                esta_no_staging = isinstance(task_list, dict) and (
+                    task_list.get("name") == clickup_client.STAGING
+                    or task_list.get("id")
+                    == clickup_client.AREA_LISTS[clickup_client.STAGING]
+                )
+                if not esta_no_staging:
+                    resultados.append(
+                        {
+                            "task_id": task_id,
+                            "ok": False,
+                            "erro": "fora_do_staging",
+                        }
+                    )
+                    continue
+
+                await clickup_client.move_task(
+                    task_id,
+                    clickup_client.AREA_LISTS[area],
+                )
+                resultados.append(
+                    {"task_id": task_id, "ok": True, "erro": None}
+                )
+            except Exception as exc:
+                # Apenas a classe é exposta: mensagens podem carregar conteúdo remoto.
+                resultados.append(
+                    {
+                        "task_id": task_id,
+                        "ok": False,
+                        "erro": type(exc).__name__,
+                    }
+                )
+    else:
+        for task_id, area in movimentos:
+            tarefa = next(
+                (item for item in _MOCK if item.id == task_id),
+                None,
+            )
+            if tarefa is None:
+                resultados.append(
+                    {
+                        "task_id": task_id,
+                        "ok": False,
+                        "erro": "nao_encontrado",
+                    }
+                )
+                continue
+            if tarefa.area != clickup_client.STAGING:
+                resultados.append(
+                    {
+                        "task_id": task_id,
+                        "ok": False,
+                        "erro": "fora_do_staging",
+                    }
+                )
+                continue
+
+            tarefa.area = area
+            resultados.append(
+                {"task_id": task_id, "ok": True, "erro": None}
+            )
+
+    movidos = sum(1 for resultado in resultados if resultado["ok"])
+    store.log_event(
+        "triagem_aplicada",
+        meta={
+            "n": movidos,
+            "erros": len(resultados) - movidos,
+        },
+    )
+    return resultados
 
 
 def _follow_up_do_scheduler(item: dict) -> dict:

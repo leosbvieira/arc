@@ -177,6 +177,36 @@ async def get_task(task_id: str) -> dict:
         return r.json()
 
 
+async def move_task(task_id: str, to_list_id: str) -> bool:
+    """Move uma tarefa usando o ClickApp ``Tasks in Multiple Lists``.
+
+    A lista de origem vem do GET para que a remoção não dependa de estado local.
+    O chamador trata individualmente falhas como o ClickApp desabilitado.
+    """
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        task_response = await client.get(
+            f"{API}/task/{task_id}",
+            headers=_headers(),
+        )
+        task_response.raise_for_status()
+        task = task_response.json()
+        from_list_id = task["list"]["id"]
+
+        add_response = await client.post(
+            f"{API}/list/{to_list_id}/task/{task_id}",
+            headers=_headers(),
+        )
+        add_response.raise_for_status()
+
+        remove_response = await client.delete(
+            f"{API}/list/{from_list_id}/task/{task_id}",
+            headers=_headers(),
+        )
+        remove_response.raise_for_status()
+
+    return True
+
+
 async def create(
     name: str,
     area: str,
