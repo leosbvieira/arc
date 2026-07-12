@@ -34,6 +34,7 @@ class Task(BaseModel):
     assignee: str | None = None
     days_overdue: int | None = None   # positivo = atrasada; negativo = dias restantes (futura); None = sem due
     severity: str = "no_prazo"        # fonte única no back (cadence.tone_name)
+    sensivel: bool = False            # marca por item (lei 7) — complementa a regra por área
 
 
 @dataclass
@@ -48,6 +49,7 @@ class _Task:
     update_offset: int | None = None   # dias desde o último update (staleness)
     last_done: str | None = None       # rótulo de recência (hábitos), só exibição
     assignee: str | None = None
+    sensivel: bool = False             # tag `sensivel` no ClickUp (lei 7)
 
     # interface que cadence.py espera (mesma semântica do Task do cutuca)
     @property
@@ -103,6 +105,7 @@ def _display(t: _Task) -> Task:
         assignee=t.assignee,
         days_overdue=days_overdue,
         severity=cadence.tone_name(days_overdue),
+        sensivel=t.sensivel,
     )
 
 
@@ -123,6 +126,15 @@ def _from_clickup(t: dict) -> _Task:
     """
     status = (t.get("status") or {}).get("status")
     assignees = t.get("assignees") or []
+    # A tag é normalizada com _norm: `sensivel` e `sensível` contam igual (lei 7).
+    sensivel = any(
+        _norm(
+            tag.get("name", "")
+            if isinstance(tag, dict)
+            else str(tag)
+        ) == "sensivel"
+        for tag in (t.get("tags") or [])
+    )
     return _Task(
         id=str(t["id"]),
         name=t.get("name", ""),
@@ -131,6 +143,7 @@ def _from_clickup(t: dict) -> _Task:
         due_offset=clickup_client.days_from_ms(t.get("due_date")),
         update_offset=None,
         assignee=(assignees[0].get("username") if assignees else None),
+        sensivel=sensivel,
     )
 
 
@@ -252,11 +265,17 @@ def weekly_review_pack(today: str | None = None) -> dict:
             "pct": atual["pct"],
         })
 
+    aprendizados_novos = store.list_aprendizados(status="novo")
+    praticas = store.list_aprendizados(status="pratica")
     return {
         "week": f"{iso_week.year}-W{iso_week.week:02d}",
         "desde": since_iso,
         "scorecard": scorecard,
         "objetivos": objetivos_semana,
+        "edificacao": {
+            "novos": len(aprendizados_novos),
+            "pratica": praticas[0] if praticas else None,
+        },
         "dailies": store.count_events_since("closing_approved", since_ts),
         "capturas": store.count_events_since("capture_done", since_ts),
         "sessoes_leitura": {
@@ -388,13 +407,20 @@ def weekly_review_text(today: str | None = None) -> str:
             pack["scorecard"]["por_rotina"].items(),
         )
     )
-    return (
+    texto = (
         f"semana {pack['week']} — scorecard {pack['scorecard']['pct']}%\n"
         f"{rotinas or 'sem checks registrados'}\n"
         f"dailies {pack['dailies']}/7 · capturas {pack['capturas']} · "
         f"leitura {pack['sessoes_leitura']['n']} sessões "
         f"({pack['sessoes_leitura']['min_total']} min)"
     )
+    novos = pack["edificacao"]["novos"]
+    if novos:
+        texto += (
+            f"\nedificação: {novos} aprendizados sem prática "
+            "— escolher 1 no review"
+        )
+    return texto
 
 
 # --- digest v2 (C10/C11 + lei 7) --------------------------------------------
@@ -436,12 +462,14 @@ def neutralizar(texto: str, *, sensivel: bool = False) -> str:
 
 
 def render_digest_lines(tasks: list[Task], for_channel: str) -> list[str]:
-    """for_channel: 'telegram' neutraliza áreas sensíveis (lei 7); 'app' mostra tudo."""
+    """for_channel: 'telegram' neutraliza áreas sensíveis E itens marcados (lei 7);
+    'app' mostra tudo. A marca por item complementa a regra por área — qualquer
+    uma das duas basta para neutralizar."""
     lines = []
     for t in sorted(tasks, key=lambda x: -(x.days_overdue or 0)):
         m = MARKER.get(t.severity, "🟡")
         atraso = f"{t.days_overdue}d de atraso" if (t.days_overdue or 0) > 0 else "no prazo"
-        if for_channel == "telegram" and eh_sensivel(t.area):
+        if for_channel == "telegram" and (eh_sensivel(t.area) or t.sensivel):
             lines.append(f"{m} 1 pendência de saúde ({atraso}) — abre o app")
         else:
             safe_name = t.name.replace(chr(10), " ")
@@ -565,7 +593,23 @@ async def run_digest() -> dict:
     if n_failed:
         extra.append(f"⚠ {n_failed} capturas não processadas — abrir o app")
 
-    body_telegram = "\n".join([*render_digest_lines(tasks, "telegram"), *extra])
+    # A prática da semana (edificação) lembra diariamente. lines_extra mantém a
+    # versão completa destinada ao app; só o corpo do Telegram recebe a variante
+    # neutra quando o aprendizado é sensível (lei 7).
+    extra_telegram = list(extra)
+    praticas = store.list_aprendizados(status="pratica")
+    pratica = praticas[0] if praticas else None
+    if pratica is not None:
+        texto = str(pratica["texto"]).replace(chr(10), " ")
+        extra.append(f"🧭 prática da semana: {texto}")
+        if bool(pratica["sensivel"]):
+            extra_telegram.append("🧭 prática da semana definida — abre o app")
+        else:
+            extra_telegram.append(f"🧭 prática da semana: {texto}")
+
+    body_telegram = "\n".join(
+        [*render_digest_lines(tasks, "telegram"), *extra_telegram]
+    )
     body_app = "\n".join([*render_digest_lines(tasks, "app"), *extra])
     return {"tasks": tasks, "body_telegram": body_telegram,
             "body_app": body_app, "lines_extra": extra}

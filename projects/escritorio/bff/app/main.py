@@ -132,6 +132,7 @@ class CaptureIn(BaseModel):
     text: str
     profile: str | None = None
     client_key: str | None = None
+    sensivel: bool = False
 
 
 class CaptureOut(BaseModel):
@@ -470,7 +471,12 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     """Fire-and-forget (B6): enfileira e responde na hora. O worker processa a fila em
     fundo (Raw → classificação → Staging). O Chat NÃO usa mais esta rota (ela não devolve
     a resposta do Hermes) — conversa síncrona vai por /chat."""
-    cid = store.enqueue_capture(body.text, body.profile, body.client_key)
+    cid = store.enqueue_capture(
+        body.text,
+        body.profile,
+        body.client_key,
+        sensivel=body.sensivel,
+    )
     store.log_event("capture_in", ref=str(cid))
     return CaptureOut(reply="✅ anotado", queued=True)
 
@@ -904,6 +910,91 @@ async def post_shutdown(body: ShutdownIn, _=Depends(require_auth)):
     salvo = store.save_shutdown(hoje, body.prioridades)
     store.log_event("shutdown", ref=hoje, meta={"n": len(body.prioridades)})
     return {"ok": True, "data": hoje, "prioridades": salvo["prioridades"], "feito": True}
+
+
+class AprendizadoIn(BaseModel):
+    """Entrada manual; espaços isolados não constituem aprendizado."""
+
+    model_config = {"extra": "forbid"}
+
+    texto: str
+    sensivel: bool = False
+
+    @field_validator("texto")
+    @classmethod
+    def validar_texto(cls, value: str) -> str:
+        texto = value.strip()
+        if not texto:
+            raise ValueError("texto não pode ser vazio")
+        return texto
+
+
+class AprendizadoStatusIn(BaseModel):
+    """Transições manuais; prática exige o endpoint que registra a semana."""
+
+    model_config = {"extra": "forbid"}
+
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validar_status(cls, value: str) -> str:
+        if value not in {"novo", "aplicado", "arquivado"}:
+            raise ValueError("status inválido")
+        return value
+
+
+@app.get("/aprendizados")
+async def listar_aprendizados(
+    status: str | None = None,
+    _: str = Depends(require_auth),
+):
+    if status is not None and status not in {
+        "novo",
+        "pratica",
+        "aplicado",
+        "arquivado",
+    }:
+        raise HTTPException(status_code=422, detail="status_invalido")
+    return {"aprendizados": store.list_aprendizados(status=status)}
+
+
+@app.post("/aprendizados")
+async def criar_aprendizado(
+    body: AprendizadoIn,
+    _: str = Depends(require_auth),
+):
+    """Captura manual feita no app, sem criar uma tarefa no ClickUp."""
+    return store.add_aprendizado(
+        body.texto,
+        sensivel=body.sensivel,
+    )
+
+
+@app.post("/aprendizados/{id}/praticar")
+async def praticar_aprendizado(
+    id: int,
+    _: str = Depends(require_auth),
+):
+    aprendizado = store.definir_pratica(
+        id,
+        agenda.semana_iso(date.today()),
+    )
+    if aprendizado is None:
+        raise HTTPException(status_code=404, detail="aprendizado_nao_encontrado")
+    return aprendizado
+
+
+@app.post("/aprendizados/{id}/status")
+async def alterar_status_aprendizado(
+    id: int,
+    body: AprendizadoStatusIn,
+    _: str = Depends(require_auth),
+):
+    aprendizado = store.set_status_aprendizado(id, body.status)
+    if aprendizado is None:
+        raise HTTPException(status_code=404, detail="aprendizado_nao_encontrado")
+    return aprendizado
 
 
 @app.get("/objetivos")

@@ -23,7 +23,7 @@ MAX_ATTEMPTS = 5
 # Colunas do contrato de fila (Tasks 9/10/12). `status` fica de fora de propósito:
 # em `pending_captures` é sempre 'pending', em `failed_captures` sempre 'failed'.
 _CAPTURE_COLS = (
-    "id, ts, text, profile, client_key, attempts, raw_path, "
+    "id, ts, text, profile, client_key, sensivel, attempts, raw_path, "
     "clickup_task_id, last_error"
 )
 
@@ -109,6 +109,16 @@ CREATE TABLE IF NOT EXISTS objetivo_marcas (
   data TEXT NOT NULL,
   PRIMARY KEY (objetivo_id, data)
 );
+CREATE TABLE IF NOT EXISTS aprendizados (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  texto TEXT NOT NULL,
+  sensivel INTEGER NOT NULL DEFAULT 0,
+  origem_captura_id INTEGER UNIQUE,
+  criado REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'novo',
+  pratica_semana TEXT,
+  pratica_em REAL
+);
 """
 
 
@@ -147,6 +157,14 @@ def init_db() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_client_key "
             "ON capture_queue(client_key)"
         )
+
+        # A marca por captura é fail-closed: ausência em bancos antigos equivale a
+        # falso, e o ALTER preserva todas as filas já existentes.
+        if "sensivel" not in columns:
+            con.execute(
+                "ALTER TABLE capture_queue "
+                "ADD COLUMN sensivel INTEGER NOT NULL DEFAULT 0"
+            )
         con.commit()
 
     # Semente das rotinas: conexão própria (BEGIN IMMEDIATE não pode nascer dentro
@@ -536,6 +554,7 @@ def enqueue_capture(
     text: str,
     profile: str | None,
     client_key: str | None = None,
+    sensivel: bool = False,
 ) -> int:
     with closing(_connect()) as con:
         if client_key is not None:
@@ -550,14 +569,16 @@ def enqueue_capture(
                 con.commit()
                 return int(row["id"])
             cur = con.execute(
-                "INSERT INTO capture_queue (ts, text, profile, client_key) "
-                "VALUES (?, ?, ?, ?)",
-                (time.time(), text, profile, client_key),
+                "INSERT INTO capture_queue "
+                "(ts, text, profile, client_key, sensivel) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (time.time(), text, profile, client_key, int(sensivel)),
             )
         else:
             cur = con.execute(
-                "INSERT INTO capture_queue (ts, text, profile) VALUES (?, ?, ?)",
-                (time.time(), text, profile),
+                "INSERT INTO capture_queue "
+                "(ts, text, profile, sensivel) VALUES (?, ?, ?, ?)",
+                (time.time(), text, profile, int(sensivel)),
             )
         con.commit()
         return int(cur.lastrowid)
@@ -613,6 +634,7 @@ def mark_capture(
     clickup_task_id=None,
     error=None,
     bump_attempts=False,
+    sensivel: bool | None = None,
 ) -> None:
     """Atualiza um item da fila. `error` é a classe/código do erro sanitizado pelo
     chamador — NUNCA o conteúdo capturado (lei 7), pois vai para `last_error`.
@@ -644,6 +666,9 @@ def mark_capture(
         if clickup_task_id is not None:
             sets.append("clickup_task_id = ?")
             params.append(clickup_task_id)
+        if sensivel is not None:
+            sets.append("sensivel = ?")
+            params.append(int(sensivel))
         if error is not None:
             sets.append("last_error = ?")
             params.append(error)
@@ -1017,3 +1042,130 @@ def marcas_do_objetivo(id: int) -> list[str]:
             (id,),
         ).fetchall()
     return [row["data"] for row in rows]
+
+
+# --- aprendizados (edificação mínima; P2 item 10) -----------------------------
+
+
+_APRENDIZADO_STATUS = {"novo", "pratica", "aplicado", "arquivado"}
+_APRENDIZADO_STATUS_MANUAL = {"novo", "aplicado", "arquivado"}
+
+
+def add_aprendizado(
+    texto: str,
+    *,
+    sensivel: bool = False,
+    origem_captura_id: int | None = None,
+) -> dict:
+    """Registra um aprendizado; a origem torna retries da captura idempotentes."""
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO aprendizados "
+            "(texto, sensivel, origem_captura_id, criado) "
+            "VALUES (?, ?, ?, ?)",
+            (texto, int(sensivel), origem_captura_id, time.time()),
+        )
+
+        if origem_captura_id is not None:
+            row = con.execute(
+                "SELECT * FROM aprendizados WHERE origem_captura_id = ?",
+                (origem_captura_id,),
+            ).fetchone()
+        else:
+            row = con.execute(
+                "SELECT * FROM aprendizados WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+
+        con.commit()
+
+    # O INSERT sem origem sempre cria uma linha; com origem, o SELECT recupera
+    # tanto a nova linha quanto a linha preservada por um retry.
+    assert row is not None
+    return dict(row)
+
+
+def list_aprendizados(status: str | None = None) -> list[dict]:
+    """Lista aprendizados em ordem estável, com os mais recentes primeiro."""
+    if status is not None and status not in _APRENDIZADO_STATUS:
+        raise ValueError("status_aprendizado_invalido")
+
+    sql = "SELECT * FROM aprendizados"
+    params: tuple = ()
+    if status is not None:
+        sql += " WHERE status = ?"
+        params = (status,)
+    sql += " ORDER BY criado DESC, id DESC"
+
+    with closing(_connect()) as con:
+        rows = con.execute(sql, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_aprendizado(id: int) -> dict | None:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM aprendizados WHERE id = ?",
+            (id,),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def definir_pratica(id: int, semana: str) -> dict | None:
+    """Escolhe uma única prática ativa, sem alterar estado se o alvo for inválido."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        alvo = con.execute(
+            "SELECT status FROM aprendizados WHERE id = ?",
+            (id,),
+        ).fetchone()
+        if alvo is None or alvo["status"] == "arquivado":
+            con.rollback()
+            return None
+
+        # Limpa também os metadados da prática anterior para o estado refletir
+        # exatamente a escolha atual.
+        con.execute(
+            "UPDATE aprendizados "
+            "SET status = 'novo', pratica_semana = NULL, pratica_em = NULL "
+            "WHERE status = 'pratica' AND id <> ?",
+            (id,),
+        )
+        con.execute(
+            "UPDATE aprendizados "
+            "SET status = 'pratica', pratica_semana = ?, pratica_em = ? "
+            "WHERE id = ?",
+            (semana, time.time(), id),
+        )
+        row = con.execute(
+            "SELECT * FROM aprendizados WHERE id = ?",
+            (id,),
+        ).fetchone()
+        con.commit()
+
+    return dict(row) if row is not None else None
+
+
+def set_status_aprendizado(id: int, status: str) -> dict | None:
+    """Aplica transições manuais; entrar em prática exige semana e usa outra função."""
+    if status not in _APRENDIZADO_STATUS_MANUAL:
+        raise ValueError("status_aprendizado_invalido")
+
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE aprendizados "
+            "SET status = ?, pratica_semana = NULL, pratica_em = NULL "
+            "WHERE id = ?",
+            (status, id),
+        )
+        if cur.rowcount == 0:
+            con.commit()
+            return None
+
+        row = con.execute(
+            "SELECT * FROM aprendizados WHERE id = ?",
+            (id,),
+        ).fetchone()
+        con.commit()
+
+    return dict(row) if row is not None else None

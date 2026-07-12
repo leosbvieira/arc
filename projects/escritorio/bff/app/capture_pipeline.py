@@ -6,6 +6,7 @@ deterministico do Raw, entao crash/retry em qualquer ponto nao reescreve nem dup
 Higiene (lei 7): nenhum log/telemetria carrega o texto capturado nem stdout do Hermes.
 """
 import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -15,6 +16,31 @@ from .clickup_client import STAGING
 logger = logging.getLogger(__name__)
 VALID_TIPOS = {"nota", "tarefa_pessoal", "tarefa_trabalho", "cobranca"}
 TZ = ZoneInfo("America/Sao_Paulo")
+
+# Hooks textuais determinísticos (P2 item 10) — resolvidos ANTES do Hermes porque
+# não exigem inferência. `sensivel:` marca a captura (lei 7); `hack:`/`aprendizado:`/
+# `insight:` viram aprendizado (edificação) e nunca task.
+_SENSIVEL_PREFIX = re.compile(r"^\s*sens[ií]vel\s*:\s*", re.IGNORECASE)
+_APRENDIZADO_PREFIX = re.compile(
+    r"^\s*(?:hack|aprendizado|insight)\s*:\s*",
+    re.IGNORECASE,
+)
+
+
+def _texto_sem_prefixo_sensivel(texto: str) -> tuple[str, bool]:
+    """Remove somente o prefixo reconhecível; o Raw original permanece verbatim."""
+    match = _SENSIVEL_PREFIX.match(texto)
+    if match is None:
+        return texto, False
+    return texto[match.end():], True
+
+
+def _texto_aprendizado(texto: str) -> str | None:
+    """Reconhece aprendizado por prefixo, sem depender de classificação probabilística."""
+    match = _APRENDIZADO_PREFIX.match(texto)
+    if match is None:
+        return None
+    return texto[match.end():].strip()
 
 
 async def _create_task(area, nome, due_ts=None, tags=None, description=None):
@@ -45,14 +71,34 @@ async def _process_one(row: dict) -> None:
     cid = row["id"]
     raw_path = row["raw_path"]
 
-    # Etapa 1: Raw, idempotente por coluna + path determinístico.
+    # Hook `sensivel:` — o texto de PROCESSAMENTO perde o prefixo; o Raw não.
+    texto_processamento, marcado_no_texto = _texto_sem_prefixo_sensivel(row["text"])
+    sensivel = bool(row.get("sensivel")) or marcado_no_texto
+    if marcado_no_texto and not bool(row.get("sensivel")):
+        # A marca fica na fila para que retries posteriores continuem fail-closed.
+        store.mark_capture(cid, sensivel=True)
+
+    # Etapa 1: Raw, idempotente por coluna + path determinístico (verbatim, com prefixos).
     if not raw_path:
         raw_path = await vault_client.write_raw(row["text"], cid, ts=row["ts"])
         store.mark_capture(cid, raw_path=raw_path)
 
+    # Hook de aprendizado (edificação): não é tarefa, não paga classificação de modelo.
+    # O UNIQUE de origem_captura_id torna o hook retomável sem duplicar.
+    aprendizado = _texto_aprendizado(texto_processamento)
+    if aprendizado is not None:
+        store.add_aprendizado(
+            aprendizado,
+            sensivel=sensivel,
+            origem_captura_id=cid,
+        )
+        store.mark_capture(cid, status="done")
+        store.log_event("capture_done", ref=str(cid), meta={"tipo": "aprendizado"})
+        return
+
     # Classifica em todo retry ainda não concluído. Isso recompõe due/tipo mesmo se
     # uma tentativa anterior já tiver criado ou reconciliado a tarefa no ClickUp.
-    raw_verdict = await hermes_client.classify(row["text"])
+    raw_verdict = await hermes_client.classify(texto_processamento)
     verdict = raw_verdict if isinstance(raw_verdict, dict) else {}
 
     raw_tipo = verdict.get("tipo")
@@ -66,7 +112,7 @@ async def _process_one(row: dict) -> None:
     titulo = (
         raw_titulo.strip()
         if isinstance(raw_titulo, str) and raw_titulo.strip()
-        else row["text"][:80]
+        else texto_processamento[:80]
     )
     due_ts = _parse_quando(verdict.get("quando"))
 
@@ -87,11 +133,18 @@ async def _process_one(row: dict) -> None:
                     if not titulo.lower().startswith("cobrar")
                     else titulo
                 )
+            # A tag `sensivel` viaja com a task: é ela que o digest/ritos usam pra
+            # neutralizar o preview (lei 7) mesmo em área não-sensível.
+            tags: list[str] = []
+            if tipo == "cobranca":
+                tags.append("aguardando")
+            if sensivel:
+                tags.append("sensivel")
             task = await _create_task(
                 STAGING,
                 titulo,
                 due_ts=due_ts,
-                tags=["aguardando"] if tipo == "cobranca" else None,
+                tags=tags or None,
                 description=f"{marker} raw: {raw_path}",
             )
             store.mark_capture(cid, clickup_task_id=task["id"])
