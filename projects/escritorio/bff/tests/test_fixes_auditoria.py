@@ -1,9 +1,12 @@
 import itertools
+import time
 from pathlib import Path
 
 from app import capture_pipeline, config, store, vault_client
 
+# unico tambem ENTRE execucoes: o db do conftest persiste entre rodadas do pytest
 _seq = itertools.count()
+_RUN = time.time_ns()
 
 
 def _insert_capture(text: str = "conteúdo de teste") -> int:
@@ -16,7 +19,7 @@ def _insert_capture(text: str = "conteúdo de teste") -> int:
             VALUES
                 (?, ?, ?, ?, 'pending', 0)
             """,
-            (1.0, text, "Capturas", f"teste-{next(_seq)}"),
+            (1.0, text, "Capturas", f"teste-{_RUN}-{next(_seq)}"),
         )
         con.commit()
         return cursor.lastrowid

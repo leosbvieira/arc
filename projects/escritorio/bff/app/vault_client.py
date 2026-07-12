@@ -1,5 +1,6 @@
 """Escrita deterministica no vault (GitHub Contents API). O BFF segura a caneta; LLM so propoe.
 Regras: verbatim (lei 3), paths/commits neutros (lei 7), retry de SHA, dedupe por marker."""
+import asyncio
 import base64
 from datetime import datetime
 
@@ -9,6 +10,7 @@ from .config import settings
 
 RAW_DIR = "1- Inbox/Raw"
 _SHA_RETRIES = 3
+_TRANSIENT_RETRIES = 3
 
 
 class VaultError(RuntimeError):
@@ -33,12 +35,32 @@ def _url(path: str) -> str:
 
 async def _get(path: str) -> dict | None:
     async with _client() as c:
-        r = await c.get(_url(path), params={"ref": settings.vault_branch})
-    if r.status_code == 404:
-        return None
-    if r.status_code != 200:
-        raise VaultError(f"GET {path}: {r.status_code}")
-    return r.json()
+        for attempt in range(_TRANSIENT_RETRIES):
+            try:
+                r = await c.get(
+                    _url(path),
+                    params={"ref": settings.vault_branch},
+                )
+            except httpx.TransportError as exc:
+                if attempt == _TRANSIENT_RETRIES - 1:
+                    raise VaultError(
+                        f"GET {path}: {type(exc).__name__}"
+                    ) from exc
+                await asyncio.sleep(1)
+                continue
+
+            if r.status_code == 404:
+                return None
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code >= 500:
+                if attempt == _TRANSIENT_RETRIES - 1:
+                    raise VaultError(f"GET {path}: {r.status_code}")
+                await asyncio.sleep(1)
+                continue
+            raise VaultError(f"GET {path}: {r.status_code}")
+
+    raise AssertionError("retry GET sem desfecho")
 
 
 async def _put(path: str, content: str, message: str, sha: str | None) -> str:
@@ -46,13 +68,31 @@ async def _put(path: str, content: str, message: str, sha: str | None) -> str:
             "content": base64.b64encode(content.encode("utf-8")).decode()}
     if sha:
         body["sha"] = sha
+
     async with _client() as c:
-        r = await c.put(_url(path), json=body)
-    if r.status_code in (409, 422):
-        raise _ShaConflict()
-    if r.status_code not in (200, 201):
-        raise VaultError(f"PUT {path}: {r.status_code}")
-    return path
+        for attempt in range(_TRANSIENT_RETRIES):
+            try:
+                r = await c.put(_url(path), json=body)
+            except httpx.TransportError as exc:
+                if attempt == _TRANSIENT_RETRIES - 1:
+                    raise VaultError(
+                        f"PUT {path}: {type(exc).__name__}"
+                    ) from exc
+                await asyncio.sleep(1)
+                continue
+
+            if r.status_code in (409, 422):
+                raise _ShaConflict()
+            if r.status_code in (200, 201):
+                return path
+            if r.status_code >= 500:
+                if attempt == _TRANSIENT_RETRIES - 1:
+                    raise VaultError(f"PUT {path}: {r.status_code}")
+                await asyncio.sleep(1)
+                continue
+            raise VaultError(f"PUT {path}: {r.status_code}")
+
+    raise AssertionError("retry PUT sem desfecho")
 
 
 class _ShaConflict(Exception):

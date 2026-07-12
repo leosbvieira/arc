@@ -22,7 +22,7 @@ Em `C:\Users\Leonardo\Documents\LeonardoLifeMain`:
 
 ## 2. PATs GitHub (5 min, no teu navegador)
 
-> Nota 11/jul: empréstimo TEMPORÁRIO do PAT do Hermes autorizado p/ o testão E2E; os PATs definitivos + revogação do exposto continuam obrigatórios aqui.
+> **Decisão do Leo 11/jul: MANTER o PAT atual (o exposto) em uso — risco aceito.** BFF e Hermes compartilham o mesmo PAT. Criação de fine-grained + revogação: adiadas indefinidamente (itens abaixo ficam como referência se mudar de ideia).
 
 - [ ] Criar **PAT-1 (BFF)**: fine-grained, só repo `leosbvieira/aeternum`, permission Contents: Read/Write → colar em `bff/.env` como `GITHUB_PAT=`
 - [ ] Criar **PAT-2 (Hermes)**: mesmo escopo → substituir em `C:\Users\Leonardo\AppData\Local\hermes\config.yaml` (linha ~203)
