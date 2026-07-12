@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS aprendizados (
   pratica_semana TEXT,
   pratica_em REAL
 );
+CREATE TABLE IF NOT EXISTS anki_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER,
+  frente TEXT NOT NULL,
+  meaning TEXT NOT NULL DEFAULT '',
+  example TEXT NOT NULL DEFAULT '',
+  hook TEXT NOT NULL DEFAULT '',
+  deck TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'sugerido',
+  criado REAL NOT NULL
+);
 """
 
 
@@ -1169,3 +1180,170 @@ def set_status_aprendizado(id: int, status: str) -> dict | None:
         con.commit()
 
     return dict(row) if row is not None else None
+
+
+# --- anki_cards (P2 item 12) --------------------------------------------------
+# Lei 3 no dado: a IA cria SÓ status='sugerido'; aprovado/descartado são decisões
+# do Leo (update); 'exportado' é EXCLUSIVO da transação de export.
+
+
+_ANKI_STATUS = {"sugerido", "aprovado", "descartado", "exportado"}
+_ANKI_STATUS_EDITAVEIS = {"sugerido", "aprovado", "descartado"}
+_ANKI_CAMPOS_EDITAVEIS = {
+    "frente",
+    "meaning",
+    "example",
+    "hook",
+    "deck",
+    "status",
+}
+_ANKI_CAMPOS_TEXTO = {"frente", "meaning", "example", "hook", "deck"}
+
+
+def add_anki_cards(
+    cards: list[dict],
+    session_id: int | None = None,
+) -> list[dict]:
+    """Persiste propostas em lote, sempre aguardando aprovação explícita posterior."""
+    normalizados: list[dict] = []
+    for card in cards:
+        if not isinstance(card, dict):
+            raise ValueError("card_anki_invalido")
+
+        frente = card.get("frente")
+        if not isinstance(frente, str) or not frente.strip():
+            raise ValueError("frente_vazia")
+
+        normalizado = {"frente": frente}
+        for campo in ("meaning", "example", "hook"):
+            valor = card.get(campo, "")
+            if not isinstance(valor, str):
+                raise ValueError(f"{campo}_invalido")
+            normalizado[campo] = valor
+
+        normalizados.append(normalizado)
+
+    if not normalizados:
+        return []
+
+    criado = time.time()
+    criados: list[dict] = []
+
+    with closing(_connect()) as con:
+        for card in normalizados:
+            cur = con.execute(
+                "INSERT INTO anki_cards "
+                "(session_id, frente, meaning, example, hook, criado) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    card["frente"],
+                    card["meaning"],
+                    card["example"],
+                    card["hook"],
+                    criado,
+                ),
+            )
+            row = con.execute(
+                "SELECT * FROM anki_cards WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+            if row is not None:
+                criados.append(dict(row))
+
+        con.commit()
+
+    return criados
+
+
+def list_anki_cards(status: str | None = None) -> list[dict]:
+    """Lista propostas sem expor o conteúdo em logs ou telemetria."""
+    if status is not None and status not in _ANKI_STATUS:
+        raise ValueError("status_anki_invalido")
+
+    query = "SELECT * FROM anki_cards"
+    params: tuple = ()
+    if status is not None:
+        query += " WHERE status = ?"
+        params = (status,)
+    query += " ORDER BY criado DESC, id DESC"
+
+    with closing(_connect()) as con:
+        rows = con.execute(query, params).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def get_anki_card(id: int) -> dict | None:
+    """Obtém um candidato pelo identificador, sem registrar seu conteúdo."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM anki_cards WHERE id = ?",
+            (id,),
+        ).fetchone()
+
+    return dict(row) if row is not None else None
+
+
+def update_anki_card(id: int, **campos) -> dict | None:
+    """Aplica somente edições e decisões manuais permitidas pela lei 3."""
+    desconhecidos = set(campos) - _ANKI_CAMPOS_EDITAVEIS
+    if desconhecidos:
+        raise ValueError("campo_anki_invalido")
+
+    if "status" in campos and campos["status"] not in _ANKI_STATUS_EDITAVEIS:
+        # Exportado é reservado à transação de exportação para evitar duplicidade.
+        raise ValueError("status_anki_invalido")
+
+    for campo in set(campos) & _ANKI_CAMPOS_TEXTO:
+        if not isinstance(campos[campo], str):
+            raise ValueError(f"{campo}_invalido")
+
+    if "frente" in campos and not campos["frente"].strip():
+        raise ValueError("frente_vazia")
+
+    if not campos:
+        return get_anki_card(id)
+
+    atribuicoes = ", ".join(f"{campo} = ?" for campo in campos)
+    valores = [campos[campo] for campo in campos]
+    valores.append(id)
+
+    with closing(_connect()) as con:
+        cur = con.execute(
+            f"UPDATE anki_cards SET {atribuicoes} WHERE id = ?",
+            valores,
+        )
+        if cur.rowcount == 0:
+            con.commit()
+            return None
+
+        row = con.execute(
+            "SELECT * FROM anki_cards WHERE id = ?",
+            (id,),
+        ).fetchone()
+        con.commit()
+
+    return dict(row) if row is not None else None
+
+
+def export_aprovados() -> list[dict]:
+    """Reserva aprovados atomicamente para que exports concorrentes não os repitam."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        rows = con.execute(
+            "SELECT * FROM anki_cards "
+            "WHERE status = 'aprovado' "
+            "ORDER BY criado ASC, id ASC"
+        ).fetchall()
+
+        if rows:
+            con.execute(
+                "UPDATE anki_cards "
+                "SET status = 'exportado' "
+                "WHERE status = 'aprovado'"
+            )
+
+        con.commit()
+
+    return [dict(row) for row in rows]

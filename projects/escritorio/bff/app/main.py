@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from datetime import date, datetime, time as _time, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -11,6 +12,7 @@ from pydantic import BaseModel, field_validator
 
 from . import (
     agenda,
+    anki,
     capture_pipeline,
     clickup_client,
     hermes_client,
@@ -452,6 +454,49 @@ class TriagemAplicarIn(BaseModel):
         """Exige aprovação explícita de pelo menos um movimento."""
         if not value:
             raise ValueError("movimentos não pode ser vazio")
+        return value
+
+
+class AnkiSugerirIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    notas: str
+    session_id: int | None = None
+
+    @field_validator("notas")
+    @classmethod
+    def validar_notas(cls, value: str) -> str:
+        """Recusa sessão sem matéria-prima para manter a sugestão fail-closed."""
+        value = value.strip()
+        if not value:
+            raise ValueError("notas não pode ser vazio")
+        return value
+
+
+class AnkiCardPatchIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    frente: str | None = None
+    meaning: str | None = None
+    example: str | None = None
+    hook: str | None = None
+    deck: str | None = None
+    status: str | None = None
+
+    @field_validator("frente", "meaning", "example", "hook", "deck")
+    @classmethod
+    def validar_campos_textuais(cls, value: str | None) -> str:
+        """Diferencia campo omitido de nulo explícito para preservar o banco."""
+        if value is None:
+            raise ValueError("campo não pode ser nulo")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validar_status(cls, value: str | None) -> str:
+        """Reserva exportado ao fluxo atômico; a IA nunca toma essa decisão."""
+        if value not in {"sugerido", "aprovado", "descartado"}:
+            raise ValueError("status_anki_invalido")
         return value
 
 
@@ -974,6 +1019,100 @@ class AprendizadoStatusIn(BaseModel):
         if value not in {"novo", "aplicado", "arquivado"}:
             raise ValueError("status inválido")
         return value
+
+
+@app.post("/anki/sugerir")
+async def sugerir_anki(
+    body: AnkiSugerirIn,
+    _auth: None = Depends(require_auth),
+) -> dict:
+    """Propõe candidatos sem aprová-los automaticamente (lei 3)."""
+    try:
+        candidatos = await hermes_client.suggest_anki(body.notas)
+    except RuntimeError:
+        # A resposta não inclui notas nem saída do modelo, conforme a lei 7.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="anki_indisponivel",
+        ) from None
+
+    try:
+        cards = store.add_anki_cards(candidatos, body.session_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from None
+
+    return {"cards": cards, "n": len(cards)}
+
+
+@app.get("/anki/cards")
+def listar_anki_cards(
+    status_filtro: str | None = Query(default=None, alias="status"),
+    _auth: None = Depends(require_auth),
+) -> dict:
+    """Lista candidatos para que o Leo revise, edite e decida."""
+    try:
+        cards = store.list_anki_cards(status_filtro)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from None
+
+    return {"cards": cards}
+
+
+@app.patch("/anki/cards/{id}")
+def editar_anki_card(
+    id: int,
+    body: AnkiCardPatchIn,
+    _auth: None = Depends(require_auth),
+) -> dict:
+    """Registra a edição ou decisão explícita do Leo sobre um candidato."""
+    campos = body.model_dump(exclude_unset=True)
+
+    try:
+        card = store.update_anki_card(id, **campos)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from None
+
+    if card is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="anki_card_nao_encontrado",
+        )
+
+    return card
+
+
+@app.post("/anki/export")
+def exportar_anki(
+    _auth: None = Depends(require_auth),
+) -> dict:
+    """Exporta somente cards já aprovados pelo Leo e reserva cada um uma vez."""
+    linhas = store.export_aprovados()
+    if not linhas:
+        return {"n": 0, "path": None, "tsv": ""}
+
+    conteudo = anki.tsv(linhas)
+    pasta = Path(settings.db_path).parent / "exports"
+    pasta.mkdir(parents=True, exist_ok=True)
+
+    nome = datetime.now().strftime("anki-%Y%m%d-%H%M%S.tsv")
+    arquivo = pasta / nome
+    with arquivo.open("w", encoding="utf-8", newline="") as destino:
+        destino.write(conteudo)
+
+    return {
+        "n": len(linhas),
+        "path": str(arquivo),
+        "tsv": conteudo,
+    }
 
 
 @app.get("/triagem")
