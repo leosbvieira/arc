@@ -283,16 +283,54 @@ def staging_line(count: int, oldest_days: int | None) -> str | None:
 
 
 def routine_lines(today: str | None = None) -> list[str]:
-    """Furo = dia COM fechamento e check false; >=N/7d vira padrão. Linguagem factual (lei 4)."""
+    """Furo = dia COM fechamento e check false; >=N/7d vira padrão. Linguagem factual (lei 4).
+
+    A linha diz o NOME da rotina (o slug é chave interna, não texto de tela) e anexa o
+    desconto que o padrão REALMENTE custou — fato + número, jamais julgamento. O desconto
+    vem do motor de pontos (`pontos.py`), nunca recalculado aqui: o digest não pode
+    prometer um número que o placar não cobra.
+
+    O desconto é procurado na semana do ÚLTIMO furo da janela — que é a semana que cobrou
+    aquele padrão (o motor cobra por semana ISO, 1x por rotina). Três casos, todos verdade:
+      · cobrou            → "3 furos em 7d. −3 pts."
+      · teto já esgotado  → "4 furos em 7d. (teto semanal atingido, sem desconto)"
+      · não virou padrão em nenhuma semana (os furos se dividem entre duas semanas e
+        nenhuma delas chegou ao limiar) → só o fato, sem falar de pontos.
+    """
     from datetime import date, timedelta
+
+    from . import pontos
+
     ref = date.fromisoformat(today) if today else date.today()
     since = (ref - timedelta(days=7)).isoformat()
+
     misses: dict[str, int] = {}
+    ultimo_furo: dict[str, date] = {}
     for row in store.get_checks_since(since):
-        if not row["feito"]:
-            misses[row["rotina"]] = misses.get(row["rotina"], 0) + 1
-    return [f"🔁 {r}: {n} furos nos últimos 7 dias"
-            for r, n in sorted(misses.items()) if n >= settings.routine_miss_threshold]
+        if row["feito"]:
+            continue
+        slug = row["rotina"]
+        d = date.fromisoformat(row["data"])
+        misses[slug] = misses.get(slug, 0) + 1
+        ultimo_furo[slug] = max(d, ultimo_furo.get(slug, d))
+
+    nomes = pontos.nomes_por_slug()
+    deltas = pontos.padroes_por_semana()
+
+    linhas = []
+    for slug, n in sorted(misses.items()):
+        if n < settings.routine_miss_threshold:
+            continue
+        semana = deltas.get(pontos.segunda_da_semana(ultimo_furo[slug]), {})
+        delta = semana.get(slug)
+        if delta is None:
+            custo = ""
+        elif delta < 0:
+            custo = f" −{-delta} pts."
+        else:
+            custo = " (teto semanal atingido, sem desconto)"
+        linhas.append(f"🔁 {nomes.get(slug, slug)}: {n} furos em 7d.{custo}")
+    return linhas
 
 
 def _age_days(ms) -> int | None:

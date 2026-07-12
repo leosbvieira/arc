@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     routine_miss_threshold: int = 3
     sensitive_areas: str = "Corpo,Saúde Mental"
 
+    # Pontos + Conquistas N1-4 (P2 item 3) — números travados pelo Leo em 12/jul.
+    # "fazer ganha, furar desconta POUCO": o ganho é diário e o desconto é raro
+    # (só em padrão), uma vez por semana por rotina, e ainda passa por um teto.
+    # `routine_miss_threshold` (acima) é o limiar do padrão — NÃO se duplica aqui.
+    pontos_por_rotina: int = 1        # cada rotina marcada como feita no fechamento
+    desconto_padrao: int = 3          # por rotina EM PADRÃO, 1x/semana (não por furo)
+    teto_desconto_semanal: int = 10   # o desconto de uma semana nunca passa disso
+    ciclo_semanas: int = 12           # 12 Week Year
+    ciclo_inicio: str = "2026-07-06"  # segunda-feira âncora do 1º ciclo
+    # Limiares VITALÍCIOS de N1, N2, N3, N4 (abaixo do 1º = N0). Ver pontos.py:
+    # o nível é função do PICO histórico do saldo, então jamais regride (lei 4).
+    nivel_limiares: list[int] = [700, 1700, 3400, 6800]
+
     # server-to-server
     internal_token: str = DEFAULTS["internal_token"]
 

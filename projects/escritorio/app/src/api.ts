@@ -277,6 +277,39 @@ export async function reorderRoutines(
   if (!r.ok) throw new Error(`routines: ${r.status}`);
 }
 
+// ---- Pontos / Conquistas N1-4 (P2-3) ----
+// Regra travada pelo Leo: fazer ganha ponto, furar desconta pouco — e só quando
+// vira PADRÃO (>=3 furos da mesma rotina em 7d), nunca por furo isolado, com teto
+// semanal. `nivel` é VITALÍCIO (deriva do pico, não do saldo: não regride).
+// `desconto` vem positivo — é o quanto foi descontado. `delta` de padrão vem negativo.
+export type PadraoSemana = {
+  slug: string;
+  nome: string;
+  furos: number;
+  delta: number; // negativo
+};
+
+export type Pontos = {
+  nivel: number; // 0..4 (0 = ainda não atingiu N1)
+  saldo_total: number;
+  pico_total: number;
+  ciclo: { indice: number; semana: number; de: number; pontos: number; meta: number };
+  semana: {
+    ganho: number;
+    desconto: number; // positivo
+    saldo: number;
+    padroes: PadraoSemana[];
+  };
+  proximo_nivel: { n: number; faltam: number } | null; // null = já está em N4
+};
+
+export async function getPontos(): Promise<Pontos> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/pontos`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`pontos: ${r.status}`);
+  return (await r.json()) as Pontos;
+}
+
 // ---- Fechamento noturno (A3) ----
 export type CheckItem = { rotina: string; feito: boolean };
 

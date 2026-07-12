@@ -11,6 +11,7 @@ from . import (
     capture_pipeline,
     clickup_client,
     hermes_client,
+    pontos,
     push,
     routines,
     store,
@@ -412,6 +413,14 @@ async def get_digest(_: str = Depends(require_auth)):
         "body": fresh["body_app"],
         "tasks": fresh["tasks"],
     }
+
+
+@app.get("/pontos")
+async def get_pontos(_=Depends(require_auth)):
+    """Pontos + Conquistas N1-4 (P2 item 3). Só LEITURA: o placar é uma função pura de
+    `routine_checks` + config (pontos.py), nunca um saldo mutável — não há rota que
+    escreva ponto, e não pode haver. Quem move o número é o fechamento do dia."""
+    return pontos.resumo()
 
 
 @app.get("/review/weekly")

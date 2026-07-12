@@ -22,7 +22,7 @@ def test_rotina_so_por_padrao(tmp_path, monkeypatch):
         store.record_checks(f"2026-07-0{i+1}", "yoga", [("academia", feito)])
     store.record_checks("2026-07-06", "yoga", [("yoga", False)])
     lines = routine_lines(today="2026-07-07")
-    assert any("academia: 3 furos nos últimos 7 dias" in l for l in lines)
+    assert any("academia: 3 furos em 7d." in l for l in lines)
     assert not any("yoga" in l for l in lines)              # nunca furo isolado
 
 
