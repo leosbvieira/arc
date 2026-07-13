@@ -18,6 +18,16 @@ def client(tmp_path, monkeypatch):
     app.dependency_overrides.clear()
 
 
+def _seed_session(session_id: int) -> None:
+    with store._connect() as con:
+        con.execute(
+            "INSERT INTO sessions "
+            "(id, tipo, inicio, fim, duracao_s) VALUES (?, 'leitura', 1, 2, 1)",
+            (session_id,),
+        )
+        con.commit()
+
+
 async def test_suggest_anki_filtra_resposta_e_delimita_notas(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     prompt_recebido = ""
@@ -84,6 +94,7 @@ async def test_suggest_anki_mock_nao_chama_cli(monkeypatch):
 
 
 def test_endpoint_sugerir_persiste_com_sessao(client, monkeypatch):
+    _seed_session(41)
     async def fake_suggest_anki(_notas: str) -> list[dict]:
         return [
             {
@@ -142,6 +153,7 @@ def test_endpoint_sugerir_rejeita_notas_vazias(client, notas):
 
 
 def test_endpoint_sugerir_aceita_zero_candidatos(client, monkeypatch):
+    _seed_session(7)
     async def fake_suggest_anki(_notas: str) -> list[dict]:
         return []
 
@@ -154,6 +166,18 @@ def test_endpoint_sugerir_aceita_zero_candidatos(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"cards": [], "n": 0}
+
+
+def test_endpoint_sugerir_rejeita_session_id_fantasma(client, monkeypatch):
+    async def unexpected(_notas):
+        raise AssertionError("Hermes não deve rodar para sessão inexistente")
+
+    monkeypatch.setattr(hermes_client, "suggest_anki", unexpected)
+    response = client.post(
+        "/anki/sugerir",
+        json={"notas": "comentário", "session_id": 999},
+    )
+    assert response.status_code == 404
 
 
 def test_crud_edita_e_valida_status(client):
@@ -196,6 +220,21 @@ def test_crud_edita_e_valida_status(client):
         json={"frente": "Não existe"},
     )
     assert response.status_code == 404
+
+
+def test_card_em_exportacao_nao_aceita_edicao_concorrente(client):
+    card = store.add_anki_cards([{"frente": "F1"}])[0]
+    store.update_anki_card(card["id"], status="aprovado")
+    claimed = store.claim_anki_export()
+    assert [item["id"] for item in claimed] == [card["id"]]
+
+    response = client.patch(
+        f"/anki/cards/{card['id']}",
+        json={"frente": "mudança durante export"},
+    )
+
+    assert response.status_code == 422
+    assert store.get_anki_card(card["id"])["status"] == "exporting"
 
 
 def test_exporta_apenas_aprovados_e_nao_repete(client):
@@ -253,6 +292,20 @@ def test_exporta_apenas_aprovados_e_nao_repete(client):
     segunda_resposta = client.post("/anki/export")
     assert segunda_resposta.status_code == 200
     assert segunda_resposta.json() == {"n": 0, "path": None, "tsv": ""}
+
+
+def test_exports_consecutivos_nao_sobrescrevem_arquivo_anterior(client):
+    primeiro = store.add_anki_cards([{"frente": "Primeiro"}])[0]
+    store.update_anki_card(primeiro["id"], status="aprovado")
+    path_1 = Path(client.post("/anki/export").json()["path"])
+
+    segundo = store.add_anki_cards([{"frente": "Segundo"}])[0]
+    store.update_anki_card(segundo["id"], status="aprovado")
+    path_2 = Path(client.post("/anki/export").json()["path"])
+
+    assert path_1 != path_2
+    assert path_1.read_text(encoding="utf-8").startswith("Primeiro\t")
+    assert path_2.read_text(encoding="utf-8").startswith("Segundo\t")
 
 
 def test_tsv_limpa_tabs_e_quebras_sem_mudar_ordem_dos_campos():

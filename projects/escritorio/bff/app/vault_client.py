@@ -2,6 +2,7 @@
 Regras: verbatim (lei 3), paths/commits neutros (lei 7), retry de SHA, dedupe por marker."""
 import asyncio
 import base64
+import hashlib
 from datetime import datetime
 
 import httpx
@@ -9,6 +10,7 @@ import httpx
 from .config import settings
 
 RAW_DIR = "1- Inbox/Raw"
+READING_DIR = "Leituras"
 _SHA_RETRIES = 3
 _TRANSIENT_RETRIES = 3
 
@@ -137,3 +139,23 @@ async def write_raw(text: str, capture_id: int | str, ts: float | None = None) -
     if existing:                                              # ja gravado => idempotente
         return path
     return await put_file(path, text, f"raw: c{capture_id}")
+
+
+async def write_reading_note(
+    markdown: str,
+    reading_id: int,
+    *,
+    ts: float,
+    client_key: str,
+) -> str:
+    """Publica uma vez em caminho neutro/determinístico; retry não cria outro commit."""
+    d = datetime.fromtimestamp(ts)
+    key_hash = hashlib.sha256(client_key.encode("utf-8")).hexdigest()[:10]
+    path = (
+        f"{READING_DIR}/{d:%Y-%m-%d} - "
+        f"leitura-r{reading_id}-{key_hash}.md"
+    )
+    existing = await _get(path)
+    if existing:
+        return path
+    return await put_file(path, markdown, f"leitura: r{reading_id}")

@@ -59,6 +59,12 @@ def test_capture_queue_fluxo(tmp_path, monkeypatch):
     store.mark_capture(cid, raw_path="1- Inbox/Raw/x.md")
     store.mark_capture(cid, status="done")
     assert store.pending_captures() == []
+    with store._connect() as con:
+        row = con.execute(
+            "SELECT text, status FROM capture_queue WHERE id = ?",
+            (cid,),
+        ).fetchone()
+    assert dict(row) == {"text": "", "status": "done"}
 
 
 def test_capture_claim_atomico_e_recover(tmp_path, monkeypatch):
@@ -87,6 +93,7 @@ def test_capture_vira_failed_e_reapresenta(tmp_path, monkeypatch):
     assert store.pending_captures() == []
     failed = store.failed_captures()
     assert [f["id"] for f in failed] == [cid]
+    assert failed[0]["text"] == "x"
     assert store.retry_failed_captures() == 1
     assert [p["id"] for p in store.pending_captures()] == [cid]
 

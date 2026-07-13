@@ -19,6 +19,7 @@ from .config import settings
 # Teto de tentativas da fila de captura. `pending_captures` esconde quem passou
 # do teto e `mark_capture(bump_attempts=True)` marca 'failed' ao atingi-lo.
 MAX_ATTEMPTS = 5
+CLAIM_STALE_SECONDS = 300
 
 # Colunas do contrato de fila (Tasks 9/10/12). `status` fica de fora de propósito:
 # em `pending_captures` é sempre 'pending', em `failed_captures` sempre 'failed'.
@@ -51,6 +52,31 @@ CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, projeto TEXT,
   categoria TEXT, inicio REAL NOT NULL, fim REAL NOT NULL,
   duracao_s INTEGER NOT NULL, paginas INTEGER, livro TEXT, session_key TEXT
+);
+CREATE TABLE IF NOT EXISTS reading_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_key TEXT NOT NULL UNIQUE,
+  livro TEXT NOT NULL,
+  pagina_inicial INTEGER,
+  pagina_final INTEGER,
+  inicio REAL NOT NULL,
+  fim REAL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  last_seq INTEGER NOT NULL DEFAULT 0,
+  draft_md TEXT,
+  vault_path TEXT,
+  compiled_session_id INTEGER,
+  last_error TEXT,
+  created REAL NOT NULL,
+  updated REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reading_buffer (
+  session_id INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  hook TEXT NOT NULL,
+  texto TEXT NOT NULL,
+  ts REAL NOT NULL,
+  PRIMARY KEY (session_id, seq)
 );
 CREATE TABLE IF NOT EXISTS telemetry (
   ts REAL NOT NULL, evento TEXT NOT NULL, ref TEXT DEFAULT '', meta_json TEXT DEFAULT '{}'
@@ -128,7 +154,14 @@ CREATE TABLE IF NOT EXISTS anki_cards (
   hook TEXT NOT NULL DEFAULT '',
   deck TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'sugerido',
-  criado REAL NOT NULL
+  criado REAL NOT NULL,
+  export_claimed REAL
+);
+CREATE TABLE IF NOT EXISTS anki_suggestion_runs (
+  session_id INTEGER PRIMARY KEY,
+  status TEXT NOT NULL,
+  created REAL NOT NULL,
+  updated REAL NOT NULL
 );
 """
 
@@ -155,6 +188,32 @@ def init_db() -> None:
         con.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_session_key "
             "ON sessions(session_key)"
+        )
+
+        # Recupera somente leases velhos. Outro worker pode chamar init_db enquanto
+        # uma operação legítima está em voo; claims recentes continuam exclusivos.
+        claim_cutoff = time.time() - CLAIM_STALE_SECONDS
+        con.execute(
+            "UPDATE reading_sessions SET status = 'pending' "
+            "WHERE status = 'compiling' AND updated < ?",
+            (claim_cutoff,),
+        )
+        con.execute(
+            "DELETE FROM anki_suggestion_runs "
+            "WHERE status = 'processing' AND updated < ?",
+            (claim_cutoff,),
+        )
+
+        anki_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(anki_cards)")
+        }
+        if "export_claimed" not in anki_columns:
+            con.execute("ALTER TABLE anki_cards ADD COLUMN export_claimed REAL")
+        con.execute(
+            "UPDATE anki_cards SET status = 'aprovado', export_claimed = NULL "
+            "WHERE status = 'exporting' "
+            "AND (export_claimed IS NULL OR export_claimed < ?)",
+            (claim_cutoff,),
         )
 
         # Migração idempotente para bancos criados antes do client_key. O índice
@@ -197,8 +256,25 @@ def add_device(token: str) -> None:
 
 def list_devices() -> list[str]:
     with closing(_connect()) as con:
-        rows = con.execute("SELECT token FROM devices").fetchall()
+        rows = con.execute(
+            "SELECT token FROM devices ORDER BY created, token"
+        ).fetchall()
     return [r[0] for r in rows]
+
+
+def remove_devices(tokens: list[str]) -> int:
+    """Remove somente tokens confirmados stale pelo ticket correspondente do Expo."""
+    unicos = list(dict.fromkeys(token for token in tokens if token))
+    if not unicos:
+        return 0
+    placeholders = ",".join("?" for _ in unicos)
+    with closing(_connect()) as con:
+        cur = con.execute(
+            f"DELETE FROM devices WHERE token IN ({placeholders})",
+            unicos,
+        )
+        con.commit()
+        return cur.rowcount
 
 
 # --- routine_checks ---------------------------------------------------------
@@ -480,6 +556,15 @@ def get_session_inicio(session_id: int) -> float:
     return float(row["inicio"])
 
 
+def session_exists(session_id: int) -> bool:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT 1 FROM sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+    return row is not None
+
+
 def list_sessions_since(
     ts: float,
     until_ts: float | None = None,
@@ -495,6 +580,298 @@ def list_sessions_since(
     with closing(_connect()) as con:
         rows = con.execute(consulta, parametros).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- reading_sessions / reading_buffer (B7) ---------------------------------
+
+
+def _reading_payload(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    chunks = con.execute(
+        "SELECT seq, hook, texto, ts FROM reading_buffer "
+        "WHERE session_id = ? ORDER BY seq",
+        (row["id"],),
+    ).fetchall()
+    payload = dict(row)
+    payload["buffer"] = [dict(chunk) for chunk in chunks]
+    payload["texto"] = "\n".join(chunk["texto"] for chunk in chunks)
+    return payload
+
+
+def create_reading_session(
+    client_key: str,
+    livro: str,
+    pagina_inicial: int | None = None,
+    inicio: float | None = None,
+) -> tuple[dict, bool]:
+    """Cria uma sessão retomável; retry da mesma client_key devolve a original."""
+    agora = time.time()
+    inicio_real = agora if inicio is None else float(inicio)
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE client_key = ?",
+            (client_key,),
+        ).fetchone()
+        if row is not None:
+            con.commit()
+            return _reading_payload(con, row), False
+
+        cur = con.execute(
+            "INSERT INTO reading_sessions "
+            "(client_key, livro, pagina_inicial, inicio, created, updated) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (client_key, livro, pagina_inicial, inicio_real, agora, agora),
+        )
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone()
+        con.commit()
+        return _reading_payload(con, row), True
+
+
+def get_reading_session(session_id: int) -> dict | None:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        return _reading_payload(con, row) if row is not None else None
+
+
+def list_pending_reading_sessions() -> list[dict]:
+    """Inclui uma compilação em voo: a fila nunca some enquanto não finalizar."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM reading_sessions "
+            "WHERE status IN ('pending', 'compiling') "
+            "ORDER BY updated ASC, id ASC"
+        ).fetchall()
+        return [_reading_payload(con, row) for row in rows]
+
+
+def append_reading_buffer(
+    session_id: int,
+    seq: int,
+    hook: str,
+    texto: str,
+    ts: float | None = None,
+) -> tuple[dict, bool]:
+    """Acrescenta o próximo chunk; retry igual é no-op, colisão/gap falha fechado."""
+    agora = time.time()
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        session = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if session is None:
+            con.commit()
+            raise LookupError("reading_session_nao_encontrada")
+        if session["status"] != "pending":
+            con.commit()
+            raise ValueError("reading_session_nao_editavel")
+        if session["draft_md"] is not None:
+            con.commit()
+            raise ValueError("reading_draft_ja_gerado")
+
+        existing = con.execute(
+            "SELECT seq, hook, texto, ts FROM reading_buffer "
+            "WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        ).fetchone()
+        if existing is not None:
+            con.commit()
+            if existing["hook"] == hook and existing["texto"] == texto:
+                return dict(existing), False
+            raise ValueError("reading_seq_conflitante")
+
+        esperado = int(session["last_seq"]) + 1
+        if seq != esperado:
+            con.commit()
+            raise ValueError(f"reading_seq_esperado_{esperado}")
+
+        chunk_ts = agora if ts is None else float(ts)
+        con.execute(
+            "INSERT INTO reading_buffer (session_id, seq, hook, texto, ts) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, seq, hook, texto, chunk_ts),
+        )
+        con.execute(
+            "UPDATE reading_sessions SET last_seq = ?, updated = ?, last_error = NULL "
+            "WHERE id = ?",
+            (seq, agora, session_id),
+        )
+        row = con.execute(
+            "SELECT seq, hook, texto, ts FROM reading_buffer "
+            "WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        ).fetchone()
+        con.commit()
+        return dict(row), True
+
+
+def claim_reading_compile(session_id: int) -> tuple[str, dict | None]:
+    """Serializa compile; o draft salvo sobrevive a falha posterior do vault."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            con.commit()
+            return "missing", None
+        if (
+            row["status"] == "compiling"
+            and float(row["updated"]) < time.time() - CLAIM_STALE_SECONDS
+        ):
+            con.execute(
+                "UPDATE reading_sessions SET status = 'pending' WHERE id = ?",
+                (session_id,),
+            )
+            row = con.execute(
+                "SELECT * FROM reading_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        if row["status"] in {"compiled", "discarded", "compiling"}:
+            state = str(row["status"])
+            con.commit()
+            return state, _reading_payload(con, row)
+        if int(row["last_seq"]) == 0:
+            con.commit()
+            return "empty", _reading_payload(con, row)
+
+        con.execute(
+            "UPDATE reading_sessions SET status = 'compiling', updated = ? WHERE id = ?",
+            (time.time(), session_id),
+        )
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        con.commit()
+        return "claimed", _reading_payload(con, row)
+
+
+def save_reading_draft(session_id: int, draft_md: str) -> None:
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE reading_sessions SET draft_md = ?, updated = ?, last_error = NULL "
+            "WHERE id = ? AND status = 'compiling'",
+            (draft_md, time.time(), session_id),
+        )
+        con.commit()
+        if cur.rowcount != 1:
+            raise ValueError("reading_compile_sem_claim")
+
+
+def release_reading_compile(session_id: int, error: str) -> None:
+    """Só persiste código/classe sanitizada; conteúdo nunca entra em last_error."""
+    with closing(_connect()) as con:
+        con.execute(
+            "UPDATE reading_sessions SET status = 'pending', last_error = ?, updated = ? "
+            "WHERE id = ? AND status = 'compiling'",
+            (error, time.time(), session_id),
+        )
+        con.commit()
+
+
+def finish_reading_compile(
+    session_id: int,
+    *,
+    vault_path: str,
+    compiled_session_id: int,
+    pagina_final: int | None,
+    fim: float,
+) -> dict:
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        cur = con.execute(
+            "UPDATE reading_sessions SET status = 'compiled', vault_path = ?, "
+            "compiled_session_id = ?, pagina_final = COALESCE(?, pagina_final), "
+            "fim = ?, last_error = NULL, updated = ? "
+            "WHERE id = ? AND status = 'compiling'",
+            (
+                vault_path,
+                compiled_session_id,
+                pagina_final,
+                fim,
+                time.time(),
+                session_id,
+            ),
+        )
+        if cur.rowcount != 1:
+            con.rollback()
+            raise ValueError("reading_compile_sem_claim")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        con.commit()
+        return _reading_payload(con, row)
+
+
+def purge_reading_content(session_id: int) -> dict:
+    """Após vault+Anki, mantém só metadados operacionais; conteúdo já é canônico."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ? AND status = 'compiled'",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            con.rollback()
+            raise ValueError("reading_session_nao_compilada")
+        con.execute(
+            "DELETE FROM reading_buffer WHERE session_id = ?",
+            (session_id,),
+        )
+        con.execute(
+            "UPDATE reading_sessions SET draft_md = NULL, updated = ? WHERE id = ?",
+            (time.time(), session_id),
+        )
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        con.commit()
+        return _reading_payload(con, row)
+
+
+def discard_reading_session(session_id: int) -> tuple[str, dict | None]:
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            con.commit()
+            return "missing", None
+        if row["status"] == "discarded":
+            con.commit()
+            return "discarded", _reading_payload(con, row)
+        if row["status"] != "pending":
+            state = str(row["status"])
+            con.commit()
+            return state, _reading_payload(con, row)
+
+        con.execute(
+            "UPDATE reading_sessions SET status = 'discarded', updated = ?, "
+            "last_error = NULL, draft_md = NULL WHERE id = ?",
+            (time.time(), session_id),
+        )
+        con.execute(
+            "DELETE FROM reading_buffer WHERE session_id = ?",
+            (session_id,),
+        )
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        con.commit()
+        return "discarded", _reading_payload(con, row)
 
 
 # --- telemetry --------------------------------------------------------------
@@ -685,6 +1062,10 @@ def mark_capture(
             params.append(error)
         elif status == "done":
             sets.append("last_error = NULL")
+        if status == "done":
+            # O Raw já é canônico. A fila transitória retém ids/checkpoints, não o
+            # conteúdo privado depois que todas as etapas concluíram.
+            sets.append("text = ''")
         if not sets:
             return
         con.execute(
@@ -803,13 +1184,26 @@ def get_dia(data: str) -> dict | None:
 
 def set_dia_template(data: str, template: str) -> dict:
     """O toque das 5h30: 'dia yoga' ou 'dia corrida'. Idempotente — reescrever o mesmo
-    template (ou trocar de ideia) não perde o resto da linha."""
+    template não perde o resto da linha. Ao trocar de ideia, checks exclusivos do
+    template anterior deixam de valer; checks universais permanecem."""
     with closing(_connect()) as con:
+        anterior = con.execute(
+            "SELECT template FROM dia WHERE data = ?",
+            (data,),
+        ).fetchone()
         con.execute(
             "INSERT INTO dia (data, template) VALUES (?, ?) "
             "ON CONFLICT(data) DO UPDATE SET template = excluded.template",
             (data, template),
         )
+        if anterior is not None and anterior["template"] != template:
+            con.execute(
+                "DELETE FROM routine_checks WHERE data = ? AND rotina IN ("
+                "SELECT slug FROM routines WHERE templates <> '*' "
+                "AND instr(',' || templates || ',', ',' || ? || ',') = 0"
+                ")",
+                (data, template),
+            )
         con.commit()
     return get_dia(data)
 
@@ -1187,7 +1581,7 @@ def set_status_aprendizado(id: int, status: str) -> dict | None:
 # do Leo (update); 'exportado' é EXCLUSIVO da transação de export.
 
 
-_ANKI_STATUS = {"sugerido", "aprovado", "descartado", "exportado"}
+_ANKI_STATUS = {"sugerido", "aprovado", "descartado", "exportado", "exporting"}
 _ANKI_STATUS_EDITAVEIS = {"sugerido", "aprovado", "descartado"}
 _ANKI_CAMPOS_EDITAVEIS = {
     "frente",
@@ -1200,11 +1594,7 @@ _ANKI_CAMPOS_EDITAVEIS = {
 _ANKI_CAMPOS_TEXTO = {"frente", "meaning", "example", "hook", "deck"}
 
 
-def add_anki_cards(
-    cards: list[dict],
-    session_id: int | None = None,
-) -> list[dict]:
-    """Persiste propostas em lote, sempre aguardando aprovação explícita posterior."""
+def _normalizar_anki_cards(cards: list[dict]) -> list[dict]:
     normalizados: list[dict] = []
     for card in cards:
         if not isinstance(card, dict):
@@ -1223,37 +1613,125 @@ def add_anki_cards(
 
         normalizados.append(normalizado)
 
-    if not normalizados:
-        return []
+    return normalizados
 
+
+def _insert_anki_cards(
+    con: sqlite3.Connection,
+    cards: list[dict],
+    session_id: int | None,
+) -> list[dict]:
     criado = time.time()
     criados: list[dict] = []
-
-    with closing(_connect()) as con:
-        for card in normalizados:
-            cur = con.execute(
-                "INSERT INTO anki_cards "
-                "(session_id, frente, meaning, example, hook, criado) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    session_id,
-                    card["frente"],
-                    card["meaning"],
-                    card["example"],
-                    card["hook"],
-                    criado,
-                ),
-            )
-            row = con.execute(
-                "SELECT * FROM anki_cards WHERE id = ?",
-                (cur.lastrowid,),
-            ).fetchone()
-            if row is not None:
-                criados.append(dict(row))
-
-        con.commit()
-
+    for card in cards:
+        cur = con.execute(
+            "INSERT INTO anki_cards "
+            "(session_id, frente, meaning, example, hook, criado) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                card["frente"],
+                card["meaning"],
+                card["example"],
+                card["hook"],
+                criado,
+            ),
+        )
+        row = con.execute(
+            "SELECT * FROM anki_cards WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone()
+        if row is not None:
+            criados.append(dict(row))
     return criados
+
+
+def add_anki_cards(
+    cards: list[dict],
+    session_id: int | None = None,
+) -> list[dict]:
+    """Persiste propostas em lote, sempre aguardando aprovação explícita posterior."""
+    normalizados = _normalizar_anki_cards(cards)
+    if not normalizados:
+        return []
+    with closing(_connect()) as con:
+        criados = _insert_anki_cards(con, normalizados, session_id)
+        con.commit()
+    return criados
+
+
+def list_anki_cards_for_session(session_id: int) -> list[dict]:
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM anki_cards WHERE session_id = ? ORDER BY criado, id",
+            (session_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def claim_anki_suggestion(session_id: int) -> str:
+    """Retorna claimed/done/processing e impede dois modelos para a mesma sessão."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT status FROM anki_suggestion_runs WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is not None:
+            if (
+                row["status"] == "processing"
+                and float(row["updated"]) < time.time() - CLAIM_STALE_SECONDS
+            ):
+                agora = time.time()
+                con.execute(
+                    "UPDATE anki_suggestion_runs SET created = ?, updated = ? "
+                    "WHERE session_id = ?",
+                    (agora, agora, session_id),
+                )
+                con.commit()
+                return "claimed"
+            con.commit()
+            return str(row["status"])
+        agora = time.time()
+        con.execute(
+            "INSERT INTO anki_suggestion_runs (session_id, status, created, updated) "
+            "VALUES (?, 'processing', ?, ?)",
+            (session_id, agora, agora),
+        )
+        con.commit()
+        return "claimed"
+
+
+def finish_anki_suggestion(session_id: int, cards: list[dict]) -> list[dict]:
+    """Cards e receipt done entram na mesma transação, inclusive quando cards=[]."""
+    normalizados = _normalizar_anki_cards(cards)
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT status FROM anki_suggestion_runs WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None or row["status"] != "processing":
+            con.rollback()
+            raise ValueError("anki_suggestion_sem_claim")
+        criados = _insert_anki_cards(con, normalizados, session_id)
+        con.execute(
+            "UPDATE anki_suggestion_runs SET status = 'done', updated = ? "
+            "WHERE session_id = ?",
+            (time.time(), session_id),
+        )
+        con.commit()
+        return criados
+
+
+def release_anki_suggestion(session_id: int) -> None:
+    with closing(_connect()) as con:
+        con.execute(
+            "DELETE FROM anki_suggestion_runs "
+            "WHERE session_id = ? AND status = 'processing'",
+            (session_id,),
+        )
+        con.commit()
 
 
 def list_anki_cards(status: str | None = None) -> list[dict]:
@@ -1311,12 +1789,19 @@ def update_anki_card(id: int, **campos) -> dict | None:
 
     with closing(_connect()) as con:
         cur = con.execute(
-            f"UPDATE anki_cards SET {atribuicoes} WHERE id = ?",
+            f"UPDATE anki_cards SET {atribuicoes} "
+            "WHERE id = ? AND status IN ('sugerido', 'aprovado', 'descartado')",
             valores,
         )
         if cur.rowcount == 0:
+            existente = con.execute(
+                "SELECT 1 FROM anki_cards WHERE id = ?",
+                (id,),
+            ).fetchone()
             con.commit()
-            return None
+            if existente is None:
+                return None
+            raise ValueError("anki_card_bloqueado")
 
         row = con.execute(
             "SELECT * FROM anki_cards WHERE id = ?",
@@ -1327,10 +1812,17 @@ def update_anki_card(id: int, **campos) -> dict | None:
     return dict(row) if row is not None else None
 
 
-def export_aprovados() -> list[dict]:
-    """Reserva aprovados atomicamente para que exports concorrentes não os repitam."""
+def claim_anki_export() -> list[dict]:
+    """Reserva sem afirmar entrega; falha de arquivo devolve os cards a aprovado."""
     with closing(_connect()) as con:
         con.execute("BEGIN IMMEDIATE")
+        agora = time.time()
+        con.execute(
+            "UPDATE anki_cards SET status = 'aprovado', export_claimed = NULL "
+            "WHERE status = 'exporting' "
+            "AND (export_claimed IS NULL OR export_claimed < ?)",
+            (agora - CLAIM_STALE_SECONDS,),
+        )
         rows = con.execute(
             "SELECT * FROM anki_cards "
             "WHERE status = 'aprovado' "
@@ -1340,10 +1832,25 @@ def export_aprovados() -> list[dict]:
         if rows:
             con.execute(
                 "UPDATE anki_cards "
-                "SET status = 'exportado' "
-                "WHERE status = 'aprovado'"
+                "SET status = 'exporting', export_claimed = ? "
+                "WHERE status = 'aprovado'",
+                (agora,),
             )
 
         con.commit()
 
     return [dict(row) for row in rows]
+
+
+def finish_anki_export(card_ids: list[int], *, success: bool) -> None:
+    if not card_ids:
+        return
+    placeholders = ",".join("?" for _ in card_ids)
+    destino = "exportado" if success else "aprovado"
+    with closing(_connect()) as con:
+        con.execute(
+            f"UPDATE anki_cards SET status = ?, export_claimed = NULL "
+            f"WHERE status = 'exporting' AND id IN ({placeholders})",
+            (destino, *card_ids),
+        )
+        con.commit()

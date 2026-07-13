@@ -1,7 +1,11 @@
 # bff — escritório (FastAPI)
 
-Vidro fino sobre o Hermes: **auth single-user + proxy `/capture` + relay de push**. Não roda LLM,
-não fala com ClickUp/GitHub (isso é o Hermes). Roda em **mock** por padrão, então sobe sem o VPS.
+Orquestrador determinístico single-user do Aeternum: autentica o app, persiste filas/ritos em
+SQLite, chama o Hermes CLI apenas para propor estrutura, e executa escritas aprovadas no
+ClickUp, vault GitHub e Google Calendar. Push é o canal primário; Telegram é fallback.
+
+Hermes e tarefas rodam em **mock** por padrão. Em modo real, toda escrita canônica continua
+no BFF: o modelo propõe; código idempotente valida e escreve.
 
 ## Rodar (Windows PowerShell)
 
@@ -20,12 +24,16 @@ copy .env.example .env    # edite APP_PASSWORD, JWT_SECRET, INTERNAL_TOKEN
 `--host 0.0.0.0` deixa o celular (mesmo Wi-Fi) alcançar. Descubra o IP da máquina com `ipconfig`
 (ex.: `192.168.0.10`) — é ele que vai no `BFF_URL` do app.
 
-## Endpoints
+## Endpoints principais
 - `GET  /health` → `{ok, mock}`
 - `POST /auth/login` `{password}` → `{token}`
-- `POST /capture` (Bearer) `{text, profile?}` → `{reply}`
+- `POST /capture` (Bearer) `{text, profile?, client_key?, sensivel?}` → enfileira Raw/classificação
+- `/reading/sessions*` → buffer recuperável, autosave, compile e descarte de leitura
+- `/routines`, `/abertura`, `/shutdown`, `/review/*`, `/objetivos` → ritos e scorecard
+- `/agenda`, `/temas`, `POST /agenda/google-calendar` → agenda ICS + escrita GCal aprovada
+- `/aprendizados`, `/anki/*`, `/triagem*` → edificação, cards e triagem assistida
 - `POST /devices` (Bearer) `{token}` → registra o Expo push token
-- `POST /internal/notify` (header `X-Internal-Token`) `{title?, body}` → dispara push
+- `POST /internal/notify` (header `X-Internal-Token`) `{body, kind?, sensivel?}` → push/fallback
 
 ## Teste rápido (sem o app)
 ```powershell
@@ -35,6 +43,8 @@ $t = (Invoke-RestMethod -Method Post http://localhost:8000/auth/login -ContentTy
 Invoke-RestMethod -Method Post http://localhost:8000/capture -Headers @{Authorization="Bearer $t"} -ContentType application/json -Body '{"text":"cobrar Ana sexta"}'
 ```
 
-## Ligar o Hermes de verdade (depois)
-No `.env`: `HERMES_MOCK=false`, `HERMES_BASE_URL`, `HERMES_API_KEY`. Confirmar o endpoint/shape
-real contra os docs do Hermes em `hermes_client.py`.
+## Ativação real
+
+No `.env`, configure `HERMES_MOCK=false`, `TASKS_SOURCE=clickup`, PAT do vault, tokens de
+notificação e, se usar escrita GCal, o OAuth refresh token. Veja `.env.example`. Push/STT exigem
+dev build EAS; o módulo STT é carregado opcionalmente para o app continuar abrindo antes dele.

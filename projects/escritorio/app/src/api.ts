@@ -58,6 +58,7 @@ export async function capture(
   text: string,
   profile?: string,
   clientKey?: string,
+  sensivel: boolean = false,
 ): Promise<string> {
   const base = await getBffUrl();
   const token = await getToken();
@@ -67,7 +68,12 @@ export async function capture(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text, profile, client_key: clientKey }),
+    body: JSON.stringify({
+      text,
+      profile,
+      client_key: clientKey,
+      sensivel,
+    }),
   });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   const data = (await r.json()) as { reply: string };
@@ -380,6 +386,22 @@ export type RotinaDoDia = {
 
 export type Horario = { hora: string; ref: string };
 
+export type EventoAgenda = {
+  hora: string | null;
+  titulo: string;
+  fonte: "gcal" | "outlook" | "hora_marcada" | string;
+  inicio_ts?: number | null;
+};
+
+export type EstadoFonteCalendario = "ok" | "cache" | "erro" | "nao_configurado";
+
+export type TemaSemana = {
+  id: number;
+  semana: string;
+  texto: string;
+  criado: number;
+};
+
 export type Checkin = {
   feito: boolean;
   energia: string | null;
@@ -392,7 +414,13 @@ export type Abertura = {
   template: Template | null; // null = ainda não respondeu o toque das 5h30
   rotinas_manha: RotinaDoDia[];
   prioridades_de_ontem: string[]; // vêm do Shutdown de ontem; [] se não houve
-  hoje: { tarefas_due: Task[]; horarios: Horario[] };
+  temas: TemaSemana[];
+  hoje: {
+    tarefas_due: Task[];
+    horarios: Horario[];
+    calendario: EventoAgenda[];
+    fontes_calendario: Record<string, EstadoFonteCalendario>;
+  };
   checkin: Checkin;
 };
 
@@ -466,4 +494,360 @@ export async function postShutdown(prioridades: string[]): Promise<void> {
     body: JSON.stringify({ prioridades: prioridades.slice(0, 3) }),
   });
   if (!r.ok) throw new Error(`shutdown: ${r.status}`);
+}
+
+// ---- Agenda e temas da semana (P2-7/8) ----
+export type Agenda = {
+  data: string;
+  eventos: EventoAgenda[];
+  temas: TemaSemana[];
+  fontes: Record<string, EstadoFonteCalendario>;
+  tarefas_due: Task[];
+};
+
+export async function getAgenda(data?: string): Promise<Agenda> {
+  const base = await getBffUrl();
+  const query = data ? `?data=${encodeURIComponent(data)}` : "";
+  const r = await fetch(`${base}/agenda${query}`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`agenda: ${r.status}`);
+  return (await r.json()) as Agenda;
+}
+
+export type GoogleCalendarEventInput = {
+  titulo: string;
+  data: string;
+  hora: string;
+  duracao_min: number;
+  client_key: string;
+};
+
+export type GoogleCalendarEvent = {
+  id: string;
+  titulo: string;
+  html_link: string | null;
+  inicio: string;
+  fim: string;
+  fonte: "gcal";
+};
+
+export async function createGoogleCalendarEvent(
+  body: GoogleCalendarEventInput,
+): Promise<GoogleCalendarEvent> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/agenda/google-calendar`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const payload = (await r.json().catch(() => null)) as { detail?: string } | null;
+    if (r.status === 503 && payload?.detail === "google_calendar_nao_configurado") {
+      const error = new Error("Google Calendar não configurado no servidor.");
+      error.name = "GoogleCalendarNotConfigured";
+      throw error;
+    }
+    if (r.status === 503) throw new Error("Google Calendar indisponível agora.");
+    if (r.status === 409) throw new Error("Este envio mudou; revise e confirme de novo.");
+    const error = new Error(`Google Calendar: ${r.status}`);
+    error.name = `GoogleCalendarHttp${r.status}`;
+    throw error;
+  }
+  return ((await r.json()) as { evento: GoogleCalendarEvent }).evento;
+}
+
+export async function listTemas(semana?: string): Promise<{ semana: string; temas: TemaSemana[] }> {
+  const base = await getBffUrl();
+  const query = semana ? `?semana=${encodeURIComponent(semana)}` : "";
+  const r = await fetch(`${base}/temas${query}`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`temas: ${r.status}`);
+  return (await r.json()) as { semana: string; temas: TemaSemana[] };
+}
+
+export async function addTema(texto: string, semana?: string): Promise<TemaSemana> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/temas`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ texto, semana }),
+  });
+  if (!r.ok) throw new Error(`temas: ${r.status}`);
+  return (await r.json()) as TemaSemana;
+}
+
+export async function deleteTema(id: number): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/temas/${id}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`temas: ${r.status}`);
+}
+
+// ---- Review semanal/mensal e objetivos acumulativos (P2-9) ----
+export type ScorecardReview = {
+  pct: number;
+  por_rotina: Record<string, { feitos: number; dias: number }>;
+};
+
+export type ReviewWeekly = {
+  week: string;
+  desde: string;
+  scorecard: ScorecardReview;
+  objetivos: { nome: string; n_semana: number; alvo: number | null; pct: number | null }[];
+  edificacao: { novos: number; pratica: Aprendizado | null };
+  dailies: number;
+  capturas: number;
+  sessoes_leitura: { n: number; min_total: number };
+  tarefas_concluidas: number | null;
+  staging_pendentes: number | null;
+};
+
+export type ReviewMonthly = {
+  mes: string;
+  scorecard: ScorecardReview;
+  dailies: number;
+  capturas: number;
+  sessoes_leitura: { n: number; min_total: number };
+  pontos: { ganho: number; desconto: number; saldo: number };
+  objetivos: { nome: string; total_no_mes: number }[];
+  patrimonio: string;
+  tarefas_concluidas?: number | null;
+  staging_pendentes?: number | null;
+};
+
+export async function getReviewWeekly(): Promise<ReviewWeekly> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/review/weekly`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`review semanal: ${r.status}`);
+  return (await r.json()) as ReviewWeekly;
+}
+
+export async function getReviewMonthly(): Promise<ReviewMonthly> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/review/monthly`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`review mensal: ${r.status}`);
+  return (await r.json()) as ReviewMonthly;
+}
+
+export type Objetivo = {
+  id: number;
+  nome: string;
+  rotina_slug: string | null;
+  alvo_semana: number | null;
+  criado: number;
+  ativo: number | boolean;
+  progresso: {
+    total: number;
+    semana_atual: { n: number; alvo: number | null; pct: number | null };
+    serie: { semana: string; n: number }[];
+  };
+};
+
+export async function listObjetivos(): Promise<Objetivo[]> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/objetivos`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`objetivos: ${r.status}`);
+  return ((await r.json()) as { objetivos: Objetivo[] }).objetivos;
+}
+
+export async function createObjetivo(body: {
+  nome: string;
+  rotina_slug?: string | null;
+  alvo_semana?: number | null;
+}): Promise<Objetivo> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/objetivos`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`objetivos: ${r.status}`);
+  return ((await r.json()) as { objetivo: Objetivo }).objetivo;
+}
+
+export async function updateObjetivo(
+  id: number,
+  patch: { nome?: string; alvo_semana?: number | null },
+): Promise<Objetivo> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/objetivos/${id}`, {
+    method: "PATCH",
+    headers: await authHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`objetivos: ${r.status}`);
+  return ((await r.json()) as { objetivo: Objetivo }).objetivo;
+}
+
+export async function deleteObjetivo(id: number): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/objetivos/${id}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`objetivos: ${r.status}`);
+}
+
+export async function setObjetivoHoje(id: number, marcado: boolean): Promise<void> {
+  const base = await getBffUrl();
+  const acao = marcado ? "marcar" : "desmarcar";
+  const r = await fetch(`${base}/objetivos/${id}/${acao}`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({}),
+  });
+  if (!r.ok) throw new Error(`objetivos: ${r.status}`);
+}
+
+// ---- Edificacao minima (P2-10) ----
+export type AprendizadoStatus = "novo" | "pratica" | "aplicado" | "arquivado";
+
+export type Aprendizado = {
+  id: number;
+  texto: string;
+  sensivel: number | boolean;
+  origem_captura_id: number | null;
+  status: AprendizadoStatus;
+  pratica_semana: string | null;
+  pratica_em: number | null;
+  criado: number;
+};
+
+export async function listAprendizados(status?: AprendizadoStatus): Promise<Aprendizado[]> {
+  const base = await getBffUrl();
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const r = await fetch(`${base}/aprendizados${query}`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`aprendizados: ${r.status}`);
+  return ((await r.json()) as { aprendizados: Aprendizado[] }).aprendizados;
+}
+
+export async function createAprendizado(texto: string, sensivel: boolean): Promise<Aprendizado> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/aprendizados`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ texto, sensivel }),
+  });
+  if (!r.ok) throw new Error(`aprendizados: ${r.status}`);
+  return (await r.json()) as Aprendizado;
+}
+
+export async function praticarAprendizado(id: number): Promise<Aprendizado> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/aprendizados/${id}/praticar`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`aprendizados: ${r.status}`);
+  return (await r.json()) as Aprendizado;
+}
+
+export async function setAprendizadoStatus(
+  id: number,
+  status: Exclude<AprendizadoStatus, "pratica">,
+): Promise<Aprendizado> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/aprendizados/${id}/status`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ status }),
+  });
+  if (!r.ok) throw new Error(`aprendizados: ${r.status}`);
+  return (await r.json()) as Aprendizado;
+}
+
+// ---- Triagem em lote (P2-13) ----
+export const AREAS_TRIAGEM = [
+  "Trabalho", "Corpo", "Saúde Mental", "Responsabilidade", "Finance",
+  "Carreira", "Estudo", "Relacionamentos", "Lazer",
+] as const;
+
+export type AreaTriagem = (typeof AREAS_TRIAGEM)[number];
+
+export type ItemTriagem = {
+  id: string;
+  name: string;
+  idade_d: number | null;
+  area_proposta: AreaTriagem | null;
+};
+
+export type ResultadoTriagem = { task_id: string; ok: boolean; erro: string | null };
+
+export async function getTriagem(): Promise<{ itens: ItemTriagem[]; n: number }> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/triagem`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`triagem: ${r.status}`);
+  return (await r.json()) as { itens: ItemTriagem[]; n: number };
+}
+
+export async function aplicarTriagem(
+  movimentos: { task_id: string; area: AreaTriagem }[],
+): Promise<ResultadoTriagem[]> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/triagem/aplicar`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ movimentos }),
+  });
+  if (!r.ok) throw new Error(`triagem: ${r.status}`);
+  return ((await r.json()) as { resultados: ResultadoTriagem[] }).resultados;
+}
+
+// Contratos do Anki ficam prontos para a Rodada J, sem acoplar a captura atual.
+export type AnkiStatus = "sugerido" | "aprovado" | "descartado" | "exportado";
+export type AnkiCard = {
+  id: number;
+  session_id: number | null;
+  frente: string;
+  meaning: string;
+  example: string;
+  hook: string;
+  deck: string | null;
+  status: AnkiStatus;
+  criado: number;
+};
+
+export async function suggestAnki(notas: string, sessionId?: number): Promise<AnkiCard[]> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/anki/sugerir`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ notas, session_id: sessionId }),
+  });
+  if (!r.ok) throw new Error(`anki: ${r.status}`);
+  return ((await r.json()) as { cards: AnkiCard[] }).cards;
+}
+
+export async function listAnkiCards(status?: AnkiStatus): Promise<AnkiCard[]> {
+  const base = await getBffUrl();
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const r = await fetch(`${base}/anki/cards${query}`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`anki: ${r.status}`);
+  return ((await r.json()) as { cards: AnkiCard[] }).cards;
+}
+
+export async function updateAnkiCard(
+  id: number,
+  patch: Partial<Pick<AnkiCard, "frente" | "meaning" | "example" | "hook" | "deck">> & {
+    status?: Exclude<AnkiStatus, "exportado">;
+  },
+): Promise<AnkiCard> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/anki/cards/${id}`, {
+    method: "PATCH",
+    headers: await authHeaders(),
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`anki: ${r.status}`);
+  return (await r.json()) as AnkiCard;
+}
+
+export async function exportAnki(): Promise<{ n: number; path: string | null; tsv: string }> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/anki/export`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`anki: ${r.status}`);
+  return (await r.json()) as { n: number; path: string | null; tsv: string };
 }

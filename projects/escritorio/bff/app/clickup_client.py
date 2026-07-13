@@ -78,17 +78,15 @@ async def _list_tasks(
     *,
     include_closed: bool = False,
 ) -> list[dict]:
-    r = await client.get(
-        f"{API}/list/{list_id}/task",
+    return await _fetch_list(
+        list_id,
         params={
             "archived": "false",
             "subtasks": "false",
             "include_closed": "true" if include_closed else "false",
         },
-        headers=_headers(),
+        client=client,
     )
-    r.raise_for_status()
-    return r.json().get("tasks", [])
 
 
 async def _fetch_list(
@@ -101,13 +99,21 @@ async def _fetch_list(
     merged_params = {**_LIST_DEFAULT_PARAMS, **(params or {})}
 
     if client is not None:
-        r = await client.get(
-            f"{API}/list/{list_id}/task",
-            params=merged_params,
-            headers=_headers(),
-        )
-        r.raise_for_status()
-        return r.json().get("tasks", [])
+        tasks: list[dict] = []
+        page = int(merged_params.pop("page", 0))
+        while True:
+            r = await client.get(
+                f"{API}/list/{list_id}/task",
+                params={**merged_params, "page": page},
+                headers=_headers(),
+            )
+            r.raise_for_status()
+            payload = r.json()
+            batch = payload.get("tasks", [])
+            tasks.extend(batch)
+            if payload.get("last_page") is True or len(batch) < 100:
+                return tasks
+            page += 1
 
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as owned_client:
         return await _fetch_list(
@@ -162,6 +168,26 @@ async def count_closed_since(ts_ms: int) -> int:
                 params={
                     "include_closed": "true",
                     "date_done_gt": str(ts_ms),
+                },
+                client=client,
+            )
+            total += sum(1 for task in listed if task.get("date_done"))
+    return total
+
+
+async def count_closed_between(start_ms: int, end_ms: int) -> int:
+    """Conta fechamentos na janela [start, end), excluindo o Staging."""
+    total = 0
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        for area, list_id in AREA_LISTS.items():
+            if area == STAGING:
+                continue
+            listed = await _fetch_list(
+                list_id,
+                params={
+                    "include_closed": "true",
+                    "date_done_gt": str(start_ms),
+                    "date_done_lt": str(end_ms),
                 },
                 client=client,
             )

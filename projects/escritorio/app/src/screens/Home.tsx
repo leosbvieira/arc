@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { Digest, getDigest } from "../api";
+import { Abertura, Digest, getAbertura, getDigest } from "../api";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { Skeleton } from "../ui";
 
@@ -15,18 +15,24 @@ function greeting(): string {
 
 export default function Home({ onOpenTab }: { onOpenTab?: (t: string) => void }) {
   const [digest, setDigest] = useState<Digest | null>(null);
+  const [abertura, setAbertura] = useState<Abertura | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     setLoading(true);
-    getDigest()
-      .then((d) => {
-        setDigest(d);
-        setError(false);
-      })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+    const [digestResult, aberturaResult] = await Promise.allSettled([
+      getDigest(),
+      getAbertura(),
+    ]);
+    if (digestResult.status === "fulfilled") {
+      setDigest(digestResult.value);
+      setError(false);
+    } else {
+      setError(true);
+    }
+    setAbertura(aberturaResult.status === "fulfilled" ? aberturaResult.value : null);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -35,6 +41,9 @@ export default function Home({ onOpenTab }: { onOpenTab?: (t: string) => void })
 
   const prioridades = (digest?.tasks ?? []).slice(0, 3);
   const vencendo = digest?.count ?? 0;
+  const agendaCount =
+    (abertura?.hoje.horarios.length ?? 0) +
+    (abertura?.hoje.calendario.length ?? 0);
 
   return (
     <View style={{ flex: 1 }}>
@@ -54,12 +63,14 @@ export default function Home({ onOpenTab }: { onOpenTab?: (t: string) => void })
             : "Nada vencendo. Use o dia pra construir — não só apagar incêndio."}
         </Text>
 
-        <View style={styles.state}>
-          <Text style={styles.stateLabel}>estado</Text>
-          <Text style={[styles.stateVal, { color: colors.success }]}>energia baixa</Text>
-          <Text style={styles.stateDot}>·</Text>
-          <Text style={[styles.stateVal, { color: colors.primary }]}>clareza alta</Text>
-        </View>
+        {abertura?.checkin.feito ? (
+          <View style={styles.state}>
+            <Text style={styles.stateLabel}>estado</Text>
+            <Text style={[styles.stateVal, { color: colors.success }]}>energia {abertura.checkin.energia}</Text>
+            <Text style={styles.stateDot}>·</Text>
+            <Text style={[styles.stateVal, { color: colors.primary }]}>clareza {abertura.checkin.clareza}</Text>
+          </View>
+        ) : null}
 
         <Text style={styles.sectionLabel}>{prioridades.length ? "cobranças de hoje" : "hoje"}</Text>
 
@@ -112,7 +123,9 @@ export default function Home({ onOpenTab }: { onOpenTab?: (t: string) => void })
             <Text style={styles.chipMentorText}>◆ falar com o mentor</Text>
           </Pressable>
           <Pressable style={styles.chip} onPress={() => onOpenTab?.("abertura")}>
-            <Text style={styles.chipText}>◐ abrir o dia</Text>
+            <Text style={styles.chipText}>
+              ◐ agenda <Text style={styles.chipNum}>{agendaCount}</Text>
+            </Text>
           </Pressable>
           <Pressable style={styles.chip} onPress={() => onOpenTab?.("shutdown")}>
             <Text style={styles.chipText}>◑ shutdown</Text>
@@ -122,6 +135,12 @@ export default function Home({ onOpenTab }: { onOpenTab?: (t: string) => void })
           </Pressable>
           <Pressable style={styles.chip} onPress={() => onOpenTab?.("rotinas")}>
             <Text style={styles.chipText}>◇ rotinas</Text>
+          </Pressable>
+          <Pressable style={styles.chip} onPress={() => onOpenTab?.("edificacao")}>
+            <Text style={styles.chipText}>⌁ edificação</Text>
+          </Pressable>
+          <Pressable style={styles.chip} onPress={() => onOpenTab?.("triagem")}>
+            <Text style={styles.chipText}>⌘ triagem</Text>
           </Pressable>
         </View>
       </ScrollView>

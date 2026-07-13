@@ -10,6 +10,7 @@ import {
   SpaceGrotesk_700Bold,
 } from "@expo-google-fonts/space-grotesk";
 import { StatusBar } from "expo-status-bar";
+import * as Notifications from "expo-notifications";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -30,12 +31,14 @@ import { flush } from "./src/captureQueue";
 import { registerForPushToken } from "./src/notifications";
 import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
+import Edificacao from "./src/screens/Edificacao";
 import Fechar from "./src/screens/Fechar";
 import Home from "./src/screens/Home";
 import Revisao from "./src/screens/Revisao";
 import Rotinas from "./src/screens/Rotinas";
 import Shutdown from "./src/screens/Shutdown";
 import Tasks from "./src/screens/Tasks";
+import Triagem from "./src/screens/Triagem";
 import { colors, fonts, spacing } from "./src/theme";
 import { AppButton, Card, Field } from "./src/ui";
 
@@ -48,7 +51,9 @@ type Tab =
   | "abertura"
   | "shutdown"
   | "fechar"
-  | "rotinas";
+  | "rotinas"
+  | "edificacao"
+  | "triagem";
 
 // A tabbar fica só com 4 — revisão/abertura/shutdown/fechar/rotinas entram pela
 // Home e voltam pelo chevron.
@@ -59,7 +64,15 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "chat", label: "Chat", icon: "message-circle" },
 ];
 
-const SUBSCREENS: Tab[] = ["revisao", "abertura", "shutdown", "fechar", "rotinas"];
+const SUBSCREENS: Tab[] = [
+  "revisao",
+  "abertura",
+  "shutdown",
+  "fechar",
+  "rotinas",
+  "edificacao",
+  "triagem",
+];
 
 const TITLES: Partial<Record<Tab, string>> = {
   revisao: "Revisão",
@@ -67,7 +80,27 @@ const TITLES: Partial<Record<Tab, string>> = {
   shutdown: "Shutdown",
   fechar: "Fechar o dia",
   rotinas: "Rotinas",
+  edificacao: "Edificação",
+  triagem: "Triagem",
 };
+
+function tabDaNotificacao(kind: unknown): Tab | null {
+  if (typeof kind !== "string") return null;
+  if (kind === "nudge_toque" || kind === "nudge_checkin" || kind === "hora_marcada") {
+    return "abertura";
+  }
+  if (kind === "nudge_shutdown") return "shutdown";
+  if (kind === "nudge_closing") return "fechar";
+  if (kind === "nudge_review" || kind === "digest") return "revisao";
+  if (kind === "nudge_jornal") return "capturar";
+  if (kind === "captura" || kind === "capture") return "capturar";
+  return null;
+}
+
+async function syncPushDevice() {
+  const expoToken = await registerForPushToken();
+  if (expoToken) await registerDevice(expoToken);
+}
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -87,8 +120,12 @@ export default function App() {
 
   useEffect(() => {
     getToken().then((t) => {
-      setAuthed(!!t);
+      const autenticado = !!t;
+      setAuthed(autenticado);
       setReady(true);
+      if (autenticado) {
+        syncPushDevice().catch((e) => console.log("push:", e));
+      }
     });
   }, []);
 
@@ -111,11 +148,30 @@ export default function App() {
     return () => sub.remove();
   }, [authed]);
 
+  useEffect(() => {
+    if (!authed) return;
+
+    const abrir = (response: Notifications.NotificationResponse | null) => {
+      const kind = response?.notification.request.content.data?.kind;
+      const destino = tabDaNotificacao(kind);
+      if (destino) setTab(destino);
+    };
+
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        abrir(response);
+        if (response) return Notifications.clearLastNotificationResponseAsync();
+        return undefined;
+      })
+      .catch(() => undefined);
+    const sub = Notifications.addNotificationResponseReceivedListener(abrir);
+    return () => sub.remove();
+  }, [authed]);
+
   async function afterAuth() {
     setAuthed(true);
     try {
-      const et = await registerForPushToken();
-      if (et) await registerDevice(et);
+      await syncPushDevice();
     } catch (e) {
       console.log("push:", e);
     }
@@ -222,8 +278,15 @@ export default function App() {
           <Fechar />
         ) : tab === "rotinas" ? (
           <Rotinas />
+        ) : tab === "edificacao" ? (
+          <Edificacao />
+        ) : tab === "triagem" ? (
+          <Triagem />
         ) : (
-          <Revisao />
+          <Revisao
+            onOpenCapture={() => setTab("capturar")}
+            onOpenEdificacao={() => setTab("edificacao")}
+          />
         )}
       </View>
 

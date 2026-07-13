@@ -64,6 +64,22 @@ async def test_nota_vira_so_raw(spies):
     assert store.pending_captures() == []
 
 
+async def test_conteudo_sensivel_some_do_sqlite_depois_do_raw(spies):
+    segredo = "sensível: conteúdo de terapia que não deve ficar na fila"
+    cid = store.enqueue_capture(segredo, None, sensivel=True)
+
+    assert await cp.process_pending() == 1
+    with store._connect() as con:
+        row = con.execute(
+            "SELECT text, status, raw_path FROM capture_queue WHERE id = ?",
+            (cid,),
+        ).fetchone()
+
+    assert row["status"] == "done"
+    assert row["text"] == ""
+    assert row["raw_path"].endswith(f"raw-c{cid}.md")
+
+
 async def test_toda_tarefa_vai_pra_staging_com_link_do_raw(spies, monkeypatch):
     async def classify(text):
         return {

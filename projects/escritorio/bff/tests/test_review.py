@@ -130,6 +130,54 @@ def test_endpoint_enriquece_pack_com_clickup(tmp_path, monkeypatch):
     assert called["ts_ms"] == expected_ts_ms
 
 
+def test_endpoint_mensal_fecha_janela_no_inicio_do_mes_atual(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
+    store.init_db()
+    called = {}
+
+    async def fake_count_closed_between(start_ms, end_ms):
+        called["window"] = (start_ms, end_ms)
+        return 11
+
+    async def fake_count_open(_list_id):
+        return 2
+
+    monkeypatch.setattr(
+        clickup_client,
+        "count_closed_between",
+        fake_count_closed_between,
+    )
+    monkeypatch.setattr(clickup_client, "count_open", fake_count_open)
+    main.app.dependency_overrides[require_auth] = lambda: "test"
+
+    client = TestClient(main.app)
+    try:
+        response = client.get("/review/monthly")
+    finally:
+        client.close()
+        main.app.dependency_overrides.pop(require_auth, None)
+
+    assert response.status_code == 200
+    assert response.json()["tarefas_concluidas"] == 11
+    local_tz = ZoneInfo("America/Sao_Paulo")
+    today = datetime.now(local_tz).date()
+    inicio_atual = today.replace(day=1)
+    inicio_anterior = (inicio_atual - timedelta(days=1)).replace(day=1)
+    expected = tuple(
+        int(
+            datetime.combine(data, datetime_time.min, tzinfo=local_tz)
+            .astimezone(timezone.utc)
+            .timestamp()
+            * 1000
+        )
+        for data in (inicio_anterior, inicio_atual)
+    )
+    assert called["window"] == expected
+
+
 def test_clickup_contagens_usam_fetch_list(monkeypatch):
     calls = []
 
@@ -156,6 +204,19 @@ def test_clickup_contagens_usam_fetch_list(monkeypatch):
             "date_done_gt": "123456",
         }
         for _, params in calls[1:]
+    )
+
+    calls.clear()
+    assert asyncio.run(clickup_client.count_closed_between(100, 200)) == (
+        len(clickup_client.AREA_LISTS) - 1
+    )
+    assert all(
+        params == {
+            "include_closed": "true",
+            "date_done_gt": "100",
+            "date_done_lt": "200",
+        }
+        for _, params in calls
     )
 
 

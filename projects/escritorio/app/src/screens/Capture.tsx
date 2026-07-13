@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -10,18 +10,35 @@ import {
   View,
 } from "react-native";
 
-import { capture, logSession } from "../api";
+import { capture } from "../api";
 import {
   createCaptureClientKey,
   enqueue,
   flush,
   pendingCount,
 } from "../captureQueue";
+import {
+  clearReadingDraft,
+  loadReadingDraft,
+  ReadingDraft,
+  ReadingDraftItem,
+  saveReadingDraft,
+} from "../readingDraft";
+import {
+  appendReadingBuffer,
+  compileReadingSession,
+  createReadingSession,
+  discardReadingSession,
+  listPendingReadingSessions,
+  ReadingHook,
+  ReadingSession,
+} from "../readingApi";
 import { colors, fonts, radius, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
+import { useReadingSpeech } from "../useReadingSpeech";
 
 type Mode = "captura" | "leitura";
-type Item = { id: string; kind: string; text: string; anki?: boolean };
+type Item = ReadingDraftItem;
 
 const KIND: Record<string, { color: string; icon: any }> = {
   "citação": { color: colors.primary, icon: "book-open" },
@@ -45,6 +62,7 @@ function parse(raw: string): { kind?: string; book?: string; text: string } {
   }
   if (l.startsWith("ideia")) return { kind: "ideia", text: after() };
   if (l.startsWith("coach")) return { kind: "coach", text: after() };
+  if (l.startsWith("lista")) return { kind: "lista", text: after() };
   return { kind: "comentário", text: t };
 }
 
@@ -58,6 +76,45 @@ function createSessionKey(ts: number): string {
   return `session:${createCaptureClientKey(ts)}`;
 }
 
+function kindToHook(kind: string): ReadingHook {
+  if (kind === "citação") return "quote";
+  if (kind === "comentário") return "comentario";
+  if (kind === "ideia" || kind === "coach" || kind === "lista") {
+    return kind;
+  }
+  return "texto";
+}
+
+function hookToKind(hook: ReadingHook): string {
+  if (hook === "quote") return "citação";
+  if (hook === "comentario" || hook === "texto") return "comentário";
+  return hook;
+}
+
+function draftFromRemote(session: ReadingSession): ReadingDraft {
+  return {
+    sessionKey: session.client_key,
+    remoteId: session.id,
+    book: session.livro ?? "",
+    pageStart:
+      session.pagina_inicial === null
+        ? ""
+        : String(session.pagina_inicial),
+    pageEnd:
+      session.pagina_final === null ? "" : String(session.pagina_final),
+    startedAt: Math.round(session.inicio * 1000),
+    updatedAt: Date.now(),
+    items: (session.buffer ?? []).map((chunk) => ({
+      id: `${session.client_key}:${chunk.seq}`,
+      kind: hookToKind(chunk.hook),
+      text: chunk.texto,
+      seq: chunk.seq,
+    })),
+    syncedSeq: Math.max(0, ...(session.buffer ?? []).map((chunk) => chunk.seq)),
+    status: "pending",
+  };
+}
+
 export default function Capture() {
   const [mode, setMode] = useState<Mode>("captura");
 
@@ -65,6 +122,7 @@ export default function Capture() {
   const [text, setText] = useState("");
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sensitive, setSensitive] = useState(false);
   const [pending, setPending] = useState(0);
   const [status, setStatus] = useState("");
 
@@ -77,6 +135,17 @@ export default function Capture() {
   const [compiling, setCompiling] = useState(false);
   const [sessionStart, setSessionStart] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [speechError, setSpeechError] = useState("");
+  const [serverPending, setServerPending] = useState<ReadingSession[]>([]);
+  const draftRef = useRef<ReadingDraft | null>(null);
+  const syncChain = useRef<Promise<void>>(Promise.resolve());
+
+  const speech = useReadingSpeech({
+    onFinal: appendTranscript,
+    onError: (code) => {
+      setSpeechError(`transcrição indisponível (${code}) — entrada manual continua`);
+    },
+  });
 
   // O flush global fica em App; esta tela só atualiza o badge local no foco.
   useEffect(() => {
@@ -94,6 +163,67 @@ export default function Capture() {
       sub.remove();
     };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    const restore = async () => {
+      let draft = await loadReadingDraft();
+      try {
+        const pendingRemote = await listPendingReadingSessions();
+        if (!alive) return;
+        setServerPending(pendingRemote.sessions);
+        if (!draft && pendingRemote.sessions.length === 1) {
+          draft = draftFromRemote(pendingRemote.sessions[0]);
+        } else if (!draft && pendingRemote.sessions.length > 1) {
+          setMode("leitura");
+          setStatus(
+            `${pendingRemote.sessions.length} sessões pendentes — escolha uma para retomar`,
+          );
+        }
+      } catch {
+        // Sem rede: o draft local continua sendo a unica fonte de recuperacao.
+      }
+      if (!alive || !draft) return;
+
+      draftRef.current = draft;
+      setBook(draft.book);
+      setPageStart(draft.pageStart);
+      setPageEnd(draft.pageEnd);
+      setItems(draft.items);
+      setSessionStart(draft.startedAt);
+      setMode("leitura");
+      setStatus("sessão de leitura recuperada — revise e retome ou compile");
+      await saveReadingDraft(draft);
+      queueDraftSync(draft);
+    };
+
+    restore();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const draft = draftRef.current;
+    if (!draft) return;
+    const timer = setTimeout(() => {
+      const current = draftRef.current;
+      if (!current) return;
+      const next = {
+        ...current,
+        book,
+        pageStart,
+        pageEnd,
+        updatedAt: Date.now(),
+      };
+      draftRef.current = next;
+      saveReadingDraft(next).catch(() => {
+        setStatus("não consegui atualizar o buffer local");
+      });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [book, pageStart, pageEnd]);
 
   useEffect(() => {
     if (sessionStart === null) {
@@ -125,10 +255,11 @@ export default function Capture() {
       if (restantes > 0) {
         await enqueue({
           kind: "capture",
-          payload: { text: t, client_key: clientKey },
+          payload: { text: t, client_key: clientKey, sensivel: sensitive },
           ts,
         });
         setText("");
+        setSensitive(false);
         setPending(await pendingCount());
         setStatus(
           "sem conexão — guardado no aparelho, reenvio automático",
@@ -136,19 +267,21 @@ export default function Capture() {
         return;
       }
 
-      const r = await capture(t, undefined, clientKey);
+      const r = await capture(t, undefined, clientKey, sensitive);
       setReply(r);
       setText("");
+      setSensitive(false);
       setPending(await pendingCount());
     } catch {
       // A mesma client_key usada no primeiro POST acompanha o retry. Se o BFF
       // recebeu a captura e só a resposta se perdeu, ele devolve o id existente.
       await enqueue({
         kind: "capture",
-        payload: { text: t, client_key: clientKey },
+        payload: { text: t, client_key: clientKey, sensivel: sensitive },
         ts,
       });
       setText("");
+      setSensitive(false);
       setPending(await pendingCount());
       setStatus(
         "sem conexão — guardado no aparelho, reenvio automático",
@@ -158,97 +291,299 @@ export default function Capture() {
     }
   }
 
-  function onAdd() {
-    if (!entry.trim()) return;
-    const p = parse(entry);
-    if (p.book) {
-      setBook(p.book);
-    } else if (p.text) {
-      setItems((prev) => [
-        ...prev,
-        {
-          id: String(Date.now()),
-          kind: p.kind!,
-          text: p.text,
-        },
-      ]);
-    }
-    setEntry("");
+  function queueDraftSync(
+    draft: ReadingDraft,
+    localSave: Promise<void> = Promise.resolve(),
+  ): void {
+    syncChain.current = syncChain.current
+      .then(async () => {
+        await localSave;
+        await syncDraft(draft);
+      })
+      .catch(() => {
+        setStatus("sessão salva no aparelho — autosave no servidor pendente");
+      });
   }
 
-  function toggleAnki(id: string) {
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === id ? { ...it, anki: !it.anki } : it,
-      ),
+  async function restoreRemote(session: ReadingSession): Promise<void> {
+    if (draftRef.current) return;
+    const draft = draftFromRemote(session);
+    draftRef.current = draft;
+    setBook(draft.book);
+    setPageStart(draft.pageStart);
+    setPageEnd(draft.pageEnd);
+    setItems(draft.items);
+    setSessionStart(draft.startedAt);
+    setStatus("sessão pendente aberta — retome ou compile");
+    await saveReadingDraft(draft);
+  }
+
+  async function syncDraft(snapshot: ReadingDraft): Promise<number> {
+    let remoteId = snapshot.remoteId;
+    if (remoteId === null) {
+      const created = await createReadingSession({
+        client_key: snapshot.sessionKey,
+        livro: snapshot.book,
+        pagina_inicial: numericPage(snapshot.pageStart),
+        inicio: snapshot.startedAt / 1000,
+      });
+      remoteId = created.session.id;
+      const current = draftRef.current;
+      if (current?.sessionKey === snapshot.sessionKey) {
+        const withRemote = { ...current, remoteId };
+        draftRef.current = withRemote;
+        await saveReadingDraft(withRemote);
+      }
+    }
+
+    const currentConfirmed =
+      draftRef.current?.sessionKey === snapshot.sessionKey
+        ? draftRef.current.syncedSeq
+        : snapshot.syncedSeq;
+    let confirmedSeq = currentConfirmed;
+    for (const item of snapshot.items) {
+      if (item.seq <= currentConfirmed) continue;
+      await appendReadingBuffer(remoteId, {
+        seq: item.seq,
+        hook: kindToHook(item.kind),
+        texto: item.text,
+        ts: snapshot.updatedAt / 1000,
+      });
+      confirmedSeq = item.seq;
+    }
+    const current = draftRef.current;
+    if (
+      current?.sessionKey === snapshot.sessionKey &&
+      confirmedSeq > current.syncedSeq
+    ) {
+      const synced = { ...current, remoteId, syncedSeq: confirmedSeq };
+      draftRef.current = synced;
+      await saveReadingDraft(synced);
+    }
+    return remoteId;
+  }
+
+  function appendTranscript(raw: string): void {
+    const parsed = parse(raw);
+    if (parsed.book) {
+      if (draftRef.current) {
+        setSpeechError("o livro não muda depois que a sessão começou");
+        return;
+      }
+      setBook(parsed.book);
+      return;
+    }
+    if (!parsed.text) return;
+
+    const current = draftRef.current;
+    if (!current) {
+      setEntry(raw);
+      setSpeechError("inicie a sessão antes de registrar uma fala");
+      return;
+    }
+    const seq = (current.items.at(-1)?.seq ?? 0) + 1;
+    const item: Item = {
+      id: `${current.sessionKey}:${seq}`,
+      kind: parsed.kind ?? "comentário",
+      text: parsed.text,
+      seq,
+    };
+    const next: ReadingDraft = {
+      ...current,
+      book,
+      pageStart,
+      pageEnd,
+      items: [...current.items, item],
+      updatedAt: Date.now(),
+      status: "active",
+    };
+    draftRef.current = next;
+    setItems(next.items);
+    const localSave = saveReadingDraft(next);
+    queueDraftSync(next, localSave);
+    localSave.catch(() =>
+      setStatus("não consegui gravar o buffer local"),
     );
   }
 
-  const ankiCount = items.filter((it) => it.anki).length;
-
-  function sessionText(): string {
-    return items
-      .map(
-        (it) =>
-          `${it.kind}: ${it.text}${it.anki ? " [★ anki]" : ""}`,
-      )
-      .join("\n");
+  function onAdd() {
+    const raw = entry.trim();
+    if (!raw) return;
+    appendTranscript(raw);
+    setEntry("");
   }
 
-  function paginasLidas(): number | null {
-    const initialText = pageStart.trim();
-    const finalText = pageEnd.trim();
-    if (!initialText || !finalText) return null;
+  function numericPage(value: string): number | null {
+    if (!value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+  }
 
-    const initial = Number(initialText);
-    const final = Number(finalText);
-    if (!Number.isFinite(initial) || !Number.isFinite(final)) {
-      return null;
+  async function startSession(): Promise<void> {
+    if (speech.starting) return;
+    setSpeechError("");
+    let draft = draftRef.current;
+    if (!draft) {
+      if (!book.trim()) {
+        setSpeechError("informe o livro antes de iniciar a sessão");
+        return;
+      }
+      const now = Date.now();
+      draft = {
+        sessionKey: createSessionKey(now),
+        remoteId: null,
+        book,
+        pageStart,
+        pageEnd,
+        startedAt: now,
+        updatedAt: now,
+        items: [],
+        syncedSeq: 0,
+        status: "active",
+      };
+      draftRef.current = draft;
+      setSessionStart(now);
+      await saveReadingDraft(draft);
+      queueDraftSync(draft);
     }
-    return final - initial;
+    const started = await speech.start();
+    if (started) setStatus("ouvindo — diga ‘quote’, ‘comentário’, ‘ideia’ ou ‘lista’");
   }
 
-  async function compilar() {
-    if (compiling || (!sessionStart && !items.length)) return;
-
-    const ts = Date.now();
-    const sessionKey = createSessionKey(ts);
-    const duracao_s = sessionStart
-      ? Math.round((ts - sessionStart) / 1000)
-      : 0;
-    const payload = {
-      tipo: "leitura",
-      livro: book.trim() || null,
-      paginas: paginasLidas(),
-      duracao_s,
-      notas: sessionText(),
-      session_key: sessionKey,
-    };
-
-    setCompiling(true);
-    setStatus("");
+  async function stopSpeech(): Promise<void> {
     try {
-      await logSession(payload);
-      setSessionStart(null);
-      setItems([]);
-      setPageStart("");
-      setPageEnd("");
-      Alert.alert("Sessão compilada", "Sessão registrada.");
+      await speech.stop();
+      setStatus("áudio pausado — o buffer continua salvo");
     } catch {
-      await enqueue({
-        kind: "session",
-        payload,
-        ts,
+      setStatus("o microfone não confirmou a pausa — buffer preservado");
+    }
+  }
+
+  function resetSessionUi(): void {
+    draftRef.current = null;
+    setSessionStart(null);
+    setItems([]);
+    setBook("");
+    setPageStart("");
+    setPageEnd("");
+    setEntry("");
+    setSpeechError("");
+  }
+
+  async function compileNow(): Promise<void> {
+    const draft = draftRef.current;
+    if (!draft || compiling || draft.items.length === 0) return;
+    setCompiling(true);
+    setStatus("compilando — o buffer só será limpo após o vault confirmar");
+    try {
+      const pendingDraft = {
+        ...draft,
+        book,
+        pageStart,
+        pageEnd,
+        status: "pending" as const,
+        updatedAt: Date.now(),
+      };
+      draftRef.current = pendingDraft;
+      await saveReadingDraft(pendingDraft);
+      const remoteId = await syncDraft(pendingDraft);
+      const result = await compileReadingSession(remoteId, {
+        pagina_final: numericPage(pageEnd),
+        fim: Date.now() / 1000,
       });
-      setSessionStart(null);
-      setItems([]);
-      setPageStart("");
-      setPageEnd("");
-      setStatus("sessão guardada — reenvio automático");
-      setPending(await pendingCount());
+      await clearReadingDraft();
+      setServerPending((previous) =>
+        previous.filter((session) => session.id !== remoteId),
+      );
+      resetSessionUi();
+      Alert.alert(
+        "Sessão compilada",
+        result.anki_cards.length > 0
+          ? `${result.anki_cards.length} candidato(s) Anki aguardam revisão.`
+          : "Nota gravada. Nenhum candidato Anki foi sugerido.",
+      );
+    } catch {
+      const current = draftRef.current;
+      if (current) {
+        const pendingDraft = {
+          ...current,
+          status: "pending" as const,
+          updatedAt: Date.now(),
+        };
+        draftRef.current = pendingDraft;
+        await saveReadingDraft(pendingDraft);
+      }
+      setStatus("compilação falhou — sessão pendente, nada foi apagado");
     } finally {
       setCompiling(false);
     }
+  }
+
+  async function compilar(): Promise<void> {
+    if (speech.starting) {
+      setStatus("aguarde o microfone iniciar antes de compilar");
+      return;
+    }
+    if (speech.recognizing) {
+      setStatus("finalizando a última fala…");
+      try {
+        await speech.stop();
+      } catch {
+        setStatus("não confirmei o fim do áudio — buffer preservado");
+        return;
+      }
+      await syncChain.current;
+    }
+    await compileNow();
+  }
+
+  function descartar(): void {
+    const draft = draftRef.current;
+    if (!draft) return;
+    Alert.alert(
+      "Descartar sessão?",
+      "O buffer local e a sessão pendente serão removidos.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Descartar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              if (speech.starting) {
+                setStatus("aguarde o microfone iniciar antes de descartar");
+                return;
+              }
+              if (speech.recognizing) await speech.stop();
+              await syncChain.current;
+              const current = draftRef.current;
+              if (!current) return;
+              let remoteId = current.remoteId;
+              if (remoteId === null) {
+                const recovered = await createReadingSession({
+                  client_key: current.sessionKey,
+                  livro: current.book,
+                  pagina_inicial: numericPage(current.pageStart),
+                  inicio: current.startedAt / 1000,
+                });
+                remoteId = recovered.session.id;
+              }
+              if (remoteId !== null) {
+                await discardReadingSession(remoteId);
+                setServerPending((previous) =>
+                  previous.filter((session) => session.id !== remoteId),
+                );
+              }
+              await clearReadingDraft();
+              resetSessionUi();
+              setStatus("sessão descartada");
+            } catch {
+              setStatus("não confirmei o descarte no servidor — sessão preservada");
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -289,6 +624,24 @@ export default function Capture() {
             placeholder="ex.: cobrar Ana o relatório sexta"
             multiline
           />
+          <Pressable
+            onPress={() => setSensitive((value) => !value)}
+            style={[styles.sensitiveToggle, sensitive && styles.sensitiveToggleOn]}
+          >
+            <Feather
+              name={sensitive ? "shield" : "shield-off"}
+              size={14}
+              color={sensitive ? colors.primary : colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.sensitiveText,
+                sensitive && { color: colors.primary },
+              ]}
+            >
+              conteúdo sensível · preview sempre neutro
+            </Text>
+          </Pressable>
           <AppButton
             title="Enviar"
             onPress={onSend}
@@ -322,11 +675,29 @@ export default function Capture() {
         </View>
       ) : (
         <View style={{ flex: 1, paddingTop: spacing.md }}>
+          {sessionStart === null && serverPending.length > 0 ? (
+            <View style={styles.pendingSessions}>
+              <Text style={styles.pendingTitle}>sessões pendentes</Text>
+              {serverPending.map((session) => (
+                <Pressable
+                  key={session.id}
+                  style={styles.pendingSession}
+                  onPress={() => restoreRemote(session)}
+                >
+                  <Feather name="rotate-ccw" size={14} color={colors.primary} />
+                  <Text style={styles.pendingSessionText} numberOfLines={1}>
+                    {session.livro || "Leitura sem título"} · {session.buffer?.length ?? 0} itens
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <View style={styles.sessionFields}>
             <Field
               value={book}
               onChangeText={setBook}
               placeholder="Livro"
+              editable={sessionStart === null}
             />
             <View style={styles.pagesRow}>
               <Field
@@ -335,6 +706,7 @@ export default function Capture() {
                 onChangeText={setPageStart}
                 placeholder="Página inicial"
                 keyboardType="number-pad"
+                editable={sessionStart === null}
               />
               <Field
                 style={{ flex: 1 }}
@@ -345,9 +717,18 @@ export default function Capture() {
               />
             </View>
             <AppButton
-              title="▶ iniciar sessão"
+              title={
+                speech.starting
+                  ? "preparando microfone…"
+                  : speech.recognizing
+                  ? "■ pausar áudio"
+                  : sessionStart === null
+                    ? "▶ iniciar sessão com áudio"
+                    : "▶ retomar áudio"
+              }
               variant="ghost"
-              onPress={() => setSessionStart(Date.now())}
+              onPress={speech.recognizing ? stopSpeech : startSession}
+              disabled={speech.starting}
             />
             {sessionStart !== null ? (
               <View style={styles.timerRow}>
@@ -359,7 +740,27 @@ export default function Capture() {
                 <Text style={styles.timerText}>
                   {formatElapsed(elapsedSeconds)}
                 </Text>
+                <View
+                  style={[
+                    styles.recordingDot,
+                    speech.recognizing && styles.recordingDotOn,
+                  ]}
+                />
+                <Text style={styles.recordingText}>
+                  {speech.recognizing ? "ouvindo" : "buffer salvo"}
+                </Text>
               </View>
+            ) : null}
+            {speech.interim ? (
+              <Text style={styles.interim}>{speech.interim}</Text>
+            ) : null}
+            {speechError ? (
+              <Text style={styles.status}>{speechError}</Text>
+            ) : null}
+            {!speech.continuousSupported ? (
+              <Text style={styles.status}>
+                neste Android a transcrição reinicia a cada fala; o buffer continua persistente
+              </Text>
             ) : null}
           </View>
 
@@ -377,7 +778,6 @@ export default function Capture() {
             </Text>
             <Text style={styles.bookCount}>
               {items.length} itens
-              {ankiCount ? ` · ★${ankiCount}` : ""}
             </Text>
           </View>
 
@@ -412,21 +812,6 @@ export default function Capture() {
                     >
                       {it.kind}
                     </Text>
-                    <Pressable
-                      onPress={() => toggleAnki(it.id)}
-                      hitSlop={8}
-                      style={{ marginLeft: "auto" }}
-                    >
-                      <Feather
-                        name="star"
-                        size={15}
-                        color={
-                          it.anki
-                            ? colors.primary
-                            : colors.textMuted
-                        }
-                      />
-                    </Pressable>
                   </View>
                   <Text style={styles.itemText}>
                     {it.text}
@@ -459,7 +844,20 @@ export default function Capture() {
             variant="ghost"
             onPress={compilar}
             loading={compiling}
+            disabled={
+              speech.starting || sessionStart === null || items.length === 0
+            }
           />
+          {sessionStart !== null ? (
+            <View style={styles.compileMeta}>
+              <Text style={styles.compileHint}>
+                A IA sugere candidatos Anki depois da compilação; você aprova na Revisão.
+              </Text>
+              <Pressable onPress={descartar} hitSlop={8}>
+                <Text style={styles.discardText}>descartar sessão</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {pending > 0 ? (
             <View style={styles.queueRow}>
               <Feather
@@ -514,6 +912,26 @@ const styles = StyleSheet.create({
     minHeight: 120,
     textAlignVertical: "top",
   },
+  sensitiveToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  sensitiveToggleOn: {
+    borderColor: "rgba(201,169,126,0.5)",
+    backgroundColor: colors.primarySoft,
+  },
+  sensitiveText: {
+    fontFamily: fonts.mono,
+    fontSize: 10.5,
+    color: colors.textMuted,
+  },
   reply: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -548,6 +966,34 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
+  pendingSessions: {
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.card2,
+  },
+  pendingTitle: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: colors.textMuted,
+  },
+  pendingSession: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  pendingSessionText: {
+    flex: 1,
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    color: colors.text,
+  },
   pagesRow: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -562,6 +1008,29 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 18,
     color: colors.primary,
+  },
+  recordingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 7,
+    backgroundColor: colors.textMuted,
+    marginLeft: spacing.sm,
+  },
+  recordingDotOn: { backgroundColor: "#DE8A7A" },
+  recordingText: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  interim: {
+    fontFamily: fonts.ui,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textMuted,
+    fontStyle: "italic",
+    paddingHorizontal: spacing.sm,
   },
   bookHead: {
     flexDirection: "row",
@@ -621,5 +1090,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  compileMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  compileHint: {
+    flex: 1,
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+  },
+  discardText: {
+    fontFamily: fonts.mono,
+    fontSize: 10.5,
+    color: "#DE8A7A",
   },
 });

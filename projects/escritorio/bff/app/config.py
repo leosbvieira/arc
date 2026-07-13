@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     ics_timeout: int = 15
     ics_cache_ttl: int = 900
 
+    # Escrita SOMENTE no Google Calendar pessoal. Outlook permanece read-only.
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    google_calendar_refresh_token: str = ""
+    google_calendar_id: str = "primary"
+    google_calendar_timeout: int = 20
+
     # Vault
     github_pat: str = ""
     vault_repo: str = "leosbvieira/aeternum"

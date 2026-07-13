@@ -182,7 +182,40 @@ async def test_fetch_e_count_reusam_client_e_count_exclui_staging(
             "subtasks": "false",
             "include_closed": "true",
             "date_done_gt": "123456",
+            "page": 0,
         }
+
+
+async def test_fetch_list_pagina_ate_a_ultima_pagina():
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, page):
+            self.page = page
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            if self.page == 0:
+                return {"tasks": [{"id": str(i)} for i in range(100)]}
+            return {"tasks": [{"id": "ultimo"}], "last_page": True}
+
+    class FakeClient:
+        async def get(self, _url, *, params=None, headers=None):
+            page = params["page"]
+            calls.append(page)
+            return FakeResponse(page)
+
+    tasks_found = await clickup_client._fetch_list(
+        "list-work",
+        params={"include_closed": "true"},
+        client=FakeClient(),
+    )
+
+    assert calls == [0, 1]
+    assert len(tasks_found) == 101
+    assert tasks_found[-1]["id"] == "ultimo"
 
 
 async def test_complete_recusa_task_de_lista_estrangeira_sem_put(

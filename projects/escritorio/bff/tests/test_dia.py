@@ -78,6 +78,24 @@ def test_template_pode_ser_trocado_no_mesmo_dia(client):
     assert _abertura(client, QUARTA)["template"] == "corrida"
 
 
+def test_trocar_template_remove_so_check_exclusivo_anterior(client):
+    client.post("/dia/template", json={"template": "yoga", "data": QUARTA})
+    client.post(
+        "/routines/check",
+        json={"slug": "yoga", "feito": True, "data": QUARTA},
+    )
+    client.post(
+        "/routines/check",
+        json={"slug": "pesagem", "feito": True, "data": QUARTA},
+    )
+
+    client.post("/dia/template", json={"template": "corrida", "data": QUARTA})
+
+    checks = store.get_checks_on(QUARTA)
+    assert "yoga" not in checks
+    assert checks["pesagem"] is True
+
+
 def test_template_invalido_e_422(client):
     r = client.post("/dia/template", json={"template": "natacao", "data": QUARTA})
     assert r.status_code == 422

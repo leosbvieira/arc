@@ -29,15 +29,25 @@ logger = logging.getLogger(__name__)
 TITULO = "Escritório"
 
 
-def _push_entregou(resultado: dict) -> bool:
-    """Entrega real: o Expo aceitou pelo menos uma mensagem e não devolveu ticket de erro
-    (DeviceNotRegistered, token inválido...). Fail-closed: na dúvida, a ponte sobe."""
-    if int(resultado.get("sent") or 0) <= 0:
-        return False
-    tickets = resultado.get("tickets") or []
-    return not any(
-        isinstance(t, dict) and t.get("status") == "error" for t in tickets
-    )
+def _avaliar_push(resultado: dict, tokens: list[str]) -> tuple[bool, list[str]]:
+    """Retorna (alguma_entrega, tokens_stale), preservando ticket↔token por posição."""
+    tickets = resultado.get("tickets")
+    if not isinstance(tickets, list) or not tickets or len(tickets) != len(tokens):
+        return False, []
+
+    entregou = False
+    stale: list[str] = []
+    for token, ticket in zip(tokens, tickets, strict=True):
+        if not isinstance(ticket, dict):
+            continue
+        if ticket.get("status") == "ok":
+            entregou = True
+            continue
+        details = ticket.get("details")
+        error = details.get("error") if isinstance(details, dict) else None
+        if error == "DeviceNotRegistered" or ticket.get("message") == "DeviceNotRegistered":
+            stale.append(token)
+    return entregou, stale
 
 
 async def _tentar_push(kind: str, corpo: str) -> bool:
@@ -50,9 +60,16 @@ async def _tentar_push(kind: str, corpo: str) -> bool:
         return False
     try:
         # `data` carrega só o kind (pro app abrir na tela certa) — nunca conteúdo.
-        return _push_entregou(
-            await push.send_push(tokens, TITULO, corpo, {"kind": kind})
+        entregou, stale = _avaliar_push(
+            await push.send_push(tokens, TITULO, corpo, {"kind": kind}),
+            tokens,
         )
+        if stale:
+            try:
+                store.remove_devices(stale)
+            except Exception:  # limpeza não muda uma entrega já confirmada
+                logger.exception("notificar: remoção de device stale falhou")
+        return entregou
     except Exception as e:  # noqa: BLE001 - canal nunca propaga falha ao chamador
         logger.warning("push falhou: %s", type(e).__name__)
         return False

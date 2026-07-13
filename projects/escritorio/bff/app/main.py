@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from datetime import date, datetime, time as _time, timedelta
 from typing import Literal
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
@@ -15,11 +16,11 @@ from . import (
     anki,
     capture_pipeline,
     clickup_client,
+    google_calendar,
     hermes_client,
     notify,
     objetivos,
     pontos,
-    push,
     routines,
     store,
     tasks,
@@ -36,6 +37,7 @@ TZ = ZoneInfo("America/Sao_Paulo")
 NUDGE_COPY = {
     "toque": "5h30 — dia yoga ou dia corrida?",
     "checkin": "8h20 — check-in: energia, clareza, prioridade nº1. 60 segundos.",
+    "jornal": "8h30 — jornal de leitura de notícias. Abra Capturar para iniciar.",
     "shutdown": "19h — Shutdown: fechar o trabalho, follow-ups, 3 prioridades de amanhã.",
     "closing": "21h — fechar o dia? 90 segundos bastam: 1 linha + checks.",
     "review": "domingo 20h — review semanal. Os números da semana te esperam no app.",
@@ -152,6 +154,71 @@ class SessionIn(BaseModel):
     session_key: str | None = None
 
 
+class ReadingSessionIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    client_key: str
+    livro: str
+    pagina_inicial: int | None = None
+    inicio: float | None = None
+
+    @field_validator("client_key", "livro")
+    @classmethod
+    def validar_texto_obrigatorio(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("campo vazio")
+        return value
+
+    @field_validator("pagina_inicial", mode="before")
+    @classmethod
+    def validar_pagina(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("pagina_inicial inválida")
+        return value
+
+
+class ReadingBufferIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    seq: int
+    hook: Literal["quote", "comentario", "ideia", "coach", "lista", "texto"] = "texto"
+    texto: str
+    ts: float | None = None
+
+    @field_validator("seq", mode="before")
+    @classmethod
+    def validar_seq(cls, value):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError("seq deve ser inteiro positivo")
+        return value
+
+    @field_validator("texto")
+    @classmethod
+    def validar_texto(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("texto vazio")
+        return value
+
+
+class ReadingCompileIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    pagina_final: int | None = None
+    fim: float | None = None
+
+    @field_validator("pagina_final", mode="before")
+    @classmethod
+    def validar_pagina(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("pagina_final inválida")
+        return value
+
+
 class ChatIn(BaseModel):
     text: str
     mode: str = "Mentor"
@@ -168,6 +235,16 @@ class DeviceIn(BaseModel):
 class NotifyIn(BaseModel):
     title: str = "Escritório"
     body: str
+    kind: str = "manual_notify"
+    sensivel: bool = False
+
+    @field_validator("kind")
+    @classmethod
+    def validar_kind(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[a-z0-9_-]{1,64}", value):
+            raise ValueError("kind inválido")
+        return value
 
 
 class CreateTaskIn(BaseModel):
@@ -219,7 +296,7 @@ class ClosingApproveIn(BaseModel):
 
 
 class NudgeIn(BaseModel):
-    kind: Literal["toque", "checkin", "shutdown", "closing", "review"]
+    kind: Literal["toque", "checkin", "jornal", "shutdown", "closing", "review"]
 
 
 # --- o dia (A1a toque 5h30 + A1b check-in 8h20) e o Shutdown (A2, 19h) -------
@@ -522,6 +599,61 @@ class TemaIn(BaseModel):
         return valor
 
 
+class GoogleCalendarEventIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    titulo: str
+    data: str
+    hora: str
+    duracao_min: int = 60
+    client_key: str
+
+    @field_validator("titulo")
+    @classmethod
+    def validar_titulo(cls, valor: str) -> str:
+        titulo = valor.strip()
+        if not titulo:
+            raise ValueError("titulo não pode ser vazio")
+        if len(titulo) > 200:
+            raise ValueError("titulo excede 200 caracteres")
+        return titulo
+
+    @field_validator("data")
+    @classmethod
+    def validar_data(cls, valor: str) -> str:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor):
+            raise ValueError("data inválida; use YYYY-MM-DD")
+        try:
+            date.fromisoformat(valor)
+        except ValueError:
+            raise ValueError("data inválida; use YYYY-MM-DD") from None
+        return valor
+
+    @field_validator("hora")
+    @classmethod
+    def validar_hora(cls, valor: str) -> str:
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", valor):
+            raise ValueError("hora inválida; use HH:MM")
+        return valor
+
+    @field_validator("duracao_min", mode="before")
+    @classmethod
+    def validar_duracao(cls, valor):
+        if isinstance(valor, bool) or not isinstance(valor, int):
+            raise ValueError("duracao_min deve ser inteiro")
+        if not 5 <= valor <= 720:
+            raise ValueError("duracao_min deve estar entre 5 e 720")
+        return valor
+
+    @field_validator("client_key")
+    @classmethod
+    def validar_client_key(cls, valor: str) -> str:
+        chave = valor.strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{8,160}", chave):
+            raise ValueError("client_key inválida")
+        return chave
+
+
 def _semana_tema(valor: str | None) -> str:
     """Valida a query com o mesmo contrato fail-closed usado pelo modelo."""
     if valor is None:
@@ -603,6 +735,219 @@ async def create_session(body: SessionIn, _=Depends(require_auth)):
         meta={"tipo": body.tipo, "s": body.duracao_s},
     )
     return {"ok": True, "session_id": sid, "raw_path": raw_path}
+
+
+def _reading_notes(session: dict) -> str:
+    """Serializa hooks sem alterar o texto; é matéria-prima local, nunca log."""
+    return "\n".join(
+        f"{chunk['hook']}: {chunk['texto']}"
+        for chunk in session.get("buffer", [])
+    )
+
+
+async def _suggest_anki_once(session_id: int, notas: str) -> list[dict]:
+    state = store.claim_anki_suggestion(session_id)
+    if state == "done":
+        return store.list_anki_cards_for_session(session_id)
+    if state == "processing":
+        raise RuntimeError("anki_suggestion_em_andamento")
+    try:
+        candidatos = await hermes_client.suggest_anki(notas)
+        return store.finish_anki_suggestion(session_id, candidatos)
+    except Exception:
+        store.release_anki_suggestion(session_id)
+        raise
+
+
+@app.post("/reading/sessions")
+async def create_reading_session(
+    body: ReadingSessionIn,
+    _auth: None = Depends(require_auth),
+):
+    session, created = store.create_reading_session(
+        body.client_key,
+        body.livro,
+        pagina_inicial=body.pagina_inicial,
+        inicio=body.inicio,
+    )
+    if created:
+        store.log_event("reading_started", ref=str(session["id"]))
+    return {"session": session, "created": created}
+
+
+@app.post("/reading/sessions/{session_id}/buffer")
+async def autosave_reading_buffer(
+    session_id: int,
+    body: ReadingBufferIn,
+    _auth: None = Depends(require_auth),
+):
+    try:
+        chunk, created = store.append_reading_buffer(
+            session_id,
+            body.seq,
+            body.hook,
+            body.texto,
+            ts=body.ts,
+        )
+    except LookupError:
+        raise HTTPException(404, "reading_session_nao_encontrada") from None
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    if created:
+        store.log_event(
+            "reading_autosaved",
+            ref=str(session_id),
+            meta={"seq": body.seq, "hook": body.hook},
+        )
+    return {"chunk": chunk, "created": created}
+
+
+@app.get("/reading/sessions/pending")
+async def pending_reading_sessions(_auth: None = Depends(require_auth)):
+    return {"sessions": store.list_pending_reading_sessions()}
+
+
+@app.post("/reading/sessions/{session_id}/compile")
+async def compile_reading_session(
+    session_id: int,
+    body: ReadingCompileIn,
+    _auth: None = Depends(require_auth),
+):
+    import time as _t
+
+    state, session = store.claim_reading_compile(session_id)
+    if state == "missing":
+        raise HTTPException(404, "reading_session_nao_encontrada")
+    if state == "discarded":
+        raise HTTPException(409, "reading_session_descartada")
+    if state == "compiling":
+        raise HTTPException(409, "reading_compile_em_andamento")
+    if state == "empty":
+        raise HTTPException(422, "reading_buffer_vazio")
+
+    if state == "compiled":
+        cards: list[dict] = []
+        anki_status = "pending"
+        if session.get("compiled_session_id"):
+            try:
+                cards = await _suggest_anki_once(
+                    int(session["compiled_session_id"]),
+                    _reading_notes(session),
+                )
+                anki_status = "done"
+                session = store.purge_reading_content(session_id)
+            except Exception:
+                # Anki é best-effort e nunca reabre uma compilação já publicada.
+                pass
+        return {
+            "session": session,
+            "anki_cards": cards,
+            "anki_status": anki_status,
+        }
+
+    assert state == "claimed" and session is not None
+    fim = _t.time() if body.fim is None else float(body.fim)
+    if fim < float(session["inicio"]):
+        store.release_reading_compile(session_id, "fim_antes_do_inicio")
+        raise HTTPException(422, "fim_antes_do_inicio")
+    if (
+        body.pagina_final is not None
+        and session.get("pagina_inicial") is not None
+        and body.pagina_final < int(session["pagina_inicial"])
+    ):
+        store.release_reading_compile(session_id, "pagina_final_invalida")
+        raise HTTPException(422, "pagina_final_invalida")
+
+    try:
+        draft = session.get("draft_md")
+        if not draft:
+            draft = await hermes_client.compile_reading(
+                session["livro"],
+                session["buffer"],
+                pagina_inicial=session.get("pagina_inicial"),
+                pagina_final=body.pagina_final,
+            )
+            store.save_reading_draft(session_id, draft)
+
+        vault_path = await vault_client.write_reading_note(
+            draft,
+            session_id,
+            ts=float(session["inicio"]),
+            client_key=session["client_key"],
+        )
+        paginas = None
+        if body.pagina_final is not None and session.get("pagina_inicial") is not None:
+            paginas = body.pagina_final - int(session["pagina_inicial"])
+        compiled_session_id, created = store.add_session(
+            "leitura",
+            session["livro"],
+            "leitura",
+            float(session["inicio"]),
+            fim,
+            max(0, round(fim - float(session["inicio"]))),
+            paginas,
+            session["livro"],
+            return_created=True,
+            session_key=f"reading:{session_id}",
+        )
+        compiled = store.finish_reading_compile(
+            session_id,
+            vault_path=vault_path,
+            compiled_session_id=compiled_session_id,
+            pagina_final=body.pagina_final,
+            fim=fim,
+        )
+    except Exception as exc:
+        store.release_reading_compile(session_id, type(exc).__name__)
+        store.log_event(
+            "reading_compile_failed",
+            ref=str(session_id),
+            meta={"error": type(exc).__name__},
+        )
+        raise HTTPException(502, "reading_compile_indisponivel") from None
+
+    if created:
+        store.log_event(
+            "session_logged",
+            ref=str(compiled_session_id),
+            meta={"tipo": "leitura", "s": max(0, round(fim - float(session["inicio"])))},
+        )
+    store.log_event("reading_compiled", ref=str(session_id))
+
+    cards: list[dict] = []
+    anki_status = "pending"
+    try:
+        cards = await _suggest_anki_once(
+            compiled_session_id,
+            _reading_notes(compiled),
+        )
+        anki_status = "done"
+        compiled = store.purge_reading_content(session_id)
+    except Exception as exc:
+        store.log_event(
+            "anki_suggestion_failed",
+            ref=str(compiled_session_id),
+            meta={"error": type(exc).__name__},
+        )
+    return {
+        "session": compiled,
+        "anki_cards": cards,
+        "anki_status": anki_status,
+    }
+
+
+@app.post("/reading/sessions/{session_id}/discard")
+async def discard_reading_session(
+    session_id: int,
+    _auth: None = Depends(require_auth),
+):
+    state, session = store.discard_reading_session(session_id)
+    if state == "missing":
+        raise HTTPException(404, "reading_session_nao_encontrada")
+    if state not in {"discarded"}:
+        raise HTTPException(409, f"reading_session_{state}")
+    store.log_event("reading_discarded", ref=str(session_id))
+    return {"session": session}
 
 
 @app.post("/chat", response_model=ChatOut)
@@ -751,10 +1096,17 @@ async def review_monthly(_=Depends(require_auth)):
             inicio_local.astimezone(timezone.utc).timestamp() * 1000,
         )
 
-        # A API do ClickUp não oferece limite final neste agregado. Portanto,
-        # tarefas_concluidas é a aproximação factual "desde o início do mês anterior".
-        pack["tarefas_concluidas"] = (
-            await clickup_client.count_closed_since(ts_ms)
+        fim_ms = int(
+            datetime.combine(
+                inicio_mes_atual,
+                time.min,
+                tzinfo=local_tz,
+            ).astimezone(timezone.utc).timestamp()
+            * 1000
+        )
+        pack["tarefas_concluidas"] = await clickup_client.count_closed_between(
+            ts_ms,
+            fim_ms,
         )
         pack["staging_pendentes"] = await clickup_client.count_open(
             clickup_client.AREA_LISTS[clickup_client.STAGING],
@@ -1027,9 +1379,20 @@ async def sugerir_anki(
     _auth: None = Depends(require_auth),
 ) -> dict:
     """Propõe candidatos sem aprová-los automaticamente (lei 3)."""
+    if body.session_id is not None:
+        if not store.session_exists(body.session_id):
+            raise HTTPException(404, "session_nao_encontrada")
+        state = store.claim_anki_suggestion(body.session_id)
+        if state == "done":
+            cards = store.list_anki_cards_for_session(body.session_id)
+            return {"cards": cards, "n": len(cards)}
+        if state == "processing":
+            raise HTTPException(409, "anki_suggestion_em_andamento")
     try:
         candidatos = await hermes_client.suggest_anki(body.notas)
-    except RuntimeError:
+    except Exception:
+        if body.session_id is not None:
+            store.release_anki_suggestion(body.session_id)
         # A resposta não inclui notas nem saída do modelo, conforme a lei 7.
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1037,8 +1400,14 @@ async def sugerir_anki(
         ) from None
 
     try:
-        cards = store.add_anki_cards(candidatos, body.session_id)
+        cards = (
+            store.finish_anki_suggestion(body.session_id, candidatos)
+            if body.session_id is not None
+            else store.add_anki_cards(candidatos)
+        )
     except ValueError as exc:
+        if body.session_id is not None:
+            store.release_anki_suggestion(body.session_id)
         raise HTTPException(
             status_code=422,
             detail=str(exc),
@@ -1095,18 +1464,26 @@ def exportar_anki(
     _auth: None = Depends(require_auth),
 ) -> dict:
     """Exporta somente cards já aprovados pelo Leo e reserva cada um uma vez."""
-    linhas = store.export_aprovados()
+    linhas = store.claim_anki_export()
     if not linhas:
         return {"n": 0, "path": None, "tsv": ""}
 
+    ids = [int(card["id"]) for card in linhas]
     conteudo = anki.tsv(linhas)
     pasta = Path(settings.db_path).parent / "exports"
-    pasta.mkdir(parents=True, exist_ok=True)
-
-    nome = datetime.now().strftime("anki-%Y%m%d-%H%M%S.tsv")
+    nome = datetime.now().strftime("anki-%Y%m%d-%H%M%S-%f-") + uuid4().hex[:8] + ".tsv"
     arquivo = pasta / nome
-    with arquivo.open("w", encoding="utf-8", newline="") as destino:
-        destino.write(conteudo)
+    temporario = arquivo.with_suffix(".tmp")
+    try:
+        pasta.mkdir(parents=True, exist_ok=True)
+        with temporario.open("x", encoding="utf-8", newline="") as destino:
+            destino.write(conteudo)
+        temporario.replace(arquivo)
+        store.finish_anki_export(ids, success=True)
+    except Exception:
+        store.finish_anki_export(ids, success=False)
+        temporario.unlink(missing_ok=True)
+        raise
 
     return {
         "n": len(linhas),
@@ -1292,6 +1669,29 @@ async def get_agenda(
     return resposta
 
 
+@app.post("/agenda/google-calendar")
+async def criar_evento_google(
+    body: GoogleCalendarEventIn,
+    _=Depends(require_auth),
+):
+    """Escreve só no calendário pessoal após confirmação explícita no app."""
+    try:
+        evento = await google_calendar.create_event(
+            body.titulo,
+            body.data,
+            body.hora,
+            body.duracao_min,
+            body.client_key,
+        )
+    except google_calendar.GoogleCalendarNotConfigured:
+        raise HTTPException(503, "google_calendar_nao_configurado") from None
+    except google_calendar.GoogleCalendarUnavailable:
+        raise HTTPException(503, "google_calendar_indisponivel") from None
+    except google_calendar.GoogleCalendarIdempotencyConflict:
+        raise HTTPException(409, "client_key_payload_conflitante") from None
+    return {"evento": evento}
+
+
 @app.get("/temas")
 async def get_temas(
     semana: str | None = Query(default=None),
@@ -1412,10 +1812,11 @@ async def internal_notify(
     x_internal_token: str = Header(default=""),
 ):
     _check_internal(x_internal_token)
-    return await push.send_push(
-        store.list_devices(),
-        body.title,
+    # `title` legado é aceito no contrato, mas o canal único usa título neutro fixo.
+    return await notify.notificar(
+        body.kind,
         body.body,
+        sensivel=body.sensivel,
     )
 
 

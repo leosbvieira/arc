@@ -1,5 +1,7 @@
 node_modules/
 .expo/
+.expo-export-check/
+.npm-cache/
 dist/
 web-build/
 *.log

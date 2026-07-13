@@ -118,6 +118,7 @@ async function sendOne(it: QueuedItem): Promise<void> {
       it.payload.text,
       it.payload.profile,
       it.payload.client_key,
+      Boolean(it.payload.sensivel),
     );
   } else {
     await logSession(it.payload);

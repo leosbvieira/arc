@@ -75,6 +75,38 @@ async def test_write_raw_verbatim_neutro_e_deterministico(monkeypatch):
     assert "raw-c42" in seen["path"] and "terapia" not in seen["path"]   # path neutro (lei 7)
     assert "terapia" not in seen["msg"] and seen["msg"] == "raw: c42"    # commit neutro
 
+
+async def test_reading_path_idempotente_e_resiste_reset_de_ids(monkeypatch):
+    existentes = set()
+    puts = []
+
+    async def fake_get(path):
+        return {"sha": "s"} if path in existentes else None
+
+    async def fake_put(path, content, message):
+        puts.append((path, content, message))
+        existentes.add(path)
+        return path
+
+    monkeypatch.setattr(vc, "_get", fake_get)
+    monkeypatch.setattr(vc, "put_file", fake_put)
+
+    kwargs = {"ts": 1_751_980_000.0, "client_key": "device-session-A"}
+    first = await vc.write_reading_note("# Nota", 1, **kwargs)
+    retry = await vc.write_reading_note("# Nota", 1, **kwargs)
+    other_db_same_id = await vc.write_reading_note(
+        "# Outra",
+        1,
+        ts=kwargs["ts"],
+        client_key="device-session-B",
+    )
+
+    assert first == retry
+    assert first != other_db_same_id
+    assert len(puts) == 2
+    assert all("device-session" not in path for path, _, _ in puts)
+    assert all(message == "leitura: r1" for _, _, message in puts)
+
 async def test_erro_vira_vault_error(monkeypatch):
     def handler(req):
         return httpx.Response(500)

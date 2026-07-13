@@ -48,6 +48,32 @@ sistema nunca representou a rotina real do Leo.
 | 12 | **Anki: IA sugere candidatos no fim da sessão + card no template** | *"nem tudo de leitura vai pro anki… IA sugere no fim da sessão"* (2ª rodada) / *"no template que tenho no anki. Frente - meaning - example - hook"* | M | **Nenhum dos itens acima gera um card** — nem o item 11, que para na nota do vault. Sem isso, o ★ da tela de leitura continua decorativo. **AnkiConnect (sync automático) fica fora** — primeiro provar que os cards saem certos. |
 | 13 | **Agente de triagem em lote do staging** | *"outro agente pode me ajudar a fazer isso"* / *"janelas no dia para migrar"* (2ª rodada) | M | Existe a lista Staging e o contador `staging: N`; **não existe o assistente**. Sem ele, "triagem no ClickUp" é trabalho 100% manual — e staging que acumula é o começo do W27 de novo. |
 
+## Estado real após a implementação (12/jul/2026, 21h)
+
+> **Regra de status:** `código concluído` significa backend + superfície observável + testes. Não significa que
+> credenciais, crons, VPS, dev build ou integrações reais foram ativados. A auditoria contrarian final passou com
+> **308 testes BFF**, `tsc --noEmit`, `git diff --check` e bundle Android/Hermes (865 módulos).
+
+| # | Estado | Evidência / bloqueio restante |
+|---|---|---|
+| 1 | **Parcial — externo** | 26 ocorrências Finance já carregadas. Ainda dependem do Leo: nomes dos 8 cartões, Unimed, NFs, IR, limpeza do lote e decisão/ativação da recorrência no ClickUp. |
+| 2 | **Código concluído** | CRUD/reordenação no app, filtros de bloco/dia/template, sub-passos fora do score e testes de troca de template sem pontuação fantasma. |
+| 3 | **Código concluído** | Saldo, padrão ≥3/7d, teto, Conquistas N1-4 e painel na Revisão. |
+| 4 | **Código concluído; ativação pendente** | Registro no boot, roteamento por `kind`, fan-out sem Telegram duplicado e limpeza de token inválido. Falta `eas.projectId`, dev build instalado, VPS e smoke de push no aparelho. |
+| 5 | **Código concluído; cron local ativo** | Shutdown 19h com tela, prioridades, follow-ups e staging. Task Windows `Aeternum Shutdown` instalada/Ready; falta levar e provar no VPS. |
+| 6 | **Código concluído; crons locais ativos** | Toque 5h30, check-in 8h20, jornal 8h30 e telas. Tasks Windows instaladas/Ready; o jornal abre Capturar. Falta provar no VPS/aparelho. |
+| 7 | **Código concluído** | Tarefa própria com hora, scheduler, agenda/temas na Abertura e resumo matinal. Falta smoke com ClickUp real após deploy. |
+| 8 | **Código concluído; credenciais pendentes** | ICS GCal/Outlook read-only + inserção GCal pessoal com confirmação, OAuth refresh, idempotência e retry reconciliado. Faltam URLs ICS/OAuth reais e smoke; Outlook continua somente leitura. |
+| 9 | **Código concluído** | Review semanal/mensal, janela mensal correta e objetivos acumulativos operáveis na Revisão. |
+| 10 | **Código concluído** | Edificação/prática na Revisão+tela, captura `sensivel` inclusive na fila offline, preview neutro e retenção sanitizada. |
+| 11 | **Código concluído; device gate pendente** | STT nativo opcional, buffer local append-only no SecureStore, autosave SQLite, pendências, compile único/retry e quotes verbatim. Falta dev build e smoke/soak longo no aparelho. |
+| 12 | **Código concluído; device smoke pendente** | Sugestão após compile, edição/aprovação explícita, export transacional e TSV compartilhável/recompartilhável no app. Falta importação real no Anki. |
+| 13 | **Código concluído; integração real pendente** | Propostas em lote, edição e confirmação explícita antes de mover. Falta smoke com Hermes + Staging reais. |
+
+**Não chamar o P2 inteiro de concluído** enquanto os gates dos itens 1, 4, 5, 6, 8, 11, 12 e 13 acima
+não tiverem evidência operacional. O código usa carregamento opcional do módulo STT para o app atual não cair antes
+do dev build.
+
 ## Item 1 — a recorrência é um beco (decisão do D16 forçada pela API)
 
 O MCP do ClickUp **não expõe recorrência** — nem em `create_task`, nem em `update_task` (schemas conferidos em

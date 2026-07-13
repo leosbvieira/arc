@@ -108,6 +108,61 @@ async def test_ticket_de_erro_do_expo_nao_conta_como_entrega(db, canais, monkeyp
 
     assert r == {"push": False, "telegram": True}   # a ponte segura
     assert _notifs() == [("teste", "telegram", 1)]
+    assert store.list_devices() == []                 # token morto não é tentado de novo
+
+
+async def test_fanout_misto_entrega_sem_telegram_e_remove_so_stale(
+    db,
+    canais,
+    monkeypatch,
+):
+    store.add_device("ExponentPushToken[vivo]")
+    store.add_device("ExponentPushToken[morto]")
+
+    async def push_misto(tokens, title, body, data=None):
+        assert tokens == ["ExponentPushToken[vivo]", "ExponentPushToken[morto]"]
+        return {
+            "sent": 2,
+            "tickets": [
+                {"status": "ok", "id": "ticket-ok"},
+                {
+                    "status": "error",
+                    "message": "token inválido",
+                    "details": {"error": "DeviceNotRegistered"},
+                },
+            ],
+        }
+
+    monkeypatch.setattr(notify.push, "send_push", push_misto)
+
+    result = await notify.notificar("fanout", "corpo")
+
+    assert result == {"push": True, "telegram": False}
+    assert canais["telegram"] == []
+    assert store.list_devices() == ["ExponentPushToken[vivo]"]
+    assert _notifs() == [("fanout", "push", 1)]
+
+
+@pytest.mark.parametrize("tickets", [[], [{"status": "ok"}]])
+async def test_tickets_ausentes_ou_incompletos_falham_fechado(
+    db,
+    canais,
+    monkeypatch,
+    tickets,
+):
+    store.add_device("ExponentPushToken[a]")
+    store.add_device("ExponentPushToken[b]")
+
+    async def push_sem_receipt_completo(tokens, title, body, data=None):
+        return {"sent": len(tokens), "tickets": tickets}
+
+    monkeypatch.setattr(notify.push, "send_push", push_sem_receipt_completo)
+
+    result = await notify.notificar("incerto", "corpo")
+
+    assert result == {"push": False, "telegram": True}
+    assert canais["telegram"] == ["corpo"]
+    assert store.list_devices() == ["ExponentPushToken[a]", "ExponentPushToken[b]"]
 
 
 async def test_nenhum_canal_entrega_loga_falha(db, canais, monkeypatch):
@@ -218,3 +273,23 @@ async def test_scheduler_hora_marcada_passa_pelo_notificar(db, canais):
     assert canais["push"] and canais["push"][0]["body"] == "⏰ cobrar o Yan (c9)"
     assert store.due_schedules(_t.time()) == []           # entregou → marcou disparado
     assert _notifs() == [("hora_marcada", "push", 1)]
+
+
+def test_internal_notify_usa_camada_unica_com_fallback_e_lei_7(client, canais):
+    response = client.post(
+        "/internal/notify",
+        json={
+            "title": "Título que não deve furar a camada",
+            "body": "Marcar psiquiatra às 15h",
+            "kind": "manual_health",
+            "sensivel": True,
+        },
+        headers={"X-Internal-Token": "itok"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"push": False, "telegram": True}
+    assert len(canais["telegram"]) == 1
+    assert "psiquiatra" not in canais["telegram"][0]
+    assert "abre o app" in canais["telegram"][0]
+    assert _notifs() == [("manual_health", "telegram", 1)]

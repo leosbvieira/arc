@@ -11,6 +11,17 @@
     "plugins": [
       "expo-notifications",
       "expo-secure-store",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Permitir que o Aeternum use o microfone durante a sessao de leitura.",
+          "speechRecognitionPermission": "Permitir que o Aeternum transcreva a sessao de leitura.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts"
+          ]
+        }
+      ],
       "expo-asset",
       "expo-font"
     ],

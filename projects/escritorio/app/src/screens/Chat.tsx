@@ -29,88 +29,33 @@ const MODE_COLOR: Record<string, string> = {
 
 const CONVS: Conv[] = [
   {
-    id: "1",
+    id: "mentor",
     mode: "Mentor",
-    title: "tô travado essa semana",
-    time: "23:58",
-    sub: "accountability semanal",
-    msgs: [
-      { from: "me", text: "tô travado. sinto que não avancei essa semana" },
-      {
-        from: "ai",
-        soul: "Antes de concordar com você — deixa eu discordar.",
-        text: "Você fechou o desenho da saída e marcou a terapia. Isso não é “não avançar” — é avançar no que dói.",
-      },
-      { from: "ground", k: "do teu compasso", v: "“liberdade > dinheiro · construção > acumulação”" },
-      { from: "ai", text: "Qual é a uma coisa que, feita amanhã, faria a semana valer? Eu registro no ClickUp." },
-    ],
+    title: "nova conversa",
+    time: "agora",
+    sub: "sessão local · não persistida",
+    msgs: [],
   },
   {
-    id: "2",
+    id: "capturas",
     mode: "Capturas",
-    title: "terapia: notar o padrão",
-    time: "21:40",
-    sub: "captura guiada",
-    msgs: [
-      { from: "me", text: "hoje na terapia percebi que travo quando o projeto fica grande demais" },
-      {
-        from: "ai",
-        soul: "Boa. Vamos nomear o padrão.",
-        text: "Quando a tarefa vira “projeto”, você congela. O antídoto que já funcionou pra você: a próxima ação de 15 minutos.",
-      },
-      { from: "ground", k: "padrão recorrente", v: "“grande demais → congelo”" },
-      { from: "ai", text: "Salvo em Terapia com a tag #padrao. Quer que eu vire uma tarefa de 15 min agora?" },
-    ],
+    title: "nova conversa",
+    time: "agora",
+    sub: "sessão local · não persistida",
+    msgs: [],
   },
   {
-    id: "3",
+    id: "conselho",
     mode: "Conselho",
-    title: "a cláusula dos 50%",
-    time: "ontem",
-    sub: "conselho jurídico-estratégico",
-    msgs: [
-      { from: "me", text: "o contrato tem uma cláusula de 50% na saída. é normal?" },
-      {
-        from: "ai",
-        soul: "Deixa eu ser o advogado do diabo aqui.",
-        text: "50% na saída é agressivo. Antes de assinar: peça o gatilho exato e um teto. Sem teto, isso é uma âncora, não uma cláusula.",
-      },
-      { from: "ai", text: "Quer que eu liste 3 perguntas pra mandar pro jurídico deles?" },
-    ],
-  },
-  {
-    id: "4",
-    mode: "Capturas",
-    title: "ideia: pontuação por streaks",
-    time: "ontem",
-    sub: "captura",
-    msgs: [
-      { from: "me", text: "ideia: dar pontos por manter streak de hábitos" },
-      { from: "ai", text: "Registrado como ideia no Inbox. Isso conversa com a gamificação do escritório — marquei ★ pra revisitar." },
-    ],
-  },
-  {
-    id: "5",
-    mode: "Mentor",
-    title: "review de domingo",
-    time: "dom",
-    sub: "accountability semanal",
-    msgs: [
-      { from: "me", text: "bora fechar a semana" },
-      {
-        from: "ai",
-        soul: "Semana fechada. Três fatos:",
-        text: "Você avançou na saída, cuidou da saúde (terapia + psiquiatra), e deixou finanças escorregar. Onde quer apertar na próxima?",
-      },
-      { from: "ground", k: "meta da semana", v: "“1 passo irreversível rumo à saída”" },
-    ],
+    title: "nova conversa",
+    time: "agora",
+    sub: "sessão local · não persistida",
+    msgs: [],
   },
 ];
 
 const GROUPS = [
-  { group: "Hoje", ids: ["1", "2"] },
-  { group: "Ontem", ids: ["3", "4"] },
-  { group: "Semana", ids: ["5"] },
+  { group: "Modos", ids: ["mentor", "capturas", "conselho"] },
 ];
 
 function Sidebar({
@@ -268,7 +213,7 @@ function Conversation({
 export default function Chat() {
   const { width } = useWindowDimensions();
   const wide = width >= 720;
-  const [activeId, setActiveId] = useState("1");
+  const [activeId, setActiveId] = useState("mentor");
   const [drawer, setDrawer] = useState(false);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
