@@ -148,6 +148,7 @@ def test_nivel_e_vitalicio_mesmo_com_o_saldo_caindo(db, monkeypatch):
     assert r2["saldo_total"] == 2              # caiu abaixo do limiar de N1
     assert r2["pico_total"] == 12              # o pico não regride
     assert r2["nivel"] == 1                    # e o nível TAMBÉM não (jamais reset)
+    assert r2["proximo_nivel"] == {"n": 2, "faltam": 8}
 
 
 def test_proximo_nivel_conta_a_partir_do_saldo(db, monkeypatch):
@@ -263,7 +264,13 @@ def test_pontos_com_base_vazia_nao_explode(client):
     body = r.json()
     assert body["nivel"] == 0
     assert body["saldo_total"] == 0 and body["pico_total"] == 0
-    assert body["semana"] == {"ganho": 0, "desconto": 0, "saldo": 0, "padroes": []}
+    assert body["semana"] == {
+        "ganho": 0,
+        "desconto": 0,
+        "saldo": 0,
+        "padroes": [],
+        "teto_desconto": settings.teto_desconto_semanal,
+    }
     assert body["ciclo"]["de"] == settings.ciclo_semanas
     assert body["proximo_nivel"]["n"] == 1
 
@@ -280,7 +287,9 @@ def test_pontos_shape_do_contrato(client):
         "nivel", "saldo_total", "pico_total", "ciclo", "semana", "proximo_nivel",
     }
     assert set(body["ciclo"]) == {"indice", "semana", "de", "pontos", "meta"}
-    assert set(body["semana"]) == {"ganho", "desconto", "saldo", "padroes"}
+    assert set(body["semana"]) == {
+        "ganho", "desconto", "saldo", "padroes", "teto_desconto",
+    }
     assert body["semana"] == {
         "ganho": 3,
         "desconto": 3,
@@ -288,6 +297,7 @@ def test_pontos_shape_do_contrato(client):
         "padroes": [
             {"slug": "skincare", "nome": "skincare AM", "furos": 3, "delta": -3},
         ],
+        "teto_desconto": settings.teto_desconto_semanal,
     }
 
 

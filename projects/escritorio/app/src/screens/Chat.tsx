@@ -27,6 +27,24 @@ const MODE_COLOR: Record<string, string> = {
   Conselho: areaColor("Carreira"),
 };
 
+const MODE_COPY: Record<string, { title: string; body: string; prompts: string[] }> = {
+  Mentor: {
+    title: "Pense com alguém que conhece o sistema.",
+    body: "Use para decidir o próximo passo, confrontar uma desculpa ou simplificar um plano.",
+    prompts: ["O que merece meu foco agora?", "Me ajude a destravar uma decisão", "Faça uma leitura honesta do meu dia"],
+  },
+  Capturas: {
+    title: "Transforme ruído em ação.",
+    body: "Traga uma anotação solta e peça estrutura, próximos passos ou contexto.",
+    prompts: ["Organize minhas capturas recentes", "O que está sem próximo passo?", "Separe ideias de tarefas"],
+  },
+  Conselho: {
+    title: "Abra a decisão por mais de um ângulo.",
+    body: "Melhor para escolhas importantes, trade-offs e riscos que você pode estar evitando.",
+    prompts: ["Quero comparar duas escolhas", "Que risco não estou vendo?", "Me ajude a dizer não"],
+  },
+};
+
 const CONVS: Conv[] = [
   {
     id: "mentor",
@@ -70,15 +88,10 @@ function Sidebar({
   return (
     <View style={styles.railInner}>
       <View style={styles.rtop}>
-        <Text style={styles.railBrand}>Conversas</Text>
-        <View style={styles.newBtn}>
-          <Feather name="plus" size={14} color={colors.primaryText} />
-          <Text style={styles.newTxt}>Nova</Text>
+        <View>
+          <Text style={styles.railBrand}>Perspectivas</Text>
+          <Text style={styles.railHint}>escolha como pensar</Text>
         </View>
-      </View>
-      <View style={styles.search}>
-        <Feather name="search" size={15} color={colors.textMuted} />
-        <Text style={styles.searchTxt}>buscar conversa…</Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false}>
         {GROUPS.map((g) => (
@@ -130,6 +143,7 @@ function Conversation({
   sending?: boolean;
 }) {
   const accent = MODE_COLOR[conv.mode] ?? colors.primary;
+  const copy = MODE_COPY[conv.mode] ?? MODE_COPY.Mentor;
   const hasDraft = draft.trim().length > 0;
   const scrollRef = useRef<ScrollView>(null);
   return (
@@ -150,6 +164,23 @@ function Conversation({
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}
         showsVerticalScrollIndicator={false}
       >
+        {conv.msgs.length === 0 && !sending ? (
+          <View style={styles.chatEmpty}>
+            <View style={[styles.emptyMark, { backgroundColor: `${accent}20` }]}>
+              <Feather name="message-circle" size={23} color={accent} />
+            </View>
+            <Text style={styles.emptyChatTitle}>{copy.title}</Text>
+            <Text style={styles.emptyChatBody}>{copy.body}</Text>
+            <View style={styles.promptList}>
+              {copy.prompts.map((prompt) => (
+                <Pressable key={prompt} onPress={() => onDraft(prompt)} style={styles.prompt}>
+                  <Text style={styles.promptText}>{prompt}</Text>
+                  <Feather name="arrow-up-right" size={14} color={accent} />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
         {conv.msgs.map((m, i) => {
           if (m.from === "me") {
             return (
@@ -196,13 +227,15 @@ function Conversation({
         />
         <Pressable
           onPress={onSend}
-          disabled={sending}
-          style={[styles.mic, { backgroundColor: accent }, sending && { opacity: 0.6 }]}
+          disabled={sending || !hasDraft}
+          accessibilityRole="button"
+          accessibilityLabel="Enviar mensagem"
+          style={[styles.mic, { backgroundColor: accent }, (sending || !hasDraft) && { opacity: 0.35 }]}
         >
           {sending ? (
             <ActivityIndicator size="small" color={colors.primaryText} />
           ) : (
-            <Feather name={hasDraft ? "arrow-up" : "mic"} size={20} color={colors.primaryText} />
+            <Feather name="arrow-up" size={20} color={colors.primaryText} />
           )}
         </Pressable>
       </View>
@@ -245,7 +278,7 @@ export default function Chat() {
         ...prev,
         [id]: {
           ...prev[id],
-          msgs: [...prev[id].msgs, { from: "ai", text: "⚠ " + (e?.message ?? "não consegui responder") }],
+          msgs: [...prev[id].msgs, { from: "ai", text: e?.message ?? "Não consegui responder agora." }],
         },
       }));
     } finally {
@@ -308,6 +341,7 @@ const styles = StyleSheet.create({
   railInner: { flex: 1, paddingHorizontal: 12, paddingTop: 14 },
   rtop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4, paddingBottom: 12 },
   railBrand: { fontFamily: fonts.serif, fontSize: 22, color: colors.text },
+  railHint: { fontFamily: fonts.ui, fontSize: 10.5, color: colors.textMuted, marginTop: 2 },
   newBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.primary, paddingHorizontal: 11, paddingVertical: 7, borderRadius: radius.pill },
   newTxt: { fontFamily: fonts.uiSemi, fontSize: 12, color: colors.primaryText },
   search: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border, borderRadius: 11, paddingHorizontal: 11, paddingVertical: 9 },
@@ -320,6 +354,13 @@ const styles = StyleSheet.create({
   cmode: { fontFamily: fonts.mono, fontSize: 9, letterSpacing: 1, textTransform: "uppercase" },
   ctime: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted },
   ctitle: { fontFamily: fonts.ui, fontSize: 13, color: colors.text, marginTop: 2 },
+  chatEmpty: { flex: 1, minHeight: 460, justifyContent: "center", alignItems: "center", paddingVertical: spacing.xl },
+  emptyMark: { width: 52, height: 52, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: spacing.md },
+  emptyChatTitle: { maxWidth: 310, fontFamily: fonts.serif, fontSize: 23, lineHeight: 29, color: colors.text, textAlign: "center" },
+  emptyChatBody: { maxWidth: 310, fontFamily: fonts.ui, fontSize: 12.5, lineHeight: 18, color: colors.textMuted, textAlign: "center", marginTop: 7 },
+  promptList: { alignSelf: "stretch", gap: spacing.sm, marginTop: spacing.xl },
+  prompt: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.card2, paddingHorizontal: spacing.md },
+  promptText: { flex: 1, fontFamily: fonts.uiSemi, fontSize: 12, color: colors.text },
 
   phead: { flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: spacing.lg, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   pdot: { width: 9, height: 9, borderRadius: 9, backgroundColor: colors.primary },

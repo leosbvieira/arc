@@ -9,7 +9,8 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
-from pydantic import BaseModel, field_validator
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from . import (
     agenda,
@@ -21,6 +22,7 @@ from . import (
     notify,
     objetivos,
     pontos,
+    reading_digest,
     routines,
     store,
     tasks,
@@ -122,6 +124,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="escritório BFF", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class LoginIn(BaseModel):
@@ -203,11 +212,33 @@ class ReadingBufferIn(BaseModel):
         return value
 
 
+class ReadingBufferPatchIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    expected_chunk_id: str
+    hook: Literal["quote", "comentario", "ideia", "coach", "lista", "texto"] | None = None
+    texto: str | None = None
+
+    @field_validator("texto")
+    @classmethod
+    def validar_texto(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("texto vazio")
+        return value
+
+    @model_validator(mode="after")
+    def validar_alteracao(self):
+        if self.hook is None and self.texto is None:
+            raise ValueError("informe hook e/ou texto")
+        return self
+
+
 class ReadingCompileIn(BaseModel):
     model_config = {"extra": "forbid"}
 
     pagina_final: int | None = None
     fim: float | None = None
+    duracao_s: int | None = Field(default=None, ge=0, le=86_400)
 
     @field_validator("pagina_final", mode="before")
     @classmethod
@@ -217,6 +248,85 @@ class ReadingCompileIn(BaseModel):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError("pagina_final inválida")
         return value
+
+
+class ReadingDraftIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    pagina_final: int | None = None
+
+    @field_validator("pagina_final", mode="before")
+    @classmethod
+    def validar_pagina(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("pagina_final inválida")
+        return value
+
+
+def _reading_duration_s(inicio: float, fim: float, reported: int | None) -> int:
+    if reported is not None:
+        return reported
+    # Compatibilidade com APKs anteriores: eles enviam apenas o relogio de
+    # parede, que inclui dias em que o app ficou fechado.
+    return min(86_400, max(0, round(fim - inicio)))
+
+
+class ReadingSnapshotChunkIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    seq: int
+    hook: Literal["quote", "comentario", "ideia", "coach", "lista", "texto"]
+    texto: str
+
+    @field_validator("seq", mode="before")
+    @classmethod
+    def validar_seq(cls, value):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError("seq deve ser inteiro positivo")
+        return value
+
+    @field_validator("texto")
+    @classmethod
+    def validar_texto(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("texto vazio")
+        return value
+
+
+class ReadingReconcileIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    client_key: str
+    livro: str
+    pagina_inicial: int | None = None
+    pagina_final: int | None = None
+    buffer: list[ReadingSnapshotChunkIn]
+
+    @field_validator("client_key", "livro")
+    @classmethod
+    def validar_texto_obrigatorio(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("campo vazio")
+        return value
+
+    @field_validator("pagina_inicial", "pagina_final", mode="before")
+    @classmethod
+    def validar_pagina(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("pagina inválida")
+        return value
+
+    @model_validator(mode="after")
+    def validar_sequencia(self):
+        sequencias = sorted(chunk.seq for chunk in self.buffer)
+        if sequencias != list(range(1, len(sequencias) + 1)):
+            raise ValueError("buffer deve ter seq contígua a partir de 1")
+        return self
 
 
 class ChatIn(BaseModel):
@@ -419,6 +529,93 @@ class RoutinePatch(BaseModel):
     @classmethod
     def _passos(cls, v: list[str] | None) -> list[str] | None:
         return routines.norm_passos(v) if v is not None else None
+
+
+class ReductionHabitIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    nome: str
+    penalidade: int = 1
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, value: str) -> str:
+        nome = value.strip()
+        if not nome:
+            raise ValueError("nome vazio")
+        if len(nome) > 120:
+            raise ValueError("nome excede 120 caracteres")
+        return nome
+
+    @field_validator("penalidade", mode="before")
+    @classmethod
+    def validar_penalidade(cls, value):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("penalidade deve ser inteira")
+        if not 1 <= value <= max(1, settings.teto_desconto_semanal):
+            raise ValueError("penalidade fora do teto semanal")
+        return value
+
+
+class ReductionHabitPatch(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    nome: str | None = None
+    penalidade: int | None = None
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("nome nulo")
+        nome = value.strip()
+        if not nome:
+            raise ValueError("nome vazio")
+        if len(nome) > 120:
+            raise ValueError("nome excede 120 caracteres")
+        return nome
+
+    @field_validator("penalidade", mode="before")
+    @classmethod
+    def validar_penalidade(cls, value):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("penalidade deve ser inteira")
+        if not 1 <= value <= max(1, settings.teto_desconto_semanal):
+            raise ValueError("penalidade fora do teto semanal")
+        return value
+
+    @model_validator(mode="after")
+    def validar_patch(self):
+        if self.nome is None and self.penalidade is None:
+            raise ValueError("informe ao menos um campo")
+        return self
+
+
+class ReductionOccurrenceIn(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    data: str | None = None
+    client_key: str
+
+    @field_validator("data")
+    @classmethod
+    def validar_data(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return date.fromisoformat(value).isoformat()
+        except (TypeError, ValueError):
+            raise ValueError("data invalida; use YYYY-MM-DD") from None
+
+    @field_validator("client_key")
+    @classmethod
+    def validar_client_key(cls, value: str) -> str:
+        key = value.strip()
+        if not key:
+            raise ValueError("client_key vazio")
+        if len(key) > 128:
+            raise ValueError("client_key excede 128 caracteres")
+        return key
 
 
 class ReorderItem(BaseModel):
@@ -802,9 +999,191 @@ async def autosave_reading_buffer(
     return {"chunk": chunk, "created": created}
 
 
+@app.patch("/reading/sessions/{session_id}/buffer/{seq}")
+async def correct_last_reading_buffer(
+    session_id: int,
+    seq: int,
+    body: ReadingBufferPatchIn,
+    _auth: None = Depends(require_auth),
+):
+    if seq < 1:
+        raise HTTPException(422, "reading_seq_invalida")
+    try:
+        chunk, updated = store.update_last_reading_buffer(
+            session_id,
+            seq,
+            expected_chunk_id=body.expected_chunk_id,
+            hook=body.hook,
+            texto=body.texto,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    if updated:
+        store.log_event(
+            "reading_buffer_corrected",
+            ref=str(session_id),
+            meta={"seq": seq, "hook": chunk["hook"]},
+        )
+    return {"chunk": chunk, "updated": updated}
+
+
+@app.delete("/reading/sessions/{session_id}/buffer/{seq}")
+async def remove_last_reading_buffer(
+    session_id: int,
+    seq: int,
+    expected_chunk_id: str = Query(..., min_length=1, max_length=128),
+    _auth: None = Depends(require_auth),
+):
+    if seq < 1:
+        raise HTTPException(422, "reading_seq_invalida")
+    try:
+        session, deleted = store.delete_last_reading_buffer(
+            session_id,
+            seq,
+            expected_chunk_id=expected_chunk_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    if deleted:
+        store.log_event(
+            "reading_buffer_deleted",
+            ref=str(session_id),
+            meta={"seq": seq},
+        )
+    return {"session": session, "deleted": deleted}
+
+
 @app.get("/reading/sessions/pending")
 async def pending_reading_sessions(_auth: None = Depends(require_auth)):
     return {"sessions": store.list_pending_reading_sessions()}
+
+
+@app.get("/reading/sessions/{session_id}")
+async def get_reading_session(
+    session_id: int,
+    _auth: None = Depends(require_auth),
+):
+    session = store.get_reading_session(session_id)
+    if session is None:
+        raise HTTPException(404, "reading_session_nao_encontrada")
+    return {"session": session}
+
+
+@app.post("/reading/sessions/{session_id}/reconcile")
+async def reconcile_reading_session(
+    session_id: int,
+    body: ReadingReconcileIn,
+    _auth: None = Depends(require_auth),
+):
+    session = store.get_reading_session(session_id)
+    if session is None:
+        raise HTTPException(404, "reading_session_nao_encontrada")
+    if session["client_key"] != body.client_key:
+        raise HTTPException(409, "reading_client_key_divergente")
+
+    state = str(session["status"])
+    if state == "pending":
+        return {
+            "state": "pending",
+            "matched": False,
+            "session": session,
+            "anki_cards": [],
+        }
+    if state == "compiling":
+        raise HTTPException(409, "reading_compile_em_andamento")
+    if state == "discarded":
+        raise HTTPException(409, "reading_session_descartada")
+    if state != "compiled":
+        raise HTTPException(409, "reading_session_estado_invalido")
+
+    persisted_digest = session.get("source_digest")
+    if not persisted_digest:
+        raise HTTPException(409, "reading_compiled_snapshot_nao_verificavel")
+    snapshot_digest = reading_digest.source_digest(
+        client_key=body.client_key,
+        livro=body.livro,
+        pagina_inicial=body.pagina_inicial,
+        pagina_final=body.pagina_final,
+        chunks=[chunk.model_dump() for chunk in body.buffer],
+    )
+    if snapshot_digest != persisted_digest:
+        raise HTTPException(409, "reading_compiled_snapshot_divergente")
+
+    cards = (
+        store.list_anki_cards_for_session(int(session["compiled_session_id"]))
+        if session.get("compiled_session_id")
+        else []
+    )
+    return {
+        "state": "compiled",
+        "matched": True,
+        "session": session,
+        "anki_cards": cards,
+    }
+
+
+@app.post("/reading/sessions/{session_id}/draft")
+async def draft_reading_session(
+    session_id: int,
+    body: ReadingDraftIn,
+    _auth: None = Depends(require_auth),
+):
+    """Gera o preview (Hermes) e o deixa staged (pending + draft_md); NÃO grava no vault."""
+    state, session = store.claim_reading_compile(session_id)
+    if state == "missing":
+        raise HTTPException(404, "reading_session_nao_encontrada")
+    if state == "discarded":
+        raise HTTPException(409, "reading_session_descartada")
+    if state == "compiling":
+        raise HTTPException(409, "reading_compile_em_andamento")
+    if state == "empty":
+        raise HTTPException(422, "reading_buffer_vazio")
+    if state == "compiled":
+        raise HTTPException(409, "reading_session_compiled")
+
+    assert state == "claimed" and session is not None
+    if (
+        body.pagina_final is not None
+        and session.get("pagina_inicial") is not None
+        and body.pagina_final < int(session["pagina_inicial"])
+    ):
+        store.release_reading_compile(session_id, "pagina_final_invalida")
+        raise HTTPException(422, "pagina_final_invalida")
+
+    source_digest = reading_digest.source_digest(
+        client_key=session["client_key"],
+        livro=session["livro"],
+        pagina_inicial=session.get("pagina_inicial"),
+        pagina_final=body.pagina_final,
+        chunks=session["buffer"],
+    )
+
+    draft = session.get("draft_md")
+    if not (draft and session.get("source_digest") == source_digest):
+        # Idempotência: um preview salvo do mesmo snapshot é reusado sem chamar o Hermes.
+        try:
+            draft = await hermes_client.compile_reading(
+                session["livro"],
+                session["buffer"],
+                pagina_inicial=session.get("pagina_inicial"),
+                pagina_final=body.pagina_final,
+            )
+        except Exception as exc:
+            store.release_reading_compile(session_id, type(exc).__name__)
+            store.log_event(
+                "reading_compile_failed",
+                ref=str(session_id),
+                meta={"error": type(exc).__name__},
+            )
+            raise HTTPException(502, "reading_compile_indisponivel") from None
+
+    session = store.stage_reading_draft(session_id, draft, source_digest)
+    store.log_event("reading_drafted", ref=str(session_id))
+    return {"session": session, "draft_md": draft}
 
 
 @app.post("/reading/sessions/{session_id}/compile")
@@ -858,17 +1237,27 @@ async def compile_reading_session(
         store.release_reading_compile(session_id, "pagina_final_invalida")
         raise HTTPException(422, "pagina_final_invalida")
 
-    try:
-        draft = session.get("draft_md")
-        if not draft:
-            draft = await hermes_client.compile_reading(
-                session["livro"],
-                session["buffer"],
-                pagina_inicial=session.get("pagina_inicial"),
-                pagina_final=body.pagina_final,
-            )
-            store.save_reading_draft(session_id, draft)
+    source_digest = reading_digest.source_digest(
+        client_key=session["client_key"],
+        livro=session["livro"],
+        pagina_inicial=session.get("pagina_inicial"),
+        pagina_final=body.pagina_final,
+        chunks=session["buffer"],
+    )
 
+    draft = session.get("draft_md")
+    if draft is None:
+        # O draft é pré-requisito: /draft roda antes e é o portão humano.
+        store.release_reading_compile(session_id, "reading_draft_ausente")
+        raise HTTPException(422, "reading_draft_ausente")
+    if draft and not session.get("source_digest"):
+        store.release_reading_compile(session_id, "reading_draft_snapshot_nao_verificavel")
+        raise HTTPException(409, "reading_draft_snapshot_nao_verificavel")
+    if draft and session["source_digest"] != source_digest:
+        store.release_reading_compile(session_id, "reading_draft_snapshot_divergente")
+        raise HTTPException(409, "reading_draft_snapshot_divergente")
+
+    try:
         vault_path = await vault_client.write_reading_note(
             draft,
             session_id,
@@ -878,13 +1267,19 @@ async def compile_reading_session(
         paginas = None
         if body.pagina_final is not None and session.get("pagina_inicial") is not None:
             paginas = body.pagina_final - int(session["pagina_inicial"])
+        duracao_s = _reading_duration_s(
+            float(session["inicio"]),
+            fim,
+            body.duracao_s,
+        )
+        inicio_ativo = fim - duracao_s
         compiled_session_id, created = store.add_session(
             "leitura",
             session["livro"],
             "leitura",
-            float(session["inicio"]),
+            inicio_ativo,
             fim,
-            max(0, round(fim - float(session["inicio"]))),
+            duracao_s,
             paginas,
             session["livro"],
             return_created=True,
@@ -896,6 +1291,7 @@ async def compile_reading_session(
             compiled_session_id=compiled_session_id,
             pagina_final=body.pagina_final,
             fim=fim,
+            source_digest=source_digest,
         )
     except Exception as exc:
         store.release_reading_compile(session_id, type(exc).__name__)
@@ -910,7 +1306,7 @@ async def compile_reading_session(
         store.log_event(
             "session_logged",
             ref=str(compiled_session_id),
-            meta={"tipo": "leitura", "s": max(0, round(fim - float(session["inicio"])))},
+            meta={"tipo": "leitura", "s": duracao_s},
         )
     store.log_event("reading_compiled", ref=str(session_id))
 
@@ -934,6 +1330,25 @@ async def compile_reading_session(
         "anki_cards": cards,
         "anki_status": anki_status,
     }
+
+
+@app.delete("/reading/sessions/{session_id}/draft")
+async def reject_reading_draft(
+    session_id: int,
+    _auth: None = Depends(require_auth),
+):
+    """Rejeita o preview staged: limpa draft_md e reabre o buffer (chunks intactos)."""
+    state, session = store.reject_reading_draft(session_id)
+    if state == "missing":
+        raise HTTPException(404, "reading_session_nao_encontrada")
+    if state == "compiling":
+        raise HTTPException(409, "reading_compile_em_andamento")
+    if state == "compiled":
+        raise HTTPException(409, "reading_session_compiled")
+    if state == "discarded":
+        raise HTTPException(409, "reading_session_descartada")
+    store.log_event("reading_draft_rejected", ref=str(session_id))
+    return {"session": session}
 
 
 @app.post("/reading/sessions/{session_id}/discard")
@@ -967,6 +1382,12 @@ async def chat(body: ChatIn, _: str = Depends(require_auth)):
 async def register_device(body: DeviceIn, _: str = Depends(require_auth)):
     store.add_device(body.token)
     return {"ok": True, "count": len(store.list_devices())}
+
+
+@app.delete("/devices")
+async def unregister_device(body: DeviceIn, _: str = Depends(require_auth)):
+    removed = store.remove_devices([body.token])
+    return {"ok": True, "removed": removed}
 
 
 @app.get("/tasks")
@@ -1041,8 +1462,8 @@ async def get_digest(_: str = Depends(require_auth)):
 @app.get("/pontos")
 async def get_pontos(_=Depends(require_auth)):
     """Pontos + Conquistas N1-4 (P2 item 3). Só LEITURA: o placar é uma função pura de
-    `routine_checks` + config (pontos.py), nunca um saldo mutável — não há rota que
-    escreva ponto, e não pode haver. Quem move o número é o fechamento do dia."""
+    checks + ocorrências ativas + config (pontos.py), nunca um saldo mutável. As rotas
+    gravam fatos; nenhum endpoint escreve diretamente no saldo."""
     return pontos.resumo()
 
 
@@ -1114,6 +1535,105 @@ async def review_monthly(_=Depends(require_auth)):
     except Exception:
         pass
     return pack
+
+
+# --- habitos a reduzir --------------------------------------------------------
+
+
+@app.get("/habitos-reduzir")
+async def list_reduction_habits(_=Depends(require_auth)):
+    return {"habitos": store.list_reduction_habits()}
+
+
+@app.get("/habitos-reduzir/historico")
+async def reduction_history(
+    desde: str | None = None,
+    ate: str | None = None,
+    habito_id: int | None = None,
+    incluir_desfeitas: bool = True,
+    _=Depends(require_auth),
+):
+    start = _data_ref(desde).isoformat() if desde is not None else None
+    end = _data_ref(ate).isoformat() if ate is not None else None
+    if start is not None and end is not None and start > end:
+        raise HTTPException(422, "periodo_invalido")
+    return {
+        "ocorrencias": store.list_reduction_occurrences(
+            desde=start,
+            ate=end,
+            habit_id=habito_id,
+            incluir_desfeitas=incluir_desfeitas,
+        )
+    }
+
+
+@app.get("/habitos-reduzir/{habit_id}")
+async def get_reduction_habit(habit_id: int, _=Depends(require_auth)):
+    habit = store.get_reduction_habit(habit_id)
+    if habit is None:
+        raise HTTPException(404, "habito_reduzir_nao_encontrado")
+    return habit
+
+
+@app.post("/habitos-reduzir")
+async def create_reduction_habit(
+    body: ReductionHabitIn,
+    _=Depends(require_auth),
+):
+    return store.create_reduction_habit(body.nome, body.penalidade)
+
+
+@app.patch("/habitos-reduzir/{habit_id}")
+async def patch_reduction_habit(
+    habit_id: int,
+    body: ReductionHabitPatch,
+    _=Depends(require_auth),
+):
+    habit = store.update_reduction_habit(
+        habit_id,
+        **body.model_dump(exclude_unset=True),
+    )
+    if habit is None:
+        raise HTTPException(404, "habito_reduzir_nao_encontrado")
+    return habit
+
+
+@app.delete("/habitos-reduzir/{habit_id}")
+async def delete_reduction_habit(habit_id: int, _=Depends(require_auth)):
+    if not store.delete_reduction_habit(habit_id):
+        raise HTTPException(404, "habito_reduzir_nao_encontrado")
+    return {"ok": True}
+
+
+@app.post("/habitos-reduzir/{habit_id}/ocorrencias")
+async def record_reduction_occurrence(
+    habit_id: int,
+    body: ReductionOccurrenceIn,
+    _=Depends(require_auth),
+):
+    local_date = body.data or datetime.now(TZ).date().isoformat()
+    try:
+        state, occurrence = store.record_reduction_occurrence(
+            habit_id,
+            local_date,
+            client_key=body.client_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    if state == "missing" or occurrence is None:
+        raise HTTPException(404, "habito_reduzir_nao_encontrado")
+    return {"ocorrencia": occurrence, "created": state == "created"}
+
+
+@app.post("/habitos-reduzir/ocorrencias/{occurrence_id}/undo")
+async def undo_reduction_occurrence(
+    occurrence_id: int,
+    _=Depends(require_auth),
+):
+    occurrence, changed = store.undo_reduction_occurrence(occurrence_id)
+    if occurrence is None:
+        raise HTTPException(404, "ocorrencia_nao_encontrada")
+    return {"ocorrencia": occurrence, "changed": changed}
 
 
 # --- rotinas: CRUD (a tela de Rotinas do app) --------------------------------

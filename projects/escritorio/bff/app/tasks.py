@@ -502,7 +502,7 @@ def routine_lines(today: str | None = None) -> list[str]:
 
     from . import pontos
 
-    ref = date.fromisoformat(today) if today else date.today()
+    ref = date.fromisoformat(today) if today else pontos.hoje_local()
     since = (ref - timedelta(days=7)).isoformat()
 
     misses: dict[str, int] = {}

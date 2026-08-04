@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { ReactNode, useEffect, useRef } from "react";
+import { ComponentProps, ReactNode, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -41,6 +41,8 @@ export function AppButton({
   const ghost = variant === "ghost";
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
@@ -68,6 +70,92 @@ export function Field(props: TextInputProps) {
       {...props}
       style={[styles.field, props.style]}
     />
+  );
+}
+
+export function SectionHeader({
+  eyebrow,
+  title,
+  action,
+  onAction,
+}: {
+  eyebrow?: string;
+  title: string;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={{ flex: 1 }}>
+        {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      {action && onAction ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={action} onPress={onAction} hitSlop={8}>
+          <Text style={styles.sectionAction}>{action}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+export function Badge({
+  label,
+  value,
+  color = colors.primary,
+}: {
+  label: string;
+  value?: string | number;
+  color?: string;
+}) {
+  return (
+    <View style={[styles.badge, { borderColor: `${color}55` }]}>
+      <View style={[styles.badgeDot, { backgroundColor: color }]} />
+      <Text style={styles.badgeLabel}>{label}</Text>
+      {value !== undefined ? <Text style={[styles.badgeValue, { color }]}>{value}</Text> : null}
+    </View>
+  );
+}
+
+export function ProgressBar({
+  value,
+  color = colors.primary,
+}: {
+  value: number;
+  color?: string;
+}) {
+  const width = `${Math.max(0, Math.min(1, value)) * 100}%` as `${number}%`;
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(Math.max(0, Math.min(1, value)) * 100) }}
+      style={styles.progressTrack}
+    >
+      <View style={[styles.progressFill, { width, backgroundColor: color }]} />
+    </View>
+  );
+}
+
+export function IconButton({
+  icon,
+  onPress,
+  color = colors.text,
+  label,
+}: {
+  icon: ComponentProps<typeof Feather>["name"];
+  onPress: () => void;
+  color?: string;
+  label: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.7 }]}
+    >
+      <Feather name={icon} size={18} color={color} />
+    </Pressable>
   );
 }
 
@@ -106,7 +194,7 @@ export function ErrorState({
       <Feather name="wifi-off" size={28} color={colors.textMuted} />
       <Text style={styles.errText}>{message}</Text>
       {hint ? <Text style={styles.errHint}>{hint}</Text> : null}
-      <Pressable onPress={onRetry} style={styles.errBtn}>
+      <Pressable accessibilityRole="button" onPress={onRetry} style={styles.errBtn}>
         <Feather name="refresh-cw" size={14} color={colors.text} />
         <Text style={styles.errBtnText}>Tentar de novo</Text>
       </Pressable>
@@ -145,6 +233,57 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: fonts.ui,
     color: colors.text,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  eyebrow: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.primary,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  sectionTitle: {
+    fontFamily: fonts.serif,
+    fontSize: 21,
+    color: colors.text,
+    letterSpacing: -0.3,
+  },
+  sectionAction: { fontFamily: fonts.uiSemi, color: colors.primary, fontSize: 12 },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    minHeight: 32,
+    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.025)",
+    borderRadius: radius.pill,
+    paddingHorizontal: 11,
+  },
+  badgeDot: { width: 5, height: 5, borderRadius: 3 },
+  badgeLabel: { fontFamily: fonts.ui, fontSize: 11.5, color: colors.textMuted },
+  badgeValue: { fontFamily: fonts.mono, fontSize: 11 },
+  progressTrack: {
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    overflow: "hidden",
+  },
+  progressFill: { height: "100%", borderRadius: radius.pill },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card2,
   },
   skeleton: {
     backgroundColor: colors.card,

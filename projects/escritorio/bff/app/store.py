@@ -11,6 +11,7 @@ conteúdo capturado — só classe/código de erro e metadados sem PII.
 import json
 import sqlite3
 import time
+from uuid import uuid4
 from contextlib import closing
 from datetime import date
 
@@ -48,6 +49,26 @@ CREATE TABLE IF NOT EXISTS routines (
   origem TEXT NOT NULL DEFAULT 'leo',
   ativo INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS reduction_habits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL UNIQUE,
+  nome TEXT NOT NULL,
+  penalidade INTEGER NOT NULL DEFAULT 1,
+  ativo INTEGER NOT NULL DEFAULT 1,
+  criado REAL NOT NULL,
+  atualizado REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reduction_occurrences (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  habito_id INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  registrada_em REAL NOT NULL,
+  client_key TEXT UNIQUE,
+  penalidade INTEGER NOT NULL,
+  desfeita_em REAL
+);
+CREATE INDEX IF NOT EXISTS idx_reduction_occurrences_history
+  ON reduction_occurrences(data, habito_id, registrada_em, id);
 CREATE TABLE IF NOT EXISTS sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, projeto TEXT,
   categoria TEXT, inicio REAL NOT NULL, fim REAL NOT NULL,
@@ -66,6 +87,7 @@ CREATE TABLE IF NOT EXISTS reading_sessions (
   draft_md TEXT,
   vault_path TEXT,
   compiled_session_id INTEGER,
+  source_digest TEXT,
   last_error TEXT,
   created REAL NOT NULL,
   updated REAL NOT NULL
@@ -73,6 +95,7 @@ CREATE TABLE IF NOT EXISTS reading_sessions (
 CREATE TABLE IF NOT EXISTS reading_buffer (
   session_id INTEGER NOT NULL,
   seq INTEGER NOT NULL,
+  chunk_id TEXT NOT NULL,
   hook TEXT NOT NULL,
   texto TEXT NOT NULL,
   ts REAL NOT NULL,
@@ -188,6 +211,30 @@ def init_db() -> None:
         con.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_session_key "
             "ON sessions(session_key)"
+        )
+
+        reading_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(reading_sessions)")
+        }
+        if "source_digest" not in reading_columns:
+            con.execute("ALTER TABLE reading_sessions ADD COLUMN source_digest TEXT")
+
+        buffer_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(reading_buffer)")
+        }
+        if "chunk_id" not in buffer_columns:
+            con.execute("ALTER TABLE reading_buffer ADD COLUMN chunk_id TEXT")
+        for row in con.execute(
+            "SELECT session_id, seq FROM reading_buffer WHERE chunk_id IS NULL"
+        ).fetchall():
+            con.execute(
+                "UPDATE reading_buffer SET chunk_id = ? "
+                "WHERE session_id = ? AND seq = ?",
+                (str(uuid4()), row["session_id"], row["seq"]),
+            )
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_reading_buffer_chunk_id "
+            "ON reading_buffer(chunk_id)"
         )
 
         # Recupera somente leases velhos. Outro worker pode chamar init_db enquanto
@@ -482,6 +529,249 @@ def reorder_routines(pares: list[tuple[int, int]]) -> int:
         return cur.rowcount
 
 
+# --- habitos a reduzir -------------------------------------------------------
+# Definicoes usam soft-delete e ocorrencias usam soft-undo: o placar e o historico
+# continuam recalculaveis sem um ledger mutavel nem destruicao de dados passados.
+
+_REDUCTION_HABIT_COLS = "id, slug, nome, penalidade, criado, atualizado"
+
+
+def list_reduction_habits(*, incluir_inativos: bool = False) -> list[dict]:
+    where = "" if incluir_inativos else "WHERE ativo = 1"
+    with closing(_connect()) as con:
+        rows = con.execute(
+            f"SELECT {_REDUCTION_HABIT_COLS} FROM reduction_habits "
+            f"{where} ORDER BY nome COLLATE NOCASE, id"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_reduction_habit(
+    id: int,
+    *,
+    incluir_inativos: bool = False,
+) -> dict | None:
+    active = "" if incluir_inativos else "AND ativo = 1"
+    with closing(_connect()) as con:
+        row = con.execute(
+            f"SELECT {_REDUCTION_HABIT_COLS} FROM reduction_habits "
+            f"WHERE id = ? {active}",
+            (id,),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def _unique_reduction_slug(con: sqlite3.Connection, nome: str) -> str:
+    from .routines import slugify
+
+    base = slugify(nome)
+    taken = {
+        row["slug"]
+        for row in con.execute(
+            "SELECT slug FROM reduction_habits "
+            "WHERE slug = ? OR slug LIKE ? || '-%'",
+            (base, base),
+        )
+    }
+    if base not in taken:
+        return base
+    suffix = 2
+    while f"{base}-{suffix}" in taken:
+        suffix += 1
+    return f"{base}-{suffix}"
+
+
+def create_reduction_habit(nome: str, penalidade: int = 1) -> dict:
+    now = time.time()
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        slug = _unique_reduction_slug(con, nome)
+        cur = con.execute(
+            "INSERT INTO reduction_habits "
+            "(slug, nome, penalidade, criado, atualizado) VALUES (?, ?, ?, ?, ?)",
+            (slug, nome, int(penalidade), now, now),
+        )
+        row = con.execute(
+            f"SELECT {_REDUCTION_HABIT_COLS} FROM reduction_habits WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone()
+        con.commit()
+    assert row is not None
+    return dict(row)
+
+
+def update_reduction_habit(id: int, **fields) -> dict | None:
+    allowed = ("nome", "penalidade")
+    sets: list[str] = []
+    params: list = []
+    for field in allowed:
+        if field not in fields or fields[field] is None:
+            continue
+        sets.append(f"{field} = ?")
+        params.append(fields[field])
+
+    with closing(_connect()) as con:
+        if sets:
+            sets.append("atualizado = ?")
+            params.append(time.time())
+            cur = con.execute(
+                f"UPDATE reduction_habits SET {', '.join(sets)} "
+                "WHERE id = ? AND ativo = 1",
+                (*params, id),
+            )
+            if cur.rowcount != 1:
+                con.commit()
+                return None
+        row = con.execute(
+            f"SELECT {_REDUCTION_HABIT_COLS} FROM reduction_habits "
+            "WHERE id = ? AND ativo = 1",
+            (id,),
+        ).fetchone()
+        con.commit()
+    return dict(row) if row is not None else None
+
+
+def delete_reduction_habit(id: int) -> bool:
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE reduction_habits SET ativo = 0, atualizado = ? "
+            "WHERE id = ? AND ativo = 1",
+            (time.time(), id),
+        )
+        con.commit()
+        return cur.rowcount == 1
+
+
+_REDUCTION_OCCURRENCE_SELECT = """
+SELECT
+  o.id, o.habito_id, o.data, o.registrada_em, o.client_key,
+  o.penalidade, o.desfeita_em, h.slug, h.nome,
+  CASE WHEN o.desfeita_em IS NULL AND o.id = (
+    SELECT first_active.id
+    FROM reduction_occurrences AS first_active
+    WHERE first_active.habito_id = o.habito_id
+      AND first_active.data = o.data
+      AND first_active.desfeita_em IS NULL
+    ORDER BY first_active.registrada_em, first_active.id
+    LIMIT 1
+  ) THEN 1 ELSE 0 END AS penalizavel
+FROM reduction_occurrences AS o
+JOIN reduction_habits AS h ON h.id = o.habito_id
+"""
+
+
+def _reduction_occurrence(row: sqlite3.Row) -> dict:
+    payload = dict(row)
+    payload["penalizavel"] = bool(payload["penalizavel"])
+    payload["desfeita"] = payload["desfeita_em"] is not None
+    return payload
+
+
+def _get_reduction_occurrence(
+    con: sqlite3.Connection,
+    occurrence_id: int,
+) -> dict | None:
+    row = con.execute(
+        _REDUCTION_OCCURRENCE_SELECT + " WHERE o.id = ?",
+        (occurrence_id,),
+    ).fetchone()
+    return _reduction_occurrence(row) if row is not None else None
+
+
+def record_reduction_occurrence(
+    habit_id: int,
+    data: str,
+    *,
+    client_key: str | None = None,
+) -> tuple[str, dict | None]:
+    """Registra um fato; retry por client_key devolve a mesma ocorrencia."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        if client_key is not None:
+            existing = con.execute(
+                "SELECT id, habito_id, data FROM reduction_occurrences "
+                "WHERE client_key = ?",
+                (client_key,),
+            ).fetchone()
+            if existing is not None:
+                if existing["habito_id"] != habit_id or existing["data"] != data:
+                    con.rollback()
+                    raise ValueError("reduction_client_key_divergente")
+                payload = _get_reduction_occurrence(con, existing["id"])
+                con.commit()
+                return "existing", payload
+
+        habit = con.execute(
+            "SELECT penalidade FROM reduction_habits WHERE id = ? AND ativo = 1",
+            (habit_id,),
+        ).fetchone()
+        if habit is None:
+            con.rollback()
+            return "missing", None
+
+        cur = con.execute(
+            "INSERT INTO reduction_occurrences "
+            "(habito_id, data, registrada_em, client_key, penalidade) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (habit_id, data, time.time(), client_key, int(habit["penalidade"])),
+        )
+        payload = _get_reduction_occurrence(con, int(cur.lastrowid))
+        con.commit()
+    return "created", payload
+
+
+def list_reduction_occurrences(
+    *,
+    desde: str | None = None,
+    ate: str | None = None,
+    habit_id: int | None = None,
+    incluir_desfeitas: bool = True,
+) -> list[dict]:
+    where: list[str] = []
+    params: list = []
+    if desde is not None:
+        where.append("o.data >= ?")
+        params.append(desde)
+    if ate is not None:
+        where.append("o.data <= ?")
+        params.append(ate)
+    if habit_id is not None:
+        where.append("o.habito_id = ?")
+        params.append(habit_id)
+    if not incluir_desfeitas:
+        where.append("o.desfeita_em IS NULL")
+
+    sql = _REDUCTION_OCCURRENCE_SELECT
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY o.data DESC, o.registrada_em DESC, o.id DESC"
+    with closing(_connect()) as con:
+        rows = con.execute(sql, params).fetchall()
+    return [_reduction_occurrence(row) for row in rows]
+
+
+def undo_reduction_occurrence(occurrence_id: int) -> tuple[dict | None, bool]:
+    """Soft-undo idempotente; preservar a linha mantem o historico auditavel."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT desfeita_em FROM reduction_occurrences WHERE id = ?",
+            (occurrence_id,),
+        ).fetchone()
+        if row is None:
+            con.rollback()
+            return None, False
+        changed = row["desfeita_em"] is None
+        if changed:
+            con.execute(
+                "UPDATE reduction_occurrences SET desfeita_em = ? WHERE id = ?",
+                (time.time(), occurrence_id),
+            )
+        payload = _get_reduction_occurrence(con, occurrence_id)
+        con.commit()
+    return payload, changed
+
+
 # --- sessions ---------------------------------------------------------------
 
 
@@ -587,7 +877,7 @@ def list_sessions_since(
 
 def _reading_payload(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
     chunks = con.execute(
-        "SELECT seq, hook, texto, ts FROM reading_buffer "
+        "SELECT seq, chunk_id, hook, texto, ts FROM reading_buffer "
         "WHERE session_id = ? ORDER BY seq",
         (row["id"],),
     ).fetchall()
@@ -676,7 +966,7 @@ def append_reading_buffer(
             raise ValueError("reading_draft_ja_gerado")
 
         existing = con.execute(
-            "SELECT seq, hook, texto, ts FROM reading_buffer "
+            "SELECT seq, chunk_id, hook, texto, ts FROM reading_buffer "
             "WHERE session_id = ? AND seq = ?",
             (session_id, seq),
         ).fetchone()
@@ -693,9 +983,10 @@ def append_reading_buffer(
 
         chunk_ts = agora if ts is None else float(ts)
         con.execute(
-            "INSERT INTO reading_buffer (session_id, seq, hook, texto, ts) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (session_id, seq, hook, texto, chunk_ts),
+            "INSERT INTO reading_buffer "
+            "(session_id, seq, chunk_id, hook, texto, ts) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, seq, str(uuid4()), hook, texto, chunk_ts),
         )
         con.execute(
             "UPDATE reading_sessions SET last_seq = ?, updated = ?, last_error = NULL "
@@ -703,12 +994,155 @@ def append_reading_buffer(
             (seq, agora, session_id),
         )
         row = con.execute(
-            "SELECT seq, hook, texto, ts FROM reading_buffer "
+            "SELECT seq, chunk_id, hook, texto, ts FROM reading_buffer "
             "WHERE session_id = ? AND seq = ?",
             (session_id, seq),
         ).fetchone()
         con.commit()
         return dict(row), True
+
+
+def update_last_reading_buffer(
+    session_id: int,
+    seq: int,
+    *,
+    expected_chunk_id: str,
+    hook: str | None = None,
+    texto: str | None = None,
+) -> tuple[dict, bool]:
+    """Corrige somente a cauda editavel; retry com o mesmo conteudo e no-op."""
+    if hook is None and texto is None:
+        raise ValueError("reading_patch_vazio")
+
+    agora = time.time()
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        session = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if session is None:
+            con.rollback()
+            raise LookupError("reading_session_nao_encontrada")
+        if session["status"] != "pending":
+            con.rollback()
+            raise ValueError("reading_session_nao_editavel")
+        if session["draft_md"] is not None:
+            con.rollback()
+            raise ValueError("reading_draft_ja_gerado")
+
+        last_seq = int(session["last_seq"])
+        if seq != last_seq:
+            con.rollback()
+            if seq > last_seq:
+                raise LookupError("reading_item_nao_encontrado")
+            raise ValueError("reading_apenas_ultimo_item_editavel")
+
+        current = con.execute(
+            "SELECT seq, chunk_id, hook, texto, ts FROM reading_buffer "
+            "WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        ).fetchone()
+        if current is None:
+            con.rollback()
+            raise ValueError("reading_buffer_inconsistente")
+        if current["chunk_id"] != expected_chunk_id:
+            con.rollback()
+            raise ValueError("reading_item_foi_substituido")
+
+        next_hook = current["hook"] if hook is None else hook
+        next_text = current["texto"] if texto is None else texto
+        changed = current["hook"] != next_hook or current["texto"] != next_text
+        if changed:
+            con.execute(
+                "UPDATE reading_buffer SET hook = ?, texto = ? "
+                "WHERE session_id = ? AND seq = ?",
+                (next_hook, next_text, session_id, seq),
+            )
+            con.execute(
+                "UPDATE reading_sessions SET updated = ?, last_error = NULL "
+                "WHERE id = ?",
+                (agora, session_id),
+            )
+
+        row = con.execute(
+            "SELECT seq, chunk_id, hook, texto, ts FROM reading_buffer "
+            "WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        ).fetchone()
+        con.commit()
+        return dict(row), changed
+
+
+def delete_last_reading_buffer(
+    session_id: int,
+    seq: int,
+    *,
+    expected_chunk_id: str,
+) -> tuple[dict, bool]:
+    """Remove somente a cauda e reduz last_seq atomicamente; retry ausente e no-op."""
+    agora = time.time()
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        session = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if session is None:
+            con.rollback()
+            raise LookupError("reading_session_nao_encontrada")
+        if session["status"] != "pending":
+            con.rollback()
+            raise ValueError("reading_session_nao_editavel")
+        if session["draft_md"] is not None:
+            con.rollback()
+            raise ValueError("reading_draft_ja_gerado")
+
+        last_seq = int(session["last_seq"])
+        if seq < last_seq:
+            con.rollback()
+            raise ValueError("reading_apenas_ultimo_item_editavel")
+        if seq > last_seq:
+            if seq != last_seq + 1:
+                con.rollback()
+                raise LookupError("reading_item_nao_encontrado")
+            payload = _reading_payload(con, session)
+            con.commit()
+            return payload, False
+
+        current = con.execute(
+            "SELECT chunk_id FROM reading_buffer WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        ).fetchone()
+        if current is None:
+            con.rollback()
+            raise ValueError("reading_buffer_inconsistente")
+        if current["chunk_id"] != expected_chunk_id:
+            con.rollback()
+            raise ValueError("reading_item_foi_substituido")
+
+        con.execute(
+            "DELETE FROM reading_buffer WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        )
+        next_seq = int(
+            con.execute(
+                "SELECT COALESCE(MAX(seq), 0) FROM reading_buffer WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()[0]
+        )
+        con.execute(
+            "UPDATE reading_sessions SET last_seq = ?, updated = ?, last_error = NULL "
+            "WHERE id = ?",
+            (next_seq, agora, session_id),
+        )
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        payload = _reading_payload(con, row)
+        con.commit()
+        return payload, True
 
 
 def claim_reading_compile(session_id: int) -> tuple[str, dict | None]:
@@ -754,16 +1188,39 @@ def claim_reading_compile(session_id: int) -> tuple[str, dict | None]:
         return "claimed", _reading_payload(con, row)
 
 
-def save_reading_draft(session_id: int, draft_md: str) -> None:
+def save_reading_draft(session_id: int, draft_md: str, source_digest: str) -> None:
     with closing(_connect()) as con:
         cur = con.execute(
-            "UPDATE reading_sessions SET draft_md = ?, updated = ?, last_error = NULL "
+            "UPDATE reading_sessions SET draft_md = ?, source_digest = ?, "
+            "updated = ?, last_error = NULL "
             "WHERE id = ? AND status = 'compiling'",
-            (draft_md, time.time(), session_id),
+            (draft_md, source_digest, time.time(), session_id),
         )
         con.commit()
         if cur.rowcount != 1:
             raise ValueError("reading_compile_sem_claim")
+
+
+def stage_reading_draft(session_id: int, draft_md: str, source_digest: str) -> dict:
+    """Guarda o preview e devolve a sessão a 'pending' (staged): fora do lock transitório
+    de 'compiling', com o buffer congelado por draft_md não-nulo até aprovar/rejeitar."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        cur = con.execute(
+            "UPDATE reading_sessions SET draft_md = ?, source_digest = ?, "
+            "status = 'pending', updated = ?, last_error = NULL "
+            "WHERE id = ? AND status = 'compiling'",
+            (draft_md, source_digest, time.time(), session_id),
+        )
+        if cur.rowcount != 1:
+            con.rollback()
+            raise ValueError("reading_compile_sem_claim")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        con.commit()
+        return _reading_payload(con, row)
 
 
 def release_reading_compile(session_id: int, error: str) -> None:
@@ -784,19 +1241,21 @@ def finish_reading_compile(
     compiled_session_id: int,
     pagina_final: int | None,
     fim: float,
+    source_digest: str,
 ) -> dict:
     with closing(_connect()) as con:
         con.execute("BEGIN IMMEDIATE")
         cur = con.execute(
             "UPDATE reading_sessions SET status = 'compiled', vault_path = ?, "
             "compiled_session_id = ?, pagina_final = COALESCE(?, pagina_final), "
-            "fim = ?, last_error = NULL, updated = ? "
+            "fim = ?, source_digest = ?, last_error = NULL, updated = ? "
             "WHERE id = ? AND status = 'compiling'",
             (
                 vault_path,
                 compiled_session_id,
                 pagina_final,
                 fim,
+                source_digest,
                 time.time(),
                 session_id,
             ),
@@ -872,6 +1331,40 @@ def discard_reading_session(session_id: int) -> tuple[str, dict | None]:
         ).fetchone()
         con.commit()
         return "discarded", _reading_payload(con, row)
+
+
+def reject_reading_draft(session_id: int) -> tuple[str, dict | None]:
+    """Rejeita o preview staged: limpa draft_md e devolve o buffer à edição, SEM
+    tocar nos chunks. Estados terminais/'compiling' sobem pro endpoint mapear.
+    Idempotente: pending já sem draft é no-op."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            con.commit()
+            return "missing", None
+        if row["status"] != "pending":
+            state = str(row["status"])
+            con.commit()
+            return state, _reading_payload(con, row)
+        if row["draft_md"] is None:
+            con.commit()
+            return "pending", _reading_payload(con, row)
+
+        con.execute(
+            "UPDATE reading_sessions SET draft_md = NULL, source_digest = NULL, "
+            "last_error = NULL, updated = ? WHERE id = ?",
+            (time.time(), session_id),
+        )
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        con.commit()
+        return "pending", _reading_payload(con, row)
 
 
 # --- telemetry --------------------------------------------------------------

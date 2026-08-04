@@ -8,15 +8,15 @@ A regra, como o Leo travou (doc conceitual, 6ª rodada):
 Três invariantes que este módulo protege:
 
 1. **Pontos são DERIVADOS, não um saldo mutável.** Não existe tabela de ledger: tudo
-   aqui é função pura de `routine_checks` + config. Recalcular o passado sempre dá o
-   mesmo número, e o placar não pode desviar de si mesmo.
+   aqui é função pura de `routine_checks`, ocorrências ativas e config. Recalcular o
+   passado sempre dá o mesmo número, e o placar não pode desviar de si mesmo.
 
-2. **Desconto SÓ em padrão, e pouco.** Furo isolado (1 ou 2) custa ZERO. Uma rotina em
-   padrão custa `desconto_padrao` UMA vez na semana — por mais furos que ela tenha — e
-   o total da semana ainda passa por `teto_desconto_semanal`.
+2. **Desconto é explícito e limitado.** Furo isolado de rotina custa ZERO; uma rotina
+   em padrão custa `desconto_padrao` uma vez na semana. Hábitos a reduzir contam no
+   máximo uma ocorrência por hábito/dia. Ambos compartilham `teto_desconto_semanal`.
 
-3. **O nível é VITALÍCIO.** `nivel = f(pico histórico do saldo)`. O desconto morde o
-   saldo e o progresso do ciclo, mas o nível NUNCA regride (lei 4: jamais streak-reset).
+3. **O nível é VITALÍCIO.** `nivel = f(ganhos acumulados)`. O desconto morde o saldo e
+   o progresso do ciclo, mas nunca apaga pontos já conquistados para fins de nível.
    Modelo híbrido: nível = história inteira; barra = ciclo de 12 semanas.
 
 Duas decisões de modelagem que valem explicitar:
@@ -33,13 +33,19 @@ Duas decisões de modelagem que valem explicitar:
   furos caírem em duas janelas de semanas diferentes e serem cobrados duas vezes, o que
   quebra a invariante 2 e a promessa de "desconta pouco". O teto é semanal; a janela também.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from . import routines, store
 from .config import settings
 
 # `data` é TEXT ISO em routine_checks: qualquer data real é >= isto.
 _INICIO_DOS_TEMPOS = "0001-01-01"
+_LOCAL_TZ = ZoneInfo("America/Sao_Paulo")
+
+
+def hoje_local() -> date:
+    return datetime.now(_LOCAL_TZ).date()
 
 
 def segunda_da_semana(d: date) -> date:
@@ -120,18 +126,86 @@ def _padroes(furos: dict[str, int], nomes: dict[str, str]) -> list[dict]:
     return padroes
 
 
-def _semana(dados: dict | None, nomes: dict[str, str]) -> dict:
-    """{ganho, desconto, saldo, padroes} de UMA semana. `None` = semana sem check."""
-    if dados is None:
-        return {"ganho": 0, "desconto": 0, "saldo": 0, "padroes": []}
+def _reducoes_por_semana(occurrences: list[dict]) -> dict[date, list[dict]]:
+    """Agrupa ocorrencias ativas por semana ISO; undo remove do calculo, nao do fato."""
+    weeks: dict[date, list[dict]] = {}
+    for row in occurrences:
+        if row.get("desfeita_em") is not None:
+            continue
+        occurrence_date = _data(row.get("data"))
+        if occurrence_date is None:
+            continue
+        weeks.setdefault(segunda_da_semana(occurrence_date), []).append(row)
+    return weeks
+
+
+def _reducoes(rows: list[dict], limite: int) -> list[dict]:
+    """Resume e aloca no maximo uma penalidade por habito/dia.
+
+    Todas as ocorrencias continuam no historico. Para pontos, a primeira ocorrencia
+    ativa do dia e a penalizavel; se houver undo, a proxima assume naturalmente.
+    """
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            row["data"],
+            float(row["registrada_em"]),
+            int(row["id"]),
+        ),
+    )
+    summaries: dict[int, dict] = {}
+    first_by_day: dict[tuple[int, str], dict] = {}
+    for row in ordered:
+        habit_id = int(row["habito_id"])
+        summary = summaries.setdefault(
+            habit_id,
+            {
+                "habito_id": habit_id,
+                "slug": row["slug"],
+                "nome": row["nome"],
+                "ocorrencias": 0,
+                "dias_penalizaveis": 0,
+                "delta": 0,
+            },
+        )
+        summary["ocorrencias"] += 1
+        first_by_day.setdefault((habit_id, row["data"]), row)
+
+    remaining = max(0, int(limite))
+    for row in first_by_day.values():
+        summary = summaries[int(row["habito_id"])]
+        summary["dias_penalizaveis"] += 1
+        allocated = min(max(0, int(row["penalidade"])), remaining)
+        remaining -= allocated
+        summary["delta"] -= allocated
+
+    return sorted(
+        summaries.values(),
+        key=lambda item: (item["slug"], item["habito_id"]),
+    )
+
+
+def _semana(
+    dados: dict | None,
+    nomes: dict[str, str],
+    reduction_rows: list[dict] | None = None,
+) -> dict:
+    """Resumo de uma semana com um unico teto para padroes e reducoes."""
+    dados = dados or {"feitos": 0, "furos": {}}
     ganho = dados["feitos"] * max(0, settings.pontos_por_rotina)
     padroes = _padroes(dados["furos"], nomes)
-    desconto = -sum(p["delta"] for p in padroes)
+    desconto_padroes = -sum(p["delta"] for p in padroes)
+    reducoes = _reducoes(
+        reduction_rows or [],
+        max(0, settings.teto_desconto_semanal - desconto_padroes),
+    )
+    desconto = desconto_padroes - sum(item["delta"] for item in reducoes)
     return {
         "ganho": ganho,
         "desconto": desconto,
-        "saldo": ganho - desconto,
+        "saldo": max(0, ganho - desconto),
         "padroes": padroes,
+        "teto_desconto": max(0, settings.teto_desconto_semanal),
     }
 
 
@@ -139,7 +213,11 @@ def semana(ref: date | None = None) -> dict:
     """A semana ISO de `ref` (default: hoje). Usada pelo endpoint e pelo digest."""
     nomes = nomes_por_slug()
     semanas = _por_semana(store.get_checks_since(_INICIO_DOS_TEMPOS))
-    return _semana(semanas.get(segunda_da_semana(ref or date.today())), nomes)
+    reducoes = _reducoes_por_semana(
+        store.list_reduction_occurrences(incluir_desfeitas=False)
+    )
+    current = segunda_da_semana(ref or hoje_local())
+    return _semana(semanas.get(current), nomes, reducoes.get(current))
 
 
 def resumo_periodo(inicio: date, fim: date) -> dict:
@@ -149,13 +227,20 @@ def resumo_periodo(inicio: date, fim: date) -> dict:
     """
     nomes = nomes_por_slug()
     semanas = _por_semana(store.get_checks_since(_INICIO_DOS_TEMPOS))
+    reducoes = _reducoes_por_semana(
+        store.list_reduction_occurrences(incluir_desfeitas=False)
+    )
     totais = {"ganho": 0, "desconto": 0, "saldo": 0}
 
-    for seg in sorted(semanas):
+    for seg in sorted(set(semanas) | set(reducoes)):
         if inicio <= seg <= fim:
-            dados = _semana(semanas[seg], nomes)
-            for campo in totais:
-                totais[campo] += dados[campo]
+            dados = _semana(semanas.get(seg), nomes, reducoes.get(seg))
+            totais["ganho"] += dados["ganho"]
+            totais["desconto"] += dados["desconto"]
+            totais["saldo"] = max(
+                0,
+                totais["saldo"] + dados["ganho"] - dados["desconto"],
+            )
 
     return totais
 
@@ -220,10 +305,13 @@ def _nivel(pico: int) -> int:
 
 
 def resumo(hoje: date | None = None) -> dict:
-    """Contrato do GET /pontos. Função pura de routine_checks + routines + config."""
-    ref = hoje or date.today()
+    """Contrato do GET /pontos. Funcao pura dos fatos persistidos + config."""
+    ref = hoje or hoje_local()
     nomes = nomes_por_slug()
     semanas = _por_semana(store.get_checks_since(_INICIO_DOS_TEMPOS))
+    reducoes = _reducoes_por_semana(
+        store.list_reduction_occurrences(incluir_desfeitas=False)
+    )
 
     de = _ciclo_semanas()
     ancora = segunda_da_semana(_data(settings.ciclo_inicio) or ref)
@@ -237,19 +325,26 @@ def resumo(hoje: date | None = None) -> dict:
     saldo_total = 0
     pico_total = 0
     pontos_do_ciclo = 0
-    for seg in sorted(semanas):
-        saldo_da_semana = _semana(semanas[seg], nomes)["saldo"]
-        saldo_total += saldo_da_semana
-        pico_total = max(pico_total, saldo_total)
+    for seg in sorted(set(semanas) | set(reducoes)):
+        if seg > corrente:
+            continue
+        week = _semana(
+            semanas.get(seg),
+            nomes,
+            reducoes.get(seg),
+        )
+        delta = week["ganho"] - week["desconto"]
+        saldo_total = max(0, saldo_total + delta)
+        pico_total += week["ganho"]
         if inicio_do_ciclo <= seg <= corrente:
-            pontos_do_ciclo += saldo_da_semana
+            pontos_do_ciclo = max(0, pontos_do_ciclo + delta)
 
     nivel = _nivel(pico_total)
     limiares = _limiares()
     proximo = (
         None
         if nivel >= len(limiares)
-        else {"n": nivel + 1, "faltam": max(0, limiares[nivel] - saldo_total)}
+        else {"n": nivel + 1, "faltam": max(0, limiares[nivel] - pico_total)}
     )
 
     return {
@@ -263,6 +358,6 @@ def resumo(hoje: date | None = None) -> dict:
             "pontos": pontos_do_ciclo,
             "meta": meta_do_ciclo(),
         },
-        "semana": _semana(semanas.get(corrente), nomes),
+        "semana": _semana(semanas.get(corrente), nomes, reducoes.get(corrente)),
         "proximo_nivel": proximo,
     }

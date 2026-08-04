@@ -69,9 +69,14 @@ def test_create_autosave_e_pending_preservam_verbatim_sem_tocar_servicos(
     pending = client.get("/reading/sessions/pending").json()["sessions"]
     assert len(pending) == 1
     assert pending[0]["texto"] == quote
-    assert pending[0]["buffer"] == [
-        {"seq": 1, "hook": "quote", "texto": quote, "ts": 1002.0}
-    ]
+    assert len(pending[0]["buffer"]) == 1
+    assert pending[0]["buffer"][0] | {"chunk_id": "<stable>"} == {
+        "seq": 1,
+        "chunk_id": "<stable>",
+        "hook": "quote",
+        "texto": quote,
+        "ts": 1002.0,
+    }
 
 
 def test_compile_chama_hermes_e_vault_uma_vez_e_sugere_anki_sem_aprovar(
@@ -106,13 +111,18 @@ def test_compile_chama_hermes_e_vault_uma_vez_e_sugere_anki_sem_aprovar(
     monkeypatch.setattr(main.vault_client, "write_reading_note", write_reading)
     monkeypatch.setattr(main.hermes_client, "suggest_anki", suggest_anki)
 
+    # Fluxo em dois passos: /draft gera o preview (Hermes), /compile aprova (vault+Anki).
+    assert client.post(
+        f"/reading/sessions/{sid}/draft", json={"pagina_final": 25}
+    ).status_code == 200
+
     first = client.post(
         f"/reading/sessions/{sid}/compile",
-        json={"pagina_final": 25, "fim": 1_120.0},
+        json={"pagina_final": 25, "fim": 1_120.0, "duracao_s": 75},
     )
     retry = client.post(
         f"/reading/sessions/{sid}/compile",
-        json={"pagina_final": 25, "fim": 1_120.0},
+        json={"pagina_final": 25, "fim": 1_120.0, "duracao_s": 75},
     )
 
     assert first.status_code == retry.status_code == 200
@@ -128,8 +138,25 @@ def test_compile_chama_hermes_e_vault_uma_vez_e_sugere_anki_sem_aprovar(
 
     sessions = store.list_sessions_since(0)
     assert len(sessions) == 1
-    assert sessions[0]["duracao_s"] == 120
+    assert sessions[0]["duracao_s"] == 75
+    assert sessions[0]["inicio"] == 1_045.0
     assert sessions[0]["session_key"] == f"reading:{sid}"
+
+
+def test_duracao_de_cliente_antigo_nao_conta_varios_dias():
+    assert main._reading_duration_s(1_000.0, 1_120.0, None) == 120
+    assert main._reading_duration_s(1_000.0, 201_000.0, None) == 86_400
+    assert main._reading_duration_s(1_000.0, 201_000.0, 75) == 75
+
+
+@pytest.mark.parametrize("pagina_final", [-1, True, 1.5])
+def test_compile_rejeita_pagina_final_invalida(client, pagina_final):
+    sid = _create(client)["session"]["id"]
+    resposta = client.post(
+        f"/reading/sessions/{sid}/compile",
+        json={"pagina_final": pagina_final, "fim": 1_120.0, "duracao_s": 75},
+    )
+    assert resposta.status_code == 422
 
 
 def test_falha_hermes_deixa_pending_e_buffer_continua_editavel(client, monkeypatch):
@@ -151,7 +178,8 @@ def test_falha_hermes_deixa_pending_e_buffer_continua_editavel(client, monkeypat
     monkeypatch.setattr(main.vault_client, "write_reading_note", write_reading)
     monkeypatch.setattr(main.hermes_client, "suggest_anki", lambda *_: None)
 
-    failed = client.post(f"/reading/sessions/{sid}/compile", json={"fim": 1_100})
+    # O Hermes roda no /draft agora; a falha deixa a sessão pending e o buffer editável.
+    failed = client.post(f"/reading/sessions/{sid}/draft", json={})
     assert failed.status_code == 502
     pending = client.get("/reading/sessions/pending").json()["sessions"][0]
     assert pending["status"] == "pending"
@@ -163,6 +191,7 @@ def test_falha_hermes_deixa_pending_e_buffer_continua_editavel(client, monkeypat
         return []
 
     monkeypatch.setattr(main.hermes_client, "suggest_anki", no_cards)
+    assert client.post(f"/reading/sessions/{sid}/draft", json={}).status_code == 200
     retried = client.post(f"/reading/sessions/{sid}/compile", json={"fim": 1_100})
     assert retried.status_code == 200
     assert calls == {"compile": 2, "vault": 1}
@@ -200,6 +229,7 @@ def test_falha_vault_reusa_draft_e_congela_buffer(client, monkeypatch):
     monkeypatch.setattr(main.vault_client, "write_reading_note", flaky_vault)
     monkeypatch.setattr(main.hermes_client, "suggest_anki", no_cards)
 
+    assert client.post(f"/reading/sessions/{sid}/draft", json={}).status_code == 200
     assert client.post(f"/reading/sessions/{sid}/compile", json={"fim": 1_100}).status_code == 502
     pending = store.get_reading_session(sid)
     assert pending["status"] == "pending"
@@ -243,18 +273,44 @@ async def test_oneshot_envia_prompt_longo_por_stdin_e_nao_argv(monkeypatch):
     assert "segredo-privado" not in " ".join(seen["args"])
 
 
-async def test_compile_reading_falha_se_quote_nao_for_verbatim(monkeypatch):
+async def test_compile_reading_insere_quote_verbatim_sem_enviar_ao_hermes(monkeypatch):
+    monkeypatch.setattr(settings, "hermes_mock", False)
+    seen = {}
+
+    async def structure(prompt):
+        seen["prompt"] = prompt
+        return "# Nota\n\n## Comentários\n\nUma reflexão."
+
+    quote = "texto EXATO da citação: sem paráfrase"
+    monkeypatch.setattr(hermes_client, "_oneshot", structure)
+    draft = await hermes_client.compile_reading(
+        "Livro",
+        [
+            {"seq": 1, "hook": "quote", "texto": quote},
+            {"seq": 2, "hook": "comentario", "texto": "Uma reflexão."},
+        ],
+    )
+
+    assert quote not in seen["prompt"]
+    assert draft.endswith(f"## Citações\n\n{quote}")
+
+
+async def test_compile_reading_so_quotes_e_deterministico(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
 
-    async def altered(_prompt):
-        return "# Nota\n\nUma paráfrase que omite a citação."
+    async def unexpected(_prompt):
+        raise AssertionError("Hermes não deve ser chamado para sessão só com citações")
 
-    monkeypatch.setattr(hermes_client, "_oneshot", altered)
-    with pytest.raises(RuntimeError, match="reading_quote_alterada"):
-        await hermes_client.compile_reading(
-            "Livro",
-            [{"seq": 1, "hook": "quote", "texto": "texto EXATO da citação"}],
-        )
+    monkeypatch.setattr(hermes_client, "_oneshot", unexpected)
+    draft = await hermes_client.compile_reading(
+        "Livro\nInjetado",
+        [
+            {"seq": 1, "hook": "quote", "texto": "primeira"},
+            {"seq": 2, "hook": "quote", "texto": "segunda"},
+        ],
+    )
+
+    assert draft == "# Livro Injetado\n\n## Citações\n\nprimeira\n\nsegunda"
 
 
 def test_export_anki_falha_de_arquivo_nao_marca_exportado(client, monkeypatch):

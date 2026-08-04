@@ -2,13 +2,20 @@
   "expo": {
     "name": "escritório",
     "slug": "escritorio-app",
-    "version": "0.1.0",
+    "owner": "suwkz",
+    "version": "0.2.3",
     "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "android": {
-      "package": "com.leo.escritorio"
+      "package": "com.leo.escritorio",
+      "versionCode": 6,
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
+      "./plugins/withCleartextTraffic",
       "expo-notifications",
       "expo-secure-store",
       [
@@ -26,9 +33,9 @@
       "expo-font"
     ],
     "extra": {
-      "bffUrl": "http://192.168.0.5:8000",
+      "bffUrl": "http://192.168.0.2:8000",
       "eas": {
-        "projectId": ""
+        "projectId": "dfd33594-012e-466b-a46f-9c6eb1cfae3d"
       }
     }
   }

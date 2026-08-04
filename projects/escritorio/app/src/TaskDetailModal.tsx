@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -22,15 +24,19 @@ export function TaskDetailModal({
 }: {
   taskId: string | null;
   onClose: () => void;
-  onComplete?: (id: string) => void;
+  onComplete?: (id: string) => Promise<boolean | void>;
 }) {
+  const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!taskId) return;
     let alive = true;
     setDetail(null);
+    setConfirming(false);
     setLoading(true);
     getTaskDetail(taskId)
       .then((d) => alive && setDetail(d))
@@ -50,7 +56,7 @@ export function TaskDetailModal({
   return (
     <Modal visible={!!taskId} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose} />
-      <View style={styles.sheet}>
+      <View style={[styles.sheet, { paddingBottom: Math.max(spacing.xl, insets.bottom + spacing.sm) }]}>
         <View style={styles.handle} />
         {loading || !detail ? (
           <ActivityIndicator style={{ marginVertical: 36 }} color={colors.primary} />
@@ -96,12 +102,35 @@ export function TaskDetailModal({
             <View style={{ height: spacing.lg }} />
             {onComplete ? (
               <>
+                {confirming ? (
+                  <View style={styles.confirmBox}>
+                    <Text style={styles.confirmText}>Confirmar conclusão no ClickUp?</Text>
+                    <AppButton
+                      title="Confirmar conclusão"
+                      loading={completing}
+                      onPress={async () => {
+                        setCompleting(true);
+                        try {
+                          if ((await onComplete(detail.id)) !== false) onClose();
+                        } finally {
+                          setCompleting(false);
+                        }
+                      }}
+                    />
+                    <AppButton title="Cancelar" variant="ghost" onPress={() => setConfirming(false)} disabled={completing} />
+                  </View>
+                ) : (
+                  <AppButton title="Concluir tarefa" onPress={() => setConfirming(true)} />
+                )}
+                <View style={{ height: spacing.sm }} />
+              </>
+            ) : null}
+            {detail.url ? (
+              <>
                 <AppButton
-                  title="Concluir tarefa"
-                  onPress={() => {
-                    onComplete(detail.id);
-                    onClose();
-                  }}
+                  title="Abrir no ClickUp"
+                  variant="ghost"
+                  onPress={() => Linking.openURL(detail.url!)}
                 />
                 <View style={{ height: spacing.sm }} />
               </>
@@ -160,4 +189,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   desc: { fontFamily: fonts.ui, fontSize: 14.5, color: colors.text, lineHeight: 21 },
+  confirmBox: { gap: spacing.sm, padding: spacing.md, borderWidth: 1, borderColor: "rgba(111,181,140,0.3)", borderRadius: radius.md, backgroundColor: "rgba(111,181,140,0.06)" },
+  confirmText: { fontFamily: fonts.uiSemi, fontSize: 12.5, color: colors.text, textAlign: "center" },
 });

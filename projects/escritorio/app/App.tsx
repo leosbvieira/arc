@@ -11,15 +11,15 @@ import {
 } from "@expo-google-fonts/space-grotesk";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
-import { useEffect, useState } from "react";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
-  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   View,
@@ -33,13 +33,15 @@ import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
 import Edificacao from "./src/screens/Edificacao";
 import Fechar from "./src/screens/Fechar";
+import Habitos from "./src/screens/Habitos";
 import Home from "./src/screens/Home";
 import Revisao from "./src/screens/Revisao";
 import Rotinas from "./src/screens/Rotinas";
 import Shutdown from "./src/screens/Shutdown";
+import Settings from "./src/screens/Settings";
 import Tasks from "./src/screens/Tasks";
 import Triagem from "./src/screens/Triagem";
-import { colors, fonts, spacing } from "./src/theme";
+import { colors, fonts, radius, spacing } from "./src/theme";
 import { AppButton, Card, Field } from "./src/ui";
 
 type Tab =
@@ -53,15 +55,17 @@ type Tab =
   | "fechar"
   | "rotinas"
   | "edificacao"
-  | "triagem";
+  | "triagem"
+  | "habitos"
+  | "settings";
 
 // A tabbar fica só com 4 — revisão/abertura/shutdown/fechar/rotinas entram pela
 // Home e voltam pelo chevron.
 const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: "home", label: "Home", icon: "home" },
+  { key: "home", label: "Hoje", icon: "circle" },
   { key: "capturar", label: "Capturar", icon: "feather" },
   { key: "tarefas", label: "Tarefas", icon: "check-square" },
-  { key: "chat", label: "Chat", icon: "message-circle" },
+  { key: "chat", label: "Mentor", icon: "message-circle" },
 ];
 
 const SUBSCREENS: Tab[] = [
@@ -72,6 +76,8 @@ const SUBSCREENS: Tab[] = [
   "rotinas",
   "edificacao",
   "triagem",
+  "habitos",
+  "settings",
 ];
 
 const TITLES: Partial<Record<Tab, string>> = {
@@ -82,6 +88,8 @@ const TITLES: Partial<Record<Tab, string>> = {
   rotinas: "Rotinas",
   edificacao: "Edificação",
   triagem: "Triagem",
+  habitos: "Hábitos a reduzir",
+  settings: "Ajustes",
 };
 
 function tabDaNotificacao(kind: unknown): Tab | null {
@@ -117,15 +125,42 @@ export default function App() {
   const [server, setServer] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
+  const [captureMode, setCaptureMode] = useState<"captura" | "leitura">("captura");
+  const [captureRequestId, setCaptureRequestId] = useState(0);
+  const [initialTaskId, setInitialTaskId] = useState<string | null>(null);
+  const pushSyncRef = useRef<Promise<void>>(Promise.resolve());
+
+  function startPushSync() {
+    const operation = syncPushDevice();
+    pushSyncRef.current = operation;
+    operation.catch((error) => console.log("push:", error));
+  }
+
+  function openDestination(destination: string) {
+    if (destination === "leitura") {
+      setCaptureMode("leitura");
+      setCaptureRequestId((current) => current + 1);
+      setTab("capturar");
+      return;
+    }
+    if (destination.startsWith("tarefa:")) {
+      setInitialTaskId(destination.slice("tarefa:".length));
+      setTab("tarefas");
+      return;
+    }
+    if (destination === "capturar") {
+      setCaptureMode("captura");
+      setCaptureRequestId((current) => current + 1);
+    }
+    setTab(destination as Tab);
+  }
 
   useEffect(() => {
     getToken().then((t) => {
       const autenticado = !!t;
       setAuthed(autenticado);
       setReady(true);
-      if (autenticado) {
-        syncPushDevice().catch((e) => console.log("push:", e));
-      }
+      if (autenticado) startPushSync();
     });
   }, []);
 
@@ -150,11 +185,27 @@ export default function App() {
 
   useEffect(() => {
     if (!authed) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (tab === "home") return false;
+      setTab("home");
+      return true;
+    });
+    return () => subscription.remove();
+  }, [authed, tab]);
+
+  useEffect(() => {
+    if (!authed) return;
 
     const abrir = (response: Notifications.NotificationResponse | null) => {
       const kind = response?.notification.request.content.data?.kind;
       const destino = tabDaNotificacao(kind);
-      if (destino) setTab(destino);
+      if (destino === "capturar") {
+        setCaptureMode("captura");
+        setCaptureRequestId((current) => current + 1);
+        setTab("capturar");
+      } else if (destino) {
+        setTab(destino);
+      }
     };
 
     Notifications.getLastNotificationResponseAsync()
@@ -170,11 +221,7 @@ export default function App() {
 
   async function afterAuth() {
     setAuthed(true);
-    try {
-      await syncPushDevice();
-    } catch (e) {
-      console.log("push:", e);
-    }
+    startPushSync();
   }
 
   async function onLogin() {
@@ -194,16 +241,19 @@ export default function App() {
 
   if (!ready || !fontsLoaded) {
     return (
-      <SafeAreaView style={[styles.screen, styles.center]}>
-        <StatusBar style="light" />
-        <Text style={styles.brand}>escritório</Text>
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <SafeAreaView style={[styles.screen, styles.center]}>
+          <StatusBar style="light" />
+          <Text style={styles.brand}>escritório</Text>
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
   if (!authed) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.screen}>
         <StatusBar style="light" />
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -232,7 +282,8 @@ export default function App() {
             <AppButton title="Entrar" onPress={onLogin} loading={busy} />
           </Card>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </SafeAreaProvider>
     );
   }
 
@@ -241,33 +292,41 @@ export default function App() {
   const title = TITLES[tab] ?? TABS.find((t) => t.key === tab)?.label ?? "";
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
       {tab !== "home" && (
         <View style={styles.header}>
           {isSub ? (
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Voltar para Hoje"
               onPress={() => setTab("home")}
               hitSlop={8}
-              style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              style={styles.back}
             >
-              <Feather name="chevron-left" size={20} color={colors.text} />
-              <Text style={styles.brand}>escritório</Text>
+              <Feather name="arrow-left" size={17} color={colors.text} />
             </Pressable>
           ) : (
-            <Text style={styles.brand}>escritório</Text>
+            <Text style={styles.brandSmall}>AETERNUM</Text>
           )}
           <Text style={styles.section}>{title}</Text>
+          {isSub ? <Text style={styles.brandSmall}>AETERNUM</Text> : <View style={{ width: 72 }} />}
         </View>
       )}
 
       <View style={[styles.content, isFull && { paddingHorizontal: 0 }]}>
-        {tab === "home" ? (
-          <Home onOpenTab={(t) => setTab(t as Tab)} />
-        ) : tab === "capturar" ? (
-          <Capture />
+        <View style={tab === "capturar" ? styles.mountedScreen : styles.hiddenScreen}>
+          <Capture
+            initialMode={captureMode}
+            modeRequestId={captureRequestId}
+            active={tab === "capturar"}
+          />
+        </View>
+        {tab === "capturar" ? null : tab === "home" ? (
+          <Home onOpenTab={openDestination} />
         ) : tab === "tarefas" ? (
-          <Tasks />
+          <Tasks initialTaskId={initialTaskId} onInitialTaskConsumed={() => setInitialTaskId(null)} />
         ) : tab === "chat" ? (
           <Chat />
         ) : tab === "abertura" ? (
@@ -282,9 +341,17 @@ export default function App() {
           <Edificacao />
         ) : tab === "triagem" ? (
           <Triagem />
+        ) : tab === "habitos" ? (
+          <Habitos />
+        ) : tab === "settings" ? (
+          <Settings
+            onServerSaved={setServer}
+            beforeLogout={() => pushSyncRef.current.catch(() => undefined)}
+            onLogout={() => { setAuthed(false); setTab("home"); }}
+          />
         ) : (
           <Revisao
-            onOpenCapture={() => setTab("capturar")}
+            onOpenCapture={() => openDestination("capturar")}
             onOpenEdificacao={() => setTab("edificacao")}
           />
         )}
@@ -294,7 +361,14 @@ export default function App() {
         {TABS.map((t) => {
           const active = t.key === tab;
           return (
-            <Pressable key={t.key} onPress={() => setTab(t.key)} style={styles.tabItem}>
+            <Pressable
+              key={t.key}
+              accessibilityRole="tab"
+              accessibilityLabel={t.label}
+              accessibilityState={{ selected: active }}
+              onPress={() => t.key === "capturar" ? setTab("capturar") : openDestination(t.key)}
+              style={[styles.tabItem, active && styles.tabItemActive]}
+            >
               <Feather
                 name={t.icon as any}
                 size={21}
@@ -305,7 +379,8 @@ export default function App() {
           );
         })}
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
@@ -313,31 +388,37 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
-    paddingTop: Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0,
   },
   center: { alignItems: "center", justifyContent: "center" },
+  mountedScreen: { flex: 1 },
+  hiddenScreen: { display: "none" },
   brand: { fontFamily: fonts.uiBold, fontSize: 24, color: colors.text, letterSpacing: -0.5 },
   tagline: { fontFamily: fonts.serif, color: colors.textMuted, marginTop: 6, fontSize: 15 },
   label: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, letterSpacing: 1 },
   header: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     flexDirection: "row",
-    alignItems: "baseline",
+    alignItems: "center",
     justifyContent: "space-between",
   },
-  section: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 15 },
+  back: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border },
+  brandSmall: { width: 72, fontFamily: fonts.mono, fontSize: 8, color: colors.textMuted, letterSpacing: 1.2 },
+  section: { fontFamily: fonts.serif, color: colors.text, fontSize: 20, letterSpacing: -0.35 },
   content: { flex: 1, paddingHorizontal: spacing.lg },
   tabbar: {
     flexDirection: "row",
-    backgroundColor: colors.surface,
+    backgroundColor: "#0C0F13",
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.sm,
+    paddingTop: 7,
+    paddingBottom: 10,
+    gap: 4,
   },
-  tabItem: { flex: 1, alignItems: "center", gap: 4, paddingVertical: 4 },
-  tabLabel: { fontFamily: fonts.ui, fontSize: 10.5, color: colors.textMuted },
+  tabItem: { flex: 1, minHeight: 52, alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 4, borderRadius: radius.md },
+  tabItemActive: { backgroundColor: colors.primarySoft },
+  tabLabel: { fontFamily: fonts.ui, fontSize: 10, color: colors.textMuted },
   tabLabelActive: { color: colors.primary, fontFamily: fonts.uiSemi },
 });

@@ -22,6 +22,12 @@ type Options = {
   onError: (code: string) => void;
 };
 
+type PendingStop = {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+};
+
 function useNativeSpeechEvent(
   eventName: string,
   listener: (event: any) => void,
@@ -49,7 +55,10 @@ export function useReadingSpeech({
   const startingRef = useRef(false);
   const startTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recognizingRef = useRef(false);
-  const stopResolvers = useRef<Array<() => void>>([]);
+  const startRequestRef = useRef(0);
+  const nativeStartPendingRef = useRef(false);
+  const drainingRef = useRef(false);
+  const pendingStopsRef = useRef<PendingStop[]>([]);
   const callbacks = useRef({ onFinal, onError });
   callbacks.current = { onFinal, onError };
 
@@ -58,6 +67,7 @@ export function useReadingSpeech({
 
   function startNative(): void {
     if (!SpeechRecognitionModule) throw new Error("speech_module_missing");
+    nativeStartPendingRef.current = true;
     SpeechRecognitionModule.start({
       lang: "pt-BR",
       continuous: continuousSupported,
@@ -65,8 +75,9 @@ export function useReadingSpeech({
       maxAlternatives: 1,
       addsPunctuation: true,
       contextualStrings: [
-        "quote",
+        "citação",
         "citacao",
+        "quote",
         "comentario",
         "comentarios Leo",
         "ideia",
@@ -87,6 +98,7 @@ export function useReadingSpeech({
       if (!startingRef.current || recognizingRef.current) return;
       continueRef.current = false;
       startingRef.current = false;
+      drainingRef.current = true;
       setStarting(false);
       try {
         SpeechRecognitionModule?.abort();
@@ -97,15 +109,45 @@ export function useReadingSpeech({
     }, 8000);
   }
 
+  function settlePendingStops(error?: Error): void {
+    const pending = pendingStopsRef.current;
+    pendingStopsRef.current = [];
+    pending.forEach((request) => {
+      clearTimeout(request.timeout);
+      if (error) request.reject(error);
+      else request.resolve();
+    });
+  }
+
+  function abortRecognition(code: string, error: Error): void {
+    continueRef.current = false;
+    startingRef.current = false;
+    recognizingRef.current = false;
+    drainingRef.current = true;
+    clearStartTimeout();
+    try {
+      SpeechRecognitionModule?.abort();
+    } catch {
+      // O servico pode ter encerrado antes de receber o abort.
+    }
+    setStarting(false);
+    setRecognizing(false);
+    setInterim("");
+    callbacks.current.onError(code);
+    settlePendingStops(error);
+  }
+
   useNativeSpeechEvent("start", () => {
     if (!continueRef.current) {
+      drainingRef.current = true;
       try {
-        SpeechRecognitionModule?.stop();
+        SpeechRecognitionModule?.abort();
       } catch {
         // Fail-closed: nunca reativa a UI depois de timeout/cancelamento.
       }
       return;
     }
+    nativeStartPendingRef.current = false;
     recognizingRef.current = true;
     clearStartTimeout();
     startingRef.current = false;
@@ -135,15 +177,15 @@ export function useReadingSpeech({
   });
 
   useNativeSpeechEvent("end", () => {
+    nativeStartPendingRef.current = false;
+    drainingRef.current = false;
     recognizingRef.current = false;
     clearStartTimeout();
     startingRef.current = false;
     setStarting(false);
     setRecognizing(false);
     setInterim("");
-    const resolvers = stopResolvers.current;
-    stopResolvers.current = [];
-    resolvers.forEach((resolve) => resolve());
+    settlePendingStops();
     if (continueRef.current && !continuousSupported) {
       startingRef.current = true;
       setStarting(true);
@@ -157,6 +199,7 @@ export function useReadingSpeech({
           startNative();
           armStartTimeout();
         } catch {
+          nativeStartPendingRef.current = false;
           continueRef.current = false;
           startingRef.current = false;
           setStarting(false);
@@ -168,20 +211,30 @@ export function useReadingSpeech({
 
   useEffect(
     () => () => {
+      startRequestRef.current += 1;
       continueRef.current = false;
       startingRef.current = false;
+      recognizingRef.current = false;
+      drainingRef.current = true;
       clearStartTimeout();
       try {
-        SpeechRecognitionModule?.stop();
+        SpeechRecognitionModule?.abort();
       } catch {
         // O recognizer pode ja ter encerrado por uma interrupcao do sistema.
       }
+      settlePendingStops(new Error("speech_unmounted"));
     },
     [],
   );
 
   async function start(): Promise<boolean> {
     if (recognizingRef.current || startingRef.current) return false;
+    if (drainingRef.current) {
+      callbacks.current.onError("recognizer-draining");
+      return false;
+    }
+    const requestId = startRequestRef.current + 1;
+    startRequestRef.current = requestId;
     startingRef.current = true;
     setStarting(true);
     try {
@@ -196,6 +249,9 @@ export function useReadingSpeech({
       }
       const permission =
         await SpeechRecognitionModule.requestPermissionsAsync();
+      if (startRequestRef.current !== requestId || !startingRef.current) {
+        return false;
+      }
       if (!permission.granted) {
         callbacks.current.onError("not-allowed");
         startingRef.current = false;
@@ -207,6 +263,7 @@ export function useReadingSpeech({
       armStartTimeout();
       return true;
     } catch {
+      nativeStartPendingRef.current = false;
       continueRef.current = false;
       startingRef.current = false;
       setStarting(false);
@@ -216,26 +273,45 @@ export function useReadingSpeech({
   }
 
   function stop(): Promise<void> {
+    startRequestRef.current += 1;
     continueRef.current = false;
-    if (!recognizingRef.current) return Promise.resolve();
+    if (!recognizingRef.current) {
+      if (startingRef.current) {
+        const nativeStartPending = nativeStartPendingRef.current;
+        startingRef.current = false;
+        setStarting(false);
+        clearStartTimeout();
+        if (nativeStartPending) {
+          drainingRef.current = true;
+          try {
+            SpeechRecognitionModule?.abort();
+          } catch {
+            // O evento terminal ainda precisa drenar antes de um novo inicio.
+          }
+        }
+      }
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
-      const done = () => {
-        clearTimeout(timeout);
-        resolve();
-      };
       const timeout = setTimeout(() => {
-        stopResolvers.current = stopResolvers.current.filter(
-          (candidate) => candidate !== done,
+        abortRecognition(
+          "stop-timeout",
+          new Error("speech_stop_timeout"),
         );
-        callbacks.current.onError("stop-timeout");
-        reject(new Error("speech_stop_timeout"));
       }, 8000);
-      stopResolvers.current.push(done);
+      pendingStopsRef.current.push({ resolve, reject, timeout });
       if (!SpeechRecognitionModule) {
-        reject(new Error("speech_module_missing"));
+        abortRecognition(
+          "speech-module-missing",
+          new Error("speech_module_missing"),
+        );
         return;
       }
-      SpeechRecognitionModule.stop();
+      try {
+        SpeechRecognitionModule.stop();
+      } catch {
+        abortRecognition("stop-failed", new Error("speech_stop_failed"));
+      }
     });
   }
 

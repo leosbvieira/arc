@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./storage";
 
 const KEY = "session_token";
 const URL_KEY = "bff_url";
@@ -8,7 +8,7 @@ const URL_KEY = "bff_url";
 // login) → `extra.bffUrl` do app.json → default abaixo. NÃO use "localhost" (no
 // celular é o próprio telefone); o celular precisa estar na MESMA rede (mesmo
 // roteador 192.168.0.x) que o PC. Trocou de rede/DHCP? Ajuste na tela de login.
-const DEFAULT_BFF_URL = "http://192.168.0.5:8000";
+const DEFAULT_BFF_URL = "http://192.168.0.2:8000";
 
 let cachedUrl: string | null = null;
 
@@ -120,7 +120,7 @@ export async function chatSend(text: string, mode: string): Promise<string> {
 export async function registerDevice(expoToken: string): Promise<void> {
   const base = await getBffUrl();
   const token = await getToken();
-  await fetch(`${base}/devices`, {
+  const response = await fetch(`${base}/devices`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -128,6 +128,21 @@ export async function registerDevice(expoToken: string): Promise<void> {
     },
     body: JSON.stringify({ token: expoToken }),
   });
+  if (!response.ok) throw new Error(`registrar push: ${response.status}`);
+}
+
+export async function unregisterDevice(expoToken: string): Promise<void> {
+  const base = await getBffUrl();
+  const token = await getToken();
+  const response = await fetch(`${base}/devices`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ token: expoToken }),
+  });
+  if (!response.ok) throw new Error(`remover push: ${response.status}`);
 }
 
 // ---- Tarefas (L1) ----
@@ -305,6 +320,7 @@ export type Pontos = {
     desconto: number; // positivo
     saldo: number;
     padroes: PadraoSemana[];
+    teto_desconto: number;
   };
   proximo_nivel: { n: number; faltam: number } | null; // null = já está em N4
 };
@@ -314,6 +330,89 @@ export async function getPontos(): Promise<Pontos> {
   const r = await fetch(`${base}/pontos`, { headers: await authHeaders() });
   if (!r.ok) throw new Error(`pontos: ${r.status}`);
   return (await r.json()) as Pontos;
+}
+
+// ---- Hábitos a reduzir ----------------------------------------------------
+export type ReductionHabit = {
+  id: number;
+  slug: string;
+  nome: string;
+  penalidade: number;
+  criado: number;
+  atualizado: number;
+};
+
+export type ReductionOccurrence = {
+  id: number;
+  habito_id: number;
+  data: string;
+  registrada_em: number;
+  client_key: string | null;
+  penalidade: number;
+  desfeita_em: number | null;
+  slug: string;
+  nome: string;
+  penalizavel: boolean;
+  desfeita: boolean;
+};
+
+export async function listReductionHabits(): Promise<ReductionHabit[]> {
+  const base = await getBffUrl();
+  const response = await fetch(`${base}/habitos-reduzir`, { headers: await authHeaders() });
+  if (!response.ok) throw new Error(`hábitos: ${response.status}`);
+  return ((await response.json()) as { habitos: ReductionHabit[] }).habitos;
+}
+
+export async function createReductionHabit(nome: string, penalidade: number): Promise<ReductionHabit> {
+  const base = await getBffUrl();
+  const response = await fetch(`${base}/habitos-reduzir`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ nome, penalidade }),
+  });
+  if (!response.ok) throw new Error(`criar hábito: ${response.status}`);
+  return (await response.json()) as ReductionHabit;
+}
+
+export async function deleteReductionHabit(id: number): Promise<void> {
+  const base = await getBffUrl();
+  const response = await fetch(`${base}/habitos-reduzir/${id}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  if (!response.ok) throw new Error(`arquivar hábito: ${response.status}`);
+}
+
+export async function listReductionOccurrences(): Promise<ReductionOccurrence[]> {
+  const base = await getBffUrl();
+  const response = await fetch(`${base}/habitos-reduzir/historico`, { headers: await authHeaders() });
+  if (!response.ok) throw new Error(`histórico de hábitos: ${response.status}`);
+  return ((await response.json()) as { ocorrencias: ReductionOccurrence[] }).ocorrencias;
+}
+
+export async function recordReductionOccurrence(
+  habitId: number,
+  clientKey: string,
+  data: string,
+): Promise<ReductionOccurrence> {
+  const base = await getBffUrl();
+  const response = await fetch(`${base}/habitos-reduzir/${habitId}/ocorrencias`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ client_key: clientKey, data }),
+  });
+  if (!response.ok) throw new Error(`registrar ocorrência: ${response.status}`);
+  return ((await response.json()) as { ocorrencia: ReductionOccurrence }).ocorrencia;
+}
+
+export async function undoReductionOccurrence(id: number): Promise<ReductionOccurrence> {
+  const base = await getBffUrl();
+  const response = await fetch(`${base}/habitos-reduzir/ocorrencias/${id}/undo`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!response.ok) throw new Error(`desfazer ocorrência: ${response.status}`);
+  return ((await response.json()) as { ocorrencia: ReductionOccurrence }).ocorrencia;
 }
 
 // ---- Fechamento noturno (A3) ----

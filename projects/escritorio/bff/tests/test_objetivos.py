@@ -246,7 +246,7 @@ def test_monthly_review_pack_limita_tudo_ao_mes_anterior(
     assert pack["pontos"] == {
         "ganho": 1,
         "desconto": 3,
-        "saldo": -2,
+        "saldo": 0,
     }
     assert pack["objetivos"] == [
         {"nome": ligado["nome"], "total_no_mes": 1},
@@ -316,5 +316,5 @@ def test_resumo_periodo_considera_a_segunda_da_semana(
     ) == {
         "ganho": 1,
         "desconto": 3,
-        "saldo": -2,
+        "saldo": 0,
     }

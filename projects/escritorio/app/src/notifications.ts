@@ -2,6 +2,9 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+import * as SecureStore from "./storage";
+
+const REGISTERED_PUSH_TOKEN = "registered_expo_push_token_v1";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -42,5 +45,20 @@ export async function registerForPushToken(): Promise<string | null> {
   }
 
   const token = await Notifications.getExpoPushTokenAsync({ projectId });
+  await SecureStore.setItemAsync(REGISTERED_PUSH_TOKEN, token.data);
   return token.data;
+}
+
+export async function getRegisteredPushToken(): Promise<string | null> {
+  return SecureStore.getItemAsync(REGISTERED_PUSH_TOKEN);
+}
+
+export async function disableLocalPush(): Promise<void> {
+  try {
+    await Notifications.unregisterForNotificationsAsync();
+  } catch {
+    // O token já foi removido do BFF; esta etapa só limpa o registro nativo local.
+  } finally {
+    await SecureStore.deleteItemAsync(REGISTERED_PUSH_TOKEN);
+  }
 }

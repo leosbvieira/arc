@@ -3,6 +3,7 @@
 
 type Palette = {
   bg: string;
+  bgRaised: string;
   surface: string;
   card: string;
   card2: string;
@@ -15,28 +16,34 @@ type Palette = {
   amber: string; // alias do accent (compat)
   danger: string;
   success: string;
+  info: string;
+  lilac: string;
   userBubble: string;
 };
 
 export const dark: Palette = {
-  bg: "#0A0A0C",
-  surface: "#121214",
-  card: "#1A1A1D",
-  card2: "#151518",
-  border: "rgba(255,255,255,0.08)",
-  text: "#F4F4F5",
-  textMuted: "#9A9AA2",
-  primary: "#C9A97E",
-  primaryText: "#1A130A",
-  primarySoft: "rgba(201,169,126,0.12)",
-  amber: "#C9A97E",
-  danger: "#DE8A7A",
-  success: "#6FB58C",
-  userBubble: "#26262C",
+  bg: "#080A0D",
+  bgRaised: "#0C0F13",
+  surface: "#0E1116",
+  card: "#15191F",
+  card2: "#11151A",
+  border: "rgba(235,222,202,0.11)",
+  text: "#F4EFE7",
+  textMuted: "#9A9BA3",
+  primary: "#DEB878",
+  primaryText: "#181108",
+  primarySoft: "rgba(222,184,120,0.13)",
+  amber: "#DEB878",
+  danger: "#D77969",
+  success: "#71B49A",
+  info: "#7D9FD0",
+  lilac: "#A99ACB",
+  userBubble: "#222831",
 };
 
 export const light: Palette = {
   bg: "#FAFAF9",
+  bgRaised: "#F2F0EC",
   surface: "#FFFFFF",
   card: "#FFFFFF",
   card2: "#F4F4F5",
@@ -49,6 +56,8 @@ export const light: Palette = {
   amber: "#A9834F",
   danger: "#C56A5A",
   success: "#4E9A72",
+  info: "#557DB7",
+  lilac: "#8172AA",
   userBubble: "#ECECEF",
 };
 
@@ -66,16 +75,16 @@ export function areaColor(area: string): string {
   return AREA_COLORS[area] ?? "#8A8A93";
 }
 
-export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
+export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 40 };
 
 export const radius = { sm: 8, md: 12, lg: 16, xl: 20, pill: 999 };
 
 export const shadow = {
   shadowColor: "#000000",
-  shadowOpacity: 0.5,
-  shadowRadius: 24,
-  shadowOffset: { width: 0, height: 12 },
-  elevation: 8,
+  shadowOpacity: 0.28,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: 10 },
+  elevation: 5,
 };
 
 // Famílias de fonte — carregadas via expo-font no App (próximo passo da fundação).

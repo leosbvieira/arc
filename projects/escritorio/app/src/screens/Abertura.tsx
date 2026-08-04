@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../storage";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,

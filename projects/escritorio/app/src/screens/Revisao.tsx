@@ -4,6 +4,7 @@ import * as Sharing from "expo-sharing";
 import { ComponentProps, useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -41,7 +42,9 @@ import { AppButton, Card, ErrorState, Field, Skeleton } from "../ui";
 // Exibição pura: a severidade vem pronta do back (Task.severity). O front só mapeia
 // nível -> cor/ícone; não parseia mais a string `due` (fonte única no BFF, P0.2).
 type FeatherName = ComponentProps<typeof Feather>["name"];
-const LAST_ANKI_FILE = new File(Paths.document, "anki-ultimo.tsv");
+const LAST_ANKI_FILE = Platform.OS === "web"
+  ? null
+  : new File(Paths.document, "anki-ultimo.tsv");
 
 const SEVERITY_STYLE: Record<string, { color: string; icon: FeatherName }> = {
   urgente: { color: colors.danger, icon: "alert-octagon" },
@@ -244,7 +247,7 @@ export default function Revisao({
   const [ankiError, setAnkiError] = useState(false);
   const [ankiBusy, setAnkiBusy] = useState<number | "export" | null>(null);
   const [lastAnkiExport, setLastAnkiExport] = useState(
-    LAST_ANKI_FILE.exists,
+    LAST_ANKI_FILE?.exists ?? false,
   );
   const [readingPending, setReadingPending] = useState<ReadingSession[]>([]);
   const [readingPendingError, setReadingPendingError] = useState(false);
@@ -434,6 +437,7 @@ export default function Revisao({
       if (resultado.n === 0 || !resultado.tsv) {
         Alert.alert("Exportação Anki", "Não há cards aprovados pendentes.");
       } else {
+        if (!LAST_ANKI_FILE) throw new Error("compartilhamento_indisponivel");
         LAST_ANKI_FILE.create({ overwrite: true });
         LAST_ANKI_FILE.write(resultado.tsv);
         setLastAnkiExport(true);
@@ -457,7 +461,7 @@ export default function Revisao({
   }
 
   async function compartilharUltimoAnki() {
-    if (!LAST_ANKI_FILE.exists || !(await Sharing.isAvailableAsync())) {
+    if (!LAST_ANKI_FILE?.exists || !(await Sharing.isAvailableAsync())) {
       setLastAnkiExport(false);
       Alert.alert("Anki", "Nenhum TSV local disponível para compartilhar.");
       return;

@@ -1,10 +1,11 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./storage";
 
 import {
   joinSecureChunks,
   safeSessionKey,
   splitSecureChunks,
 } from "./readingDraftCodec";
+import { normalizeReadingActiveSeconds } from "./readingSessionState";
 
 const META_KEY = "reading_draft_meta_v2";
 const CHUNK_PREFIX = "reading_draft_chunk_v2_";
@@ -28,6 +29,7 @@ export type ReadingDraft = {
   pageStart: string;
   pageEnd: string;
   startedAt: number;
+  activeSeconds: number;
   updatedAt: number;
   items: ReadingDraftItem[];
   syncedSeq: number;
@@ -62,25 +64,42 @@ function itemChunkKey(
   sessionKey: string,
   seq: number,
   index: number,
+  generation?: string,
 ): string {
-  return `${ITEM_CHUNK_PREFIX}${safeSessionKey(sessionKey)}_${seq}_${index}`;
+  const version = generation ? `${generation}_` : "";
+  return `${ITEM_CHUNK_PREFIX}${safeSessionKey(sessionKey)}_${seq}_${version}${index}`;
 }
 
 async function writeItem(
   sessionKey: string,
   item: ReadingDraftItem,
 ): Promise<void> {
+  const rawPrevious = await SecureStore.getItemAsync(itemKey(sessionKey, item.seq));
+  let previous: { chunks?: number; generation?: string } | null = null;
+  try {
+    previous = rawPrevious ? JSON.parse(rawPrevious) : null;
+  } catch {
+    previous = null;
+  }
   const chunks = splitSecureChunks(JSON.stringify(item));
+  const generation = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   for (let i = 0; i < chunks.length; i += 1) {
     await SecureStore.setItemAsync(
-      itemChunkKey(sessionKey, item.seq, i),
+      itemChunkKey(sessionKey, item.seq, i, generation),
       chunks[i],
     );
   }
   await SecureStore.setItemAsync(
     itemKey(sessionKey, item.seq),
-    JSON.stringify({ chunks: chunks.length }),
+    JSON.stringify({ chunks: chunks.length, generation }),
   );
+  if (previous) {
+    for (let i = 0; i < (previous.chunks ?? 0); i += 1) {
+      await SecureStore.deleteItemAsync(
+        itemChunkKey(sessionKey, item.seq, i, previous.generation),
+      );
+    }
+  }
 }
 
 async function readItem(
@@ -89,12 +108,12 @@ async function readItem(
 ): Promise<ReadingDraftItem | null> {
   const rawMeta = await SecureStore.getItemAsync(itemKey(sessionKey, seq));
   if (!rawMeta) return null;
-  const meta = JSON.parse(rawMeta) as { chunks?: number };
+  const meta = JSON.parse(rawMeta) as { chunks?: number; generation?: string };
   if (!Number.isInteger(meta.chunks) || (meta.chunks ?? 0) < 1) return null;
   const chunks: string[] = [];
   for (let i = 0; i < meta.chunks!; i += 1) {
     const chunk = await SecureStore.getItemAsync(
-      itemChunkKey(sessionKey, seq, i),
+      itemChunkKey(sessionKey, seq, i, meta.generation),
     );
     if (chunk === null) return null;
     chunks.push(chunk);
@@ -108,9 +127,11 @@ async function deleteItem(sessionKey: string, seq: number): Promise<void> {
   await SecureStore.deleteItemAsync(itemKey(sessionKey, seq));
   if (!rawMeta) return;
   try {
-    const meta = JSON.parse(rawMeta) as { chunks?: number };
+    const meta = JSON.parse(rawMeta) as { chunks?: number; generation?: string };
     for (let i = 0; i < (meta.chunks ?? 0); i += 1) {
-      await SecureStore.deleteItemAsync(itemChunkKey(sessionKey, seq, i));
+      await SecureStore.deleteItemAsync(
+        itemChunkKey(sessionKey, seq, i, meta.generation),
+      );
     }
   } catch {
     // Meta corrompida ja foi de-indexada; chunks orfaos nao ficam acessiveis.
@@ -169,7 +190,15 @@ export async function loadReadingDraft(): Promise<ReadingDraft | null> {
       items.push(item);
     }
     const { itemCount: _itemCount, ...header } = parsed as StoredDraft;
-    return { ...header, items };
+    return {
+      ...header,
+      activeSeconds: normalizeReadingActiveSeconds(
+        (parsed as Partial<StoredDraft>).activeSeconds,
+        parsed.startedAt,
+        parsed.updatedAt,
+      ),
+      items,
+    };
   } catch {
     return null;
   }
@@ -192,6 +221,11 @@ async function loadLegacyReadingDraft(): Promise<ReadingDraft | null> {
     if (!Array.isArray(draft.items) || typeof draft.sessionKey !== "string") {
       return null;
     }
+    draft.activeSeconds = normalizeReadingActiveSeconds(
+      draft.activeSeconds,
+      draft.startedAt,
+      draft.updatedAt,
+    );
     await saveReadingDraft(draft);
     await SecureStore.deleteItemAsync(LEGACY_META_KEY);
     for (let i = 0; i < meta.chunks; i += 1) {
@@ -217,6 +251,33 @@ export function saveReadingDraft(draft: ReadingDraft): Promise<void> {
       await writeItem(draft.sessionKey, draft.items[i]);
     }
 
+    await commitDraftHeader(draft, previous, sameSession);
+  });
+}
+
+// Correções e remoções são raras e explícitas. Regravar os itens atuais antes
+// de trocar o header evita que o fluxo normal de autosave perca sua otimização.
+export function mutateReadingDraft(draft: ReadingDraft): Promise<void> {
+  return serialized(async () => {
+    const previous = await readMeta();
+    const sameSession = previous?.sessionKey === draft.sessionKey;
+    for (const item of draft.items) {
+      await writeItem(draft.sessionKey, item);
+    }
+    await commitDraftHeader(draft, previous, sameSession);
+    if (previous && sameSession && previous.itemCount > draft.items.length) {
+      for (let seq = draft.items.length + 1; seq <= previous.itemCount; seq += 1) {
+        await deleteItem(draft.sessionKey, seq);
+      }
+    }
+  });
+}
+
+async function commitDraftHeader(
+  draft: ReadingDraft,
+  previous: DraftMeta | null,
+  sameSession: boolean,
+): Promise<void> {
     const { items: _items, ...header } = draft;
     const stored: StoredDraft = { ...header, itemCount: draft.items.length };
     const chunks = splitSecureChunks(JSON.stringify(stored));
@@ -248,19 +309,20 @@ export function saveReadingDraft(draft: ReadingDraft): Promise<void> {
         }
       }
     }
-  });
 }
 
 export function clearReadingDraft(): Promise<void> {
   return serialized(async () => {
     const meta = await readMeta();
+    // Apagar o ponteiro e o commit da operacao. Falhas limpando chunks orfaos
+    // nao podem fazer uma sessao descartada continuar visivel na interface.
     await SecureStore.deleteItemAsync(META_KEY);
     if (!meta) return;
     for (let i = 0; i < meta.chunks; i += 1) {
-      await SecureStore.deleteItemAsync(chunkKey(meta.generation, i));
+      await SecureStore.deleteItemAsync(chunkKey(meta.generation, i)).catch(() => {});
     }
     for (let seq = 1; seq <= meta.itemCount; seq += 1) {
-      await deleteItem(meta.sessionKey, seq);
+      await deleteItem(meta.sessionKey, seq).catch(() => {});
     }
   });
 }

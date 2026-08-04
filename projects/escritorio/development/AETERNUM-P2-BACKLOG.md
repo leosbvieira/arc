@@ -34,7 +34,7 @@ sistema nunca representou a rotina real do Leo.
 
 | # | Entrega | Frase do Leo que a originou | Esforço | Por que nessa posição |
 |---|---|---|:--:|---|
-| 1 | **Carregar as recorrências financeiras reais no ClickUp** e provar o digest cobrando de verdade | *"No d16 1., eu sugiro recriar."* / *"acho que faz mais sentido tratar como tarefas diferentes"* (12/jul, sobre os cartões) | S | **Não depende de código.** O motor de cobrança existe, roda e foi validado — e a lista Finance estava **vazia**. **Iniciado 12/jul:** condomínio (dia 5), cartões (dia 7), aluguel (dia 10) — 3 tasks, 1ª ocorrência ago/26. **Falta:** quebrar os cartões em **tarefas separadas** (decisão do Leo, 12/jul — pendente dos nomes/bancos), Unimed, NFs, checklist do IR, e **a recorrência** (ver abaixo). |
+| 1 | **Carregar as recorrências financeiras reais no ClickUp** e provar o digest cobrando de verdade | *"No d16 1., eu sugiro recriar."* / *"acho que faz mais sentido tratar como tarefas diferentes"* (12/jul, sobre os cartões) | S | **Não depende de código.** O motor de cobrança existe, roda e foi validado. **Dados confirmados 12/jul:** Inter mensal dia 5, XP mensal dia 7, Unimed mensal dia 20, NF mensal dia 3 e meta interna do IR anual em 15/mai. **Ainda falta confirmar:** se Inter/XP são todos os cartões ou 2 de 8; se NF é emitir ou pagar; se IR é preparar, enviar ou pagar; regra de vencimento em fim de semana; e ativar/provar a recorrência antes de limpar o lote atual. |
 | 2 | **Rotinas como dado editável no app** (bloco do dia + dias da semana + sub-passos ordenados) | *"eu faço skincare e tem uma ordem certa de produtos. tenho que me pesar. tenho que fazer o diário tb. tudo depende da parte do dia e/ou dia da semana (de quarta eu faria máscara, de domingo eu arrumaria a casa)"* (12/jul) | M | **Pedido novo, e é pré-requisito duro do item 3.** Hoje rotina é uma **string numa lista hardcoded** (`bff/app/routines.py`: 6 checks por template, o arquivo se declara *"config, não dado"*). Não existe: **pesagem**, **diário como item**, **ordem de passos** (skincare = 1 caixinha), **condicional por dia da semana** (`weekday` só é usado pra calcular início de semana — conferido), nem **bloco do dia** (todos os checks aparecem juntos na tela das 21h; "acordar-5h30" é marcado retroativamente à noite). **Decisão do Leo (12/jul): editáveis no app** — tela de Rotinas onde ele **adiciona/edita/reordena/remove** sem depender de mim. **Sem isto, a punição (item 3) desconta ponto sobre uma lista de rotinas que não é a dele.** O sistema entra com **poucos exemplos de partida** (abaixo); a lista real é **dado dele**, montada na tela. |
 | 3 | **Punição por pontos + Conquistas N1-4** (A3.3) | *"A3.3. Acho que faz sentido punição. Mas o que seria? Pontuação?"* | M | **Mantida e promovida ao topo por decisão do Leo (12/jul)**, contra a recomendação do GPT-5.6 (cortar) e contra a minha (fazer depois dos ritos). É a 2ª vez que ele sustenta punição contra a IA — ver nota de conflito nº10. Ficou atrás do item 2 por **dependência**, não por prioridade. **Risco registrado, aceito por ele:** o scorecard mede aderência a rotinas que o sistema ainda não ajuda a executar (não existe o toque das 5h30 nem o check-in das 8h20), então a punição vai descontar ponto num período em que parte do furo é do sistema. Aceite: saldo visível, desconto **só em padrão** (≥3 furos/7d), **teto semanal**, e o Mentor dizendo o motivo — não um placar mudo. |
 | 4 | **Notificação pelo app (push in-app) — o canal que ele pediu três vezes** | *"F. nao é melhor nao ter nada no telegram, apenas APP?"* (2ª rodada, reconfirmado na 3ª) / *"as notificações entram no app sim"* (12/jul, **confirmado**) | L | **Órfão estrutural.** Hoje **100% dos avisos saem por Telegram** — digest, fechamento, review, review nudge e até o lembrete de hora marcada (`bff/app/main.py:73`). `bff/app/push.py` e `/internal/notify` **existem e ninguém chama**. Exige dev build + VPS. **É pré-requisito lógico dos itens 5, 6 e 7:** construir o Shutdown das 19h e o toque das 5h30 em cima do Telegram é entregar contra a decisão dele. |
@@ -52,21 +52,21 @@ sistema nunca representou a rotina real do Leo.
 
 > **Regra de status:** `código concluído` significa backend + superfície observável + testes. Não significa que
 > credenciais, crons, VPS, dev build ou integrações reais foram ativados. A auditoria contrarian final passou com
-> **308 testes BFF**, `tsc --noEmit`, `git diff --check` e bundle Android/Hermes (865 módulos).
+> **348 testes BFF**, `tsc --noEmit` + 8 testes do app, `git diff --check` e bundle Android/Hermes (883 módulos).
 
 | # | Estado | Evidência / bloqueio restante |
 |---|---|---|
-| 1 | **Parcial — externo** | 26 ocorrências Finance já carregadas. Ainda dependem do Leo: nomes dos 8 cartões, Unimed, NFs, IR, limpeza do lote e decisão/ativação da recorrência no ClickUp. |
+| 1 | **Parcial — externo** | 26 ocorrências Finance já carregadas. Confirmados Inter dia 5, XP dia 7, Unimed dia 20, NF dia 3 e IR até 15/mai. Faltam os verbos de NF/IR, confirmar se existem outros cartões, definir fins de semana e provar a recorrência antes da limpeza do lote. |
 | 2 | **Código concluído** | CRUD/reordenação no app, filtros de bloco/dia/template, sub-passos fora do score e testes de troca de template sem pontuação fantasma. |
 | 3 | **Código concluído** | Saldo, padrão ≥3/7d, teto, Conquistas N1-4 e painel na Revisão. |
-| 4 | **Código concluído; ativação pendente** | Registro no boot, roteamento por `kind`, fan-out sem Telegram duplicado e limpeza de token inválido. Falta `eas.projectId`, dev build instalado, VPS e smoke de push no aparelho. |
+| 4 | **Código concluído; ativação local comprovada** | `eas.projectId`, Firebase, credenciais EAS, instalação Android e smoke de push no aparelho foram comprovados em 12/jul. Falta levar e provar o canal no VPS. |
 | 5 | **Código concluído; cron local ativo** | Shutdown 19h com tela, prioridades, follow-ups e staging. Task Windows `Aeternum Shutdown` instalada/Ready; falta levar e provar no VPS. |
 | 6 | **Código concluído; crons locais ativos** | Toque 5h30, check-in 8h20, jornal 8h30 e telas. Tasks Windows instaladas/Ready; o jornal abre Capturar. Falta provar no VPS/aparelho. |
 | 7 | **Código concluído** | Tarefa própria com hora, scheduler, agenda/temas na Abertura e resumo matinal. Falta smoke com ClickUp real após deploy. |
 | 8 | **Código concluído; credenciais pendentes** | ICS GCal/Outlook read-only + inserção GCal pessoal com confirmação, OAuth refresh, idempotência e retry reconciliado. Faltam URLs ICS/OAuth reais e smoke; Outlook continua somente leitura. |
 | 9 | **Código concluído** | Review semanal/mensal, janela mensal correta e objetivos acumulativos operáveis na Revisão. |
 | 10 | **Código concluído** | Edificação/prática na Revisão+tela, captura `sensivel` inclusive na fila offline, preview neutro e retenção sanitizada. |
-| 11 | **Código concluído; device gate pendente** | STT nativo opcional, buffer local append-only no SecureStore, autosave SQLite, pendências, compile único/retry e quotes verbatim. Falta dev build e smoke/soak longo no aparelho. |
+| 11 | **Código concluído; soak longo pendente** | STT nativo, abertura offline, recuperação do buffer e hooks falados (`quote`/`citação`) passaram no aparelho. O restore local/remoto e as corridas de navegação têm gates contrarian; falta apenas soak de sessão longa. |
 | 12 | **Código concluído; device smoke pendente** | Sugestão após compile, edição/aprovação explícita, export transacional e TSV compartilhável/recompartilhável no app. Falta importação real no Anki. |
 | 13 | **Código concluído; integração real pendente** | Propostas em lote, edição e confirmação explícita antes de mover. Falta smoke com Hermes + Staging reais. |
 
@@ -154,3 +154,18 @@ O risco não foi só perder pedido — foi **cristalizar** o que era inclinaçã
 ## Já corrigido hoje
 
 - **Hook `quote`** (`app/src/screens/Capture.tsx`): o parser da sessão de leitura só reconhecia `cita*`. Uma citação ditada como *"quote: ..."* — a palavra que o Leo usou — caía silenciosamente como "comentário" e perdia o verbatim. Agora `quote` e `cita*` viram `citação`. Ressalva do GPT, aceita: isso conserta o **texto digitado**; não entrega o pedido, que é **áudio contínuo** (item 8).
+
+## Backlog aberto (pós-P2)
+
+> Itens levantados **depois** do fechamento do P2. Ainda sem critério de aceite fechado nem posição —
+> ficam registrados aqui para não virarem órfãos de novo (o erro-raiz que este doc documenta).
+
+| # | Entrega | Frase / origem | Esforço | Notas |
+|---|---|---|:--:|---|
+| B1 | **Retorno visível da Captura rápida** — a tela mostrar o que a captura virou, não só "✅ anotado" | *"aparece coisa 'anotado' embaixo. Mas nao vejo o que, e nao sei pra onde vai"* (16/jul) | S/M | Hoje `/capture` é fire-and-forget: enfileira e responde `"✅ anotado"` na hora (`main.py:863`); o worker classifica em fundo (`capture_pipeline.py`) e materializa em **Staging (ClickUp)**, em **Edificação** (prefixos `hack:`/`aprendizado:`/`insight:`) ou no vault como Raw. A tela é **deliberadamente cega** ao resultado — o Leo não vê o quê foi capturado nem pra onde foi. **Opções a decidir:** (a) lista "capturas recentes" na própria tela puxando o status da fila (`pending`→`done`, tipo classificado, área); (b) link "ver na triagem" quando o item vira card; (c) só o texto verbatim ecoado. **Tensão a respeitar:** *zero-atrito* é o valor central da captura — o retorno não pode virar uma tela que exige leitura/ação a cada envio. Provável forma: rodapé discreto "última captura → Staging (tarefa)" + atalho, sem bloquear o fluxo. **Falta técnica:** um endpoint que exponha o verdict por `client_key` — hoje o app não recebe o `tipo`/destino de volta. |
+
+## Mapa do sistema (referência viva)
+
+O documento **`AETERNUM-MAPA-DO-SISTEMA.md`** (nesta mesma pasta) mapeia **todos os fluxos, funcionalidades,
+onde o sistema comunica, onde guarda e pra que serve cada peça** — pedido do Leo em 16/jul. Consultá-lo antes de
+mexer em qualquer superfície evita repetir a auditoria de fidelidade a cada dúvida de "isso existe? onde vai?".
