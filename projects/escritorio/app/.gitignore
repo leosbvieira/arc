@@ -6,3 +6,8 @@ dist/
 web-build/
 *.log
 .DS_Store
+
+# Config do Firebase: contem a API key AIza do projeto e ESTE REPO E PUBLICO.
+# Fica so na maquina; para build no EAS, subir como "file secret" (eas secret:create
+# --type file --name GOOGLE_SERVICES_JSON) e apontar googleServicesFile pra ele.
+google-services.json
