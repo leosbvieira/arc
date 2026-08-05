@@ -19,6 +19,7 @@ from . import (
     clickup_client,
     google_calendar,
     hermes_client,
+    mentor_contexto,
     notify,
     objetivos,
     pontos,
@@ -1367,9 +1368,17 @@ async def discard_reading_session(
 
 @app.post("/chat", response_model=ChatOut)
 async def chat(body: ChatIn, _: str = Depends(require_auth)):
-    """Rota síncrona do Chat: fala com o Hermes no modo escolhido e devolve a resposta."""
+    """Rota síncrona do Chat: fala com o Hermes no modo escolhido e devolve a resposta.
+
+    Mentor e Conselho recebem o estado do sistema; Capturas não precisa (é sobre o
+    texto que o Leo acabou de trazer) e pagaria tokens à toa."""
+    contexto = (
+        await mentor_contexto.montar()
+        if body.mode in ("Mentor", "Conselho")
+        else None
+    )
     try:
-        reply = await hermes_client.chat(body.text, body.mode)
+        reply = await hermes_client.chat(body.text, body.mode, contexto=contexto)
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
