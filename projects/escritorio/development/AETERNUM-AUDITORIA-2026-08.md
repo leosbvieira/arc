@@ -9,6 +9,32 @@ escopo: "leitura, tarefas, cobrança, triagem, lembretes, agenda, diário/daily,
 
 # AUDITORIA — Aeternum, agosto 2026
 
+> ## Status dos consertos (2026-08-05)
+>
+> | Achado | Estado | Commit |
+> |---|---|---|
+> | **C1** fechamento apaga a manhã | ✅ corrigido nos dois lados, provado ao vivo | `918c7a9` |
+> | **C1.1** testes certificam o bug | ✅ teste honesto escrito e visto falhar (`assert 0 == 1`) | `918c7a9` |
+> | **C1.2** incentivo invertido | ✅ rotina não tocada não entra mais no payload | `918c7a9` |
+> | **C6** logout trava com token expirado | ✅ sair não depende mais do servidor | `2387542` |
+> | **A2** LLM à toa na Home | ✅ `/triagem`: 8,58s → **0,02s** | `578e67f` |
+> | **M4** fuso no fechamento | ✅ usa a data do Leo, não a do processo | `578e67f` |
+> | **M1** badge do digest mentindo | ✅ count acompanha a lista | `d042bbb` |
+> | **A9** tarefa duplicada | ✅ dedupe por id, destino vence o resíduo | `d042bbb` |
+> | **C2/C3** sem prazo → sem cobrança e ⏰ morto | ⏳ **o maior pendente** | — |
+> | **C4** sem adiar/reagendar | ⏳ pendente | — |
+> | **C5** Mentor sem contexto nem histórico | ⏳ pendente | — |
+> | **A1** 48% das notificações perdidas (PC) | ⏳ depende do VPS | — |
+>
+> Ainda pendente e **fora de código**: decidir o que fazer com os `routine_checks`
+> contaminados (recuperar ou zerar `ciclo_inicio`) — ver o aviso no início do Plano.
+> Cada fechamento feito antes do `918c7a9` adicionou lixo; a partir dele, para.
+>
+> Também descoberto ao consertar: **`TZ` está duplicado em 11 pontos** do BFF. O
+> comentário em `hermes_client.py` já pedia `app/tz.py` "no 3º uso"; a extração segue
+> pendente e é o que bloqueia consertar os `date.today()` de `store.py` (store não
+> pode importar `pontos`, porque `pontos` importa `store`).
+
 > Pergunta do Leo: *"teste todos os fluxos e veja se tá bom (eu acho que não tá tanto)."*
 > Resposta curta: **você está certo, e a causa é mais estrutural do que acabamento.**
 
