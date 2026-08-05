@@ -1826,6 +1826,9 @@ async def abertura(
 
     return {
         "data": data,
+        # Modo Retorno (lei 4): a Home usa isto para trocar a pilha de atrasadas por
+        # uma porta só quando o Leo volta de uma ausência longa.
+        "dias_ausente": store.dias_desde_ultima_interacao(),
         "template": template,
         "rotinas_manha": rotinas_manha,
         "prioridades_de_ontem": ontem["prioridades"] if ontem else [],

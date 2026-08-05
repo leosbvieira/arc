@@ -37,3 +37,35 @@ test("agenda remove horários passados e ordena as próximas entradas", () => {
   );
   assert.deepEqual(next.map((item) => item.title), ["reunião", "entrega"]);
 });
+
+// --- Modo Retorno (lei 4: dia quebrado = replanejar, nunca pilha de culpa) ---
+
+test("ausência de 7+ dias vira 'voltar hoje', não a pilha de atrasadas", () => {
+  const acao = actionForAt(null, { dias_ausente: 10 }, new Date(2026, 7, 4, 21, 30));
+
+  assert.equal(acao.target, "capturar");
+  assert.match(acao.eyebrow + acao.title, /volt/i);
+});
+
+test("Modo Retorno vence QUALQUER rito do horário", () => {
+  // 21h30 normalmente manda fechar o dia; voltando de 10 dias, não.
+  const rito = actionForAt(null, {}, new Date(2026, 7, 4, 21, 30));
+  const retorno = actionForAt(null, { dias_ausente: 10 }, new Date(2026, 7, 4, 21, 30));
+
+  assert.equal(rito.target, "fechar");
+  assert.notEqual(retorno.target, "fechar");
+});
+
+test("6 dias ainda não é retorno — o limiar é 7", () => {
+  assert.equal(
+    actionForAt(null, { dias_ausente: 6 }, new Date(2026, 7, 4, 21, 30)).target,
+    "fechar",
+  );
+});
+
+test("sem informação de ausência nada muda", () => {
+  assert.equal(
+    actionForAt(null, {}, new Date(2026, 7, 4, 21, 30)).target,
+    "fechar",
+  );
+});

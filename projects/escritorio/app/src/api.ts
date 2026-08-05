@@ -543,6 +543,8 @@ export type Checkin = {
 
 export type Abertura = {
   data: string;
+  /** Dias desde a última interação. >=7 dispara o Modo Retorno na Home (lei 4). */
+  dias_ausente?: number;
   template: Template | null; // null = ainda não respondeu o toque das 5h30
   rotinas_manha: RotinaDoDia[];
   prioridades_de_ontem: string[]; // vêm do Shutdown de ontem; [] se não houve

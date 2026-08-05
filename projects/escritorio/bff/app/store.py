@@ -1357,6 +1357,18 @@ def reject_reading_draft(session_id: int) -> tuple[str, dict | None]:
 # --- telemetry --------------------------------------------------------------
 
 
+def dias_desde_ultima_interacao() -> int:
+    """Dias desde o último evento de telemetria — a assinatura de que o Leo esteve
+    aqui. 0 quando nunca houve evento: primeiro uso NÃO é retorno (seria dar
+    "bem-vindo de volta" na estreia)."""
+    with closing(_connect()) as con:
+        row = con.execute("SELECT MAX(ts) FROM telemetry").fetchone()
+    ultimo = row[0] if row else None
+    if not ultimo:
+        return 0
+    return max(0, int((time.time() - float(ultimo)) // 86400))
+
+
 def log_event(evento: str, ref: str = "", meta: dict | None = None) -> None:
     """Registra um evento de telemetria. `meta` NUNCA carrega conteúdo de captura
     (lei 7) — apenas metadados sem PII (contadores, ids, classes de erro)."""

@@ -4,6 +4,8 @@ export type HomeSignals = {
   staging: number | null;
   anki: number | null;
   reading: number | null;
+  /** Dias desde a última interação. >=7 dispara o Modo Retorno. */
+  dias_ausente?: number;
 };
 
 export type HomeAction = {
@@ -94,6 +96,23 @@ export function actionForAt(
 ): HomeAction {
   const hour = now.getHours();
   const sunday = now.getDay() === 0;
+
+  // MODO RETORNO — vem antes de tudo, de propósito.
+  // Voltar depois de uma semana fora e receber o digest inteiro em 🚨, o "Foco de
+  // hoje" lotado de atrasadas e o rito da hora como se nada tivesse acontecido é
+  // exatamente a pilha de culpa que a lei 4 proíbe, no momento em que ela mais
+  // machuca. Para um sistema desenhado para TDAH, é a diferença entre voltar e
+  // desinstalar. Uma porta só, sem cobrança, sem placar.
+  if ((signals.dias_ausente ?? 0) >= 7) {
+    return {
+      icon: "sunrise",
+      eyebrow: "modo retorno",
+      title: "Bem-vindo de volta",
+      subtitle: `${signals.dias_ausente} dias fora. Comece pelo que está na cabeça agora — o resto espera.`,
+      target: "capturar",
+    };
+  }
+
   if (hour < 8 && !abertura?.template) {
     return { icon: "sunrise", eyebrow: "abrir o dia", title: "Yoga ou corrida?", subtitle: "Defina o ritmo antes de negociar com o dia.", target: "abertura" };
   }

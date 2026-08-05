@@ -79,7 +79,11 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
 
     await Promise.all([
       run("digest", getDigest(), setDigest),
-      run("abertura", getAbertura(), setAbertura),
+      run("abertura", getAbertura(), (value) => {
+        setAbertura(value);
+        // Modo Retorno: o sinal precisa chegar ao actionForAt, que decide a Home.
+        setSignals((current) => ({ ...current, dias_ausente: value.dias_ausente ?? 0 }));
+      }),
       run("points", getPontos(), setPoints),
       run("triagem", getTriagem(), (value) => setSignals((current) => ({ ...current, staging: value.n }))),
       run("anki", listAnkiCards("sugerido"), (value) => setSignals((current) => ({ ...current, anki: value.length }))),
