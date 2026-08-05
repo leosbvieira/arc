@@ -1188,19 +1188,6 @@ def claim_reading_compile(session_id: int) -> tuple[str, dict | None]:
         return "claimed", _reading_payload(con, row)
 
 
-def save_reading_draft(session_id: int, draft_md: str, source_digest: str) -> None:
-    with closing(_connect()) as con:
-        cur = con.execute(
-            "UPDATE reading_sessions SET draft_md = ?, source_digest = ?, "
-            "updated = ?, last_error = NULL "
-            "WHERE id = ? AND status = 'compiling'",
-            (draft_md, source_digest, time.time(), session_id),
-        )
-        con.commit()
-        if cur.rowcount != 1:
-            raise ValueError("reading_compile_sem_claim")
-
-
 def stage_reading_draft(session_id: int, draft_md: str, source_digest: str) -> dict:
     """Guarda o preview e devolve a sessão a 'pending' (staged): fora do lock transitório
     de 'compiling', com o buffer congelado por draft_md não-nulo até aprovar/rejeitar."""
