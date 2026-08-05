@@ -18,6 +18,24 @@ def client(tmp_path, monkeypatch):
     app.dependency_overrides.clear()
 
 
+async def test_propose_triage_com_lote_vazio_nao_chama_o_hermes(monkeypatch):
+    """Sem item para triar não há o que perguntar. O curto-circuito existia só para
+    `hermes_mock`, então em produção (Hermes real) a Home pagava uma chamada de LLM
+    inteira — ~8,5s medidos — para classificar zero itens, estourando o timeout de
+    6s da tela e acendendo "alguns dados não responderam" em TODA carga."""
+    monkeypatch.setattr(settings, "hermes_mock", False)
+    chamadas = []
+
+    async def fake_oneshot(prompt):
+        chamadas.append(prompt)
+        return "[]"
+
+    monkeypatch.setattr(hermes_client, "_oneshot", fake_oneshot)
+
+    assert await hermes_client.propose_triage([], areas=["Trabalho"]) == []
+    assert chamadas == []
+
+
 async def test_propose_triage_envia_lote_e_extrai_json(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     chamadas = []

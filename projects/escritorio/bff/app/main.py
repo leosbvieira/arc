@@ -2275,7 +2275,10 @@ async def closing_draft(body: ClosingDraftIn, _=Depends(require_auth)):
 async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
     import hashlib
 
-    today = date.today().isoformat()
+    # Data do LEO, não do processo: o fechamento é às 21h e num VPS em UTC o
+    # servidor já está em D+1 — o diário iria para amanhã e o dia vivido ficaria
+    # sem linha nenhuma (que, por "linha ausente não é furo", some do scorecard).
+    today = pontos.hoje_local().isoformat()
     raw_hash = hashlib.sha1(body.raw_text.encode("utf-8")).hexdigest()[:8]
     raw_path = await vault_client.write_raw(
         body.raw_text,
@@ -2286,7 +2289,7 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
         f"{hashlib.sha1(body.draft_md.encode()).hexdigest()[:8]} -->"
     )
     block = (
-        f"## Fechamento ({datetime.now():%H:%M}) {marker}\n\n"
+        f"## Fechamento ({datetime.now(TZ):%H:%M}) {marker}\n\n"
         f"{body.draft_md}\n\n_raw: [[{raw_path}]]_\n"
     )
     daily_path = await vault_client.append_file(

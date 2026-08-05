@@ -60,6 +60,14 @@ def _checks() -> dict[str, int]:
     }
 
 
+def _checks_on(data: str) -> dict[str, int]:
+    return {
+        row["rotina"]: row["feito"]
+        for row in store.get_checks_since("2000-01-01")
+        if row["data"] == data
+    }
+
+
 # --- POST /dia/template (o toque das 5h30) -----------------------------------
 
 
@@ -339,6 +347,36 @@ def test_fechamento_pode_corrigir_a_marcacao_da_manha(client, vault):
     })
 
     assert _checks()["acordar-5h30"] == 0
+
+
+def test_fechamento_grava_no_dia_local_do_leo_nao_no_do_servidor(client, monkeypatch):
+    """No VPS em UTC, das 21h às 24h BRT o servidor já virou D+1. O fechamento é às
+    21h: gravar pelo relógio do processo mandaria o diário e os checks para AMANHÃ,
+    e o dia vivido ficaria sem nenhuma linha — que, pela regra "linha ausente não é
+    furo", some do scorecard em silêncio."""
+    from app import pontos
+
+    paths: list[str] = []
+
+    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None):
+        paths.append(path)
+        return path
+
+    async def fake_raw(text, capture_id, ts=None):
+        return "1- Inbox/Raw/raw-x.md"
+
+    monkeypatch.setattr(main.vault_client, "append_file", fake_append)
+    monkeypatch.setattr(main.vault_client, "write_raw", fake_raw)
+    monkeypatch.setattr(pontos, "hoje_local", lambda: date(2026, 7, 15))
+
+    r = client.post("/closing/approve", json={
+        "raw_text": "x", "draft_md": "y", "template": "yoga",
+        "checks": [{"rotina": "diario", "feito": True}],
+    })
+    assert r.status_code == 200
+
+    assert paths == ["Daily/2026-07-15.md"]
+    assert _checks_on("2026-07-15")["diario"] == 1
 
 
 def test_closing_routines_devolve_o_que_ja_foi_marcado(client, vault):

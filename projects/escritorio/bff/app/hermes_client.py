@@ -185,6 +185,11 @@ async def propose_triage(itens: list[dict], areas: list[str]) -> list[dict]:
     A resposta é apenas proposta (lei 3): nenhuma tarefa é movida aqui. No modo
     mock, devolve uma lista vazia para preservar a triagem manual.
     """
+    # Sem item não há o que perguntar. Sem esta guarda a Home pagava uma chamada de
+    # LLM inteira (~8,5s) para classificar zero itens — mais que o timeout de 6s da
+    # tela, o que acendia "alguns dados não responderam" em toda carga.
+    if not itens:
+        return []
     if settings.hermes_mock:
         return []
 
