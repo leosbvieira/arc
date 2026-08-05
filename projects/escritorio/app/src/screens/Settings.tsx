@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 
 import { clearToken, getBffUrl, setBffUrl, unregisterDevice } from "../api";
+import { performLogout } from "../logout";
 import { disableLocalPush, getRegisteredPushToken, registerForPushToken } from "../notifications";
 import { colors, fonts, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
@@ -53,15 +54,21 @@ export default function Settings({
         onPress: async () => {
           try {
             await beforeLogout();
-            const pushToken = await getRegisteredPushToken() ?? await registerForPushToken();
-            if (pushToken) await unregisterDevice(pushToken);
-            await disableLocalPush();
-            await clearToken();
-            onLogout();
           } catch {
+            /* best-effort: nada aqui pode impedir a saída */
+          }
+          const { serverOk } = await performLogout({
+            pushToken: async () =>
+              (await getRegisteredPushToken()) ?? (await registerForPushToken()),
+            unregisterDevice,
+            disableLocalPush,
+            clearToken,
+          });
+          onLogout();
+          if (!serverOk) {
             Alert.alert(
-              "Não foi possível sair com segurança",
-              "O servidor não confirmou a remoção das notificações. Verifique a conexão e tente novamente.",
+              "Você saiu deste aparelho",
+              "Não consegui avisar o servidor para parar as notificações — pode ser sessão expirada ou falta de conexão. Se elas continuarem, entre de novo e saia com o servidor acessível.",
             );
           }
         },
