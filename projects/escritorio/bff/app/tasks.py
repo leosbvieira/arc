@@ -184,6 +184,26 @@ async def create(
     return _display(t)
 
 
+async def adiar(task_id: str, due_ts: float, novo_offset: int) -> Task | None:
+    """Remarca o prazo. Lei 4: replanejar não é envergonhar — sem isto, a única forma
+    de calar uma cobrança é concluir mentindo, o que polui pontos e review."""
+    if _use_clickup():
+        if not await clickup_client.set_due(task_id, due_ts):
+            return None
+        store.log_event("task_adiada", ref=task_id)
+        src, _ = await _source()
+        for t in src:
+            if t.id == task_id:
+                return _display(t)
+        return None
+    for t in _MOCK:
+        if t.id == task_id:
+            t.due_offset = novo_offset
+            store.log_event("task_adiada", ref=task_id)
+            return _display(t)
+    return None
+
+
 async def complete(task_id: str) -> bool:
     if _use_clickup():
         ok = await clickup_client.complete(task_id)

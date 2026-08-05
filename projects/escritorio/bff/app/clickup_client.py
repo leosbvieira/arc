@@ -281,6 +281,24 @@ async def create(
         return task
 
 
+async def set_due(task_id: str, due_ts: float, *, due_date_time: bool = False) -> bool:
+    """Remarca o prazo. Mesma guarda do complete: só tasks das listas do Aeternum."""
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        response = await client.get(f"{API}/task/{task_id}", headers=_headers())
+        response.raise_for_status()
+        list_id = str((response.json().get("list") or {}).get("id"))
+
+        if list_id not in AREA_LISTS.values():
+            return False
+
+        response = await client.put(
+            f"{API}/task/{task_id}",
+            json={"due_date": int(due_ts * 1000), "due_date_time": due_date_time},
+            headers=_headers(),
+        )
+        return response.status_code == 200
+
+
 async def complete(task_id: str) -> bool:
     """Fecha somente tasks pertencentes às listas próprias do Aeternum."""
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:

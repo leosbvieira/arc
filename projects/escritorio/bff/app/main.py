@@ -1434,6 +1434,34 @@ async def create_task(body: CreateTaskIn, _: str = Depends(require_auth)):
     return t.model_dump()
 
 
+class AdiarIn(BaseModel):
+    due: str
+
+    @field_validator("due")
+    @classmethod
+    def validar_due(cls, valor: str) -> str:
+        """Fail-closed igual ao create: data ambígua não remarca cobrança."""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor):
+            raise ValueError("due inválido; use YYYY-MM-DD")
+        try:
+            date.fromisoformat(valor)
+        except ValueError:
+            raise ValueError("due inválido; use YYYY-MM-DD") from None
+        return valor
+
+
+@app.patch("/tasks/{task_id}")
+async def adiar_task(task_id: str, body: AdiarIn, _: str = Depends(require_auth)):
+    """Adia/reagenda. Sem isto, calar uma cobrança exigia concluir mentindo — e é
+    aguentar 🚨 todo dia que treina o Leo a ignorar o digest."""
+    novo = date.fromisoformat(body.due)
+    due_ts = datetime.combine(novo, _time.min, tzinfo=TZ).timestamp()
+    t = await tasks.adiar(task_id, due_ts, (novo - pontos.hoje_local()).days)
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "task não encontrada")
+    return t.model_dump()
+
+
 @app.post("/tasks/{task_id}/complete")
 async def complete_task(task_id: str, _: str = Depends(require_auth)):
     ok = await tasks.complete(task_id)

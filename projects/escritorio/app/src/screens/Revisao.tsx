@@ -757,6 +757,7 @@ export default function Revisao({
         taskId={detailId}
         onClose={() => setDetailId(null)}
         onComplete={completeById}
+        onAdiada={load}
       />
     </View>
   );

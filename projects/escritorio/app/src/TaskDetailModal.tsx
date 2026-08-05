@@ -13,7 +13,8 @@ import {
   View,
 } from "react-native";
 
-import { getTaskDetail, TaskDetail } from "./api";
+import { getTaskDetail, TaskDetail, adiarTask } from "./api";
+import { DueChoice, dueFromChoice } from "./taskDue";
 import { areaColor, colors, fonts, radius, spacing } from "./theme";
 import { AppButton } from "./ui";
 
@@ -21,16 +22,20 @@ export function TaskDetailModal({
   taskId,
   onClose,
   onComplete,
+  onAdiada,
 }: {
   taskId: string | null;
   onClose: () => void;
   onComplete?: (id: string) => Promise<boolean | void>;
+  /** Chamado após adiar, para a tela recarregar a lista. */
+  onAdiada?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [adiando, setAdiando] = useState<string | null>(null);
 
   useEffect(() => {
     if (!taskId) return;
@@ -125,6 +130,44 @@ export function TaskDetailModal({
                 <View style={{ height: spacing.sm }} />
               </>
             ) : null}
+
+            {/* Lei 4: replanejar, não envergonhar. Sem isto, a única forma de calar
+                uma cobrança era concluir mentindo — e aguentar 🚨 todo dia é o que
+                treina a ignorar o digest. */}
+            <Text style={styles.label}>adiar para</Text>
+            <View style={styles.adiarRow}>
+              {([
+                { key: "hoje", label: "hoje" },
+                { key: "amanha", label: "amanhã" },
+                { key: "semana", label: "+7 dias" },
+              ] as { key: DueChoice; label: string }[]).map((option) => (
+                <Pressable
+                  key={option.label}
+                  disabled={adiando !== null}
+                  onPress={async () => {
+                    const due = dueFromChoice(option.key);
+                    if (!due) return;
+                    setAdiando(option.label);
+                    try {
+                      await adiarTask(detail.id, due);
+                      onAdiada?.();
+                      onClose();
+                    } catch (error) {
+                      Alert.alert(
+                        "Adiar",
+                        error instanceof Error ? error.message : "Não consegui adiar.",
+                      );
+                    } finally {
+                      setAdiando(null);
+                    }
+                  }}
+                  style={[styles.adiarPill, adiando === option.label && styles.adiarPillBusy]}
+                >
+                  <Text style={styles.adiarPillText}>{option.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ height: spacing.sm }} />
             {detail.url ? (
               <>
                 <AppButton
@@ -179,6 +222,16 @@ const styles = StyleSheet.create({
   meta: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.md },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   metaText: { fontFamily: fonts.ui, fontSize: 13, color: colors.text },
+  adiarRow: { flexDirection: "row", gap: spacing.sm },
+  adiarPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  adiarPillBusy: { opacity: 0.5 },
+  adiarPillText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.text },
   label: {
     fontFamily: fonts.mono,
     fontSize: 10,

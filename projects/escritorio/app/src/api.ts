@@ -198,6 +198,18 @@ export async function createTask(
   if (!r.ok) throw new Error(`erro ${r.status}`);
 }
 
+/** Remarca o prazo (YYYY-MM-DD). Lei 4: replanejar, nao envergonhar — sem isto a
+ *  unica forma de calar uma cobranca e concluir mentindo. */
+export async function adiarTask(id: string, due: string): Promise<void> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/tasks/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: await authHeaders(),
+    body: JSON.stringify({ due }),
+  });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+}
+
 export async function completeTask(id: string): Promise<void> {
   const base = await getBffUrl();
   const r = await fetch(`${base}/tasks/${id}/complete`, {

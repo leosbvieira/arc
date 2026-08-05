@@ -350,7 +350,7 @@ export default function Tasks({
       )}
       </ScrollView>
 
-      <TaskDetailModal taskId={detailId} onClose={() => setDetailId(null)} onComplete={completeById} />
+      <TaskDetailModal taskId={detailId} onClose={() => setDetailId(null)} onComplete={completeById} onAdiada={() => load(true)} />
     </KeyboardAvoidingView>
   );
 }
