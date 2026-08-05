@@ -122,3 +122,68 @@ async def test_item_ruim_nao_aborta_os_demais_do_tick(tmp_path, monkeypatch):
     assert second_id not in {
         item["id"] for item in store.due_schedules(time.time())
     }
+
+
+async def test_lembrete_muito_atrasado_avisa_que_esta_atrasado(tmp_path, monkeypatch):
+    """A tabela `scheduler` ficou VAZIA a vida inteira (o app nunca mandava hora), então
+    isto nunca doeu. Agora que o ⏰ funciona, um lembrete perdido enquanto o PC estava
+    desligado chega horas depois — e o texto não pode fingir que é agora."""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
+    store.init_db()
+    sent = []
+
+    async def fake_send(text):
+        sent.append(text)
+        return True
+
+    monkeypatch.setattr(telegram, "send", fake_send)
+    store.add_schedule(time.time() - 4 * 3600, "minha", "ligar pro dentista")
+
+    await main.fire_due_schedules()
+
+    assert len(sent) == 1
+    assert "atrasado" in sent[0].lower() or "era " in sent[0].lower()
+    assert "ligar pro dentista" in sent[0]
+
+
+async def test_lembrete_no_horario_nao_diz_atrasado(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
+    store.init_db()
+    sent = []
+
+    async def fake_send(text):
+        sent.append(text)
+        return True
+
+    monkeypatch.setattr(telegram, "send", fake_send)
+    store.add_schedule(time.time() - 30, "minha", "reunião")
+
+    await main.fire_due_schedules()
+
+    assert sent == ["⏰ reunião"]
+
+
+async def test_fila_represada_nao_vira_rajada(tmp_path, monkeypatch):
+    """Voltar de um dia desligado não pode despejar 10 avisos em segundos: vira ruído e
+    ele desliga a notificação. Drena aos poucos — mas NADA se perde (lei 1)."""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
+    store.init_db()
+    sent = []
+
+    async def fake_send(text):
+        sent.append(text)
+        return True
+
+    monkeypatch.setattr(telegram, "send", fake_send)
+    for i in range(10):
+        store.add_schedule(time.time() - 60 * (i + 1), "minha", f"item {i}")
+
+    await main.fire_due_schedules()
+    primeiro_tick = len(sent)
+
+    assert primeiro_tick < 10, "não pode disparar tudo de uma vez"
+
+    for _ in range(10):
+        await main.fire_due_schedules()
+
+    assert len(sent) == 10, "nada pode se perder — só drena mais devagar"

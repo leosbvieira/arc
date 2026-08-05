@@ -82,14 +82,37 @@ async def _capture_worker() -> None:
         await asyncio.sleep(settings.capture_worker_interval)
 
 
+# Quantos lembretes saem por tick (60s). Voltar de um dia com o PC desligado não pode
+# despejar a fila inteira em segundos: vira ruído e ele desliga a notificação. Drena aos
+# poucos — e NADA se perde, o resto volta no tick seguinte (lei 1).
+MAX_LEMBRETES_POR_TICK = 3
+
+# A partir daqui o aviso deixa de ser "agora" e passa a dizer de quando era.
+ATRASO_QUE_MERECE_AVISO_S = 45 * 60
+
+
+def _texto_do_lembrete(item: dict, agora: float) -> str:
+    """Um lembrete perdido enquanto o PC estava desligado chega horas depois. Sem dizer
+    de quando era, o aviso mente — e a hora está fixa no texto, então o Leo leria
+    "⏰ ligar pro dentista" às 22h achando que é para agora."""
+    atraso = agora - float(item["quando"])
+    if atraso < ATRASO_QUE_MERECE_AVISO_S:
+        return f"⏰ {item['ref']}"
+    quando = datetime.fromtimestamp(float(item["quando"]), TZ)
+    return f"⏰ (era {quando:%H:%M}) {item['ref']}"
+
+
 async def fire_due_schedules() -> None:
     """O ⏰ da hora marcada. Sai pela camada única (notify): push primeiro, Telegram de
     ponte. Quem loga em `notif_log` é o `notificar` — o canal REAL usado."""
     import time as _t
 
-    for item in store.due_schedules(_t.time()):
+    agora = _t.time()
+    for item in store.due_schedules(agora)[:MAX_LEMBRETES_POR_TICK]:
         try:
-            entrega = await notify.notificar("hora_marcada", f"⏰ {item['ref']}")
+            entrega = await notify.notificar(
+                "hora_marcada", _texto_do_lembrete(item, agora)
+            )
             if entrega["push"] or entrega["telegram"]:
                 store.mark_schedule_fired(item["id"])
         except Exception:  # noqa: BLE001 - um item ruim não aborta o tick

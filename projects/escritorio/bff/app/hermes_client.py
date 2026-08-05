@@ -86,6 +86,13 @@ def _hermes_python() -> str:
     raise RuntimeError("hermes_error")
 
 
+# Uma conversa com o Hermes por vez. Cada chamada sobe um `hermes.exe` com timeout de
+# 150s, e há 7 pontos de chamada (chat, captura, triagem, leitura, anki, diário, review):
+# sem trava, o worker de captura, a tela Hoje e o Chat competiam pela mesma CLI, e dois
+# processos do agente brigando por memória/sessão deixam os DOIS lentos.
+_UM_POR_VEZ = asyncio.Semaphore(1)
+
+
 async def _oneshot(prompt: str) -> str:
     """Roda um prompt no Hermes CLI e devolve apenas a resposta limpa.
 
@@ -114,7 +121,8 @@ async def _oneshot(prompt: str) -> str:
         )
 
     try:
-        proc = await asyncio.to_thread(_run)
+        async with _UM_POR_VEZ:
+            proc = await asyncio.to_thread(_run)
         if proc.returncode != 0:
             raise RuntimeError("hermes_error")
         reply = _clean(proc.stdout or "")
