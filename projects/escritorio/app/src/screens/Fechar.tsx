@@ -3,10 +3,13 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import {
   Bloco,
   ClosingRotina,
+  Pontos,
   Template,
   closingApprove,
   closingDraft,
+  checkRoutine,
   closingRoutines,
+  getPontos,
   getAbertura,
   setTemplateDia,
 } from "../api";
@@ -40,6 +43,7 @@ export default function Fechar() {
   const [loadingRoutines, setLoadingRoutines] = useState(false);
   const [routinesErr, setRoutinesErr] = useState("");
   const [routinesReload, setRoutinesReload] = useState(0);
+  const [placar, setPlacar] = useState<Pontos | null>(null);
 
   // Só o dia (template) vem da abertura. O que já foi marcado NÃO se reconstrói
   // aqui: `/closing/routines` devolve `feito` para o dia inteiro, e a abertura só
@@ -102,6 +106,21 @@ export default function Fechar() {
     };
   }, [template, routinesReload]);
 
+  // Marca na hora, igual à Abertura. Antes o fechamento só gravava junto com o
+  // diário — e os DOIS botões exigiam texto, inclusive o "modo mínimo". Ou seja:
+  // não dava para registrar as rotinas sem escrever. Era essa assimetria que
+  // produzia os dias sem registro (e "linha ausente" some do scorecard).
+  const marcar = async (slug: string) => {
+    const feito = !checks[slug];
+    setChecks((current) => ({ ...current, [slug]: feito }));
+    try {
+      await checkRoutine(slug, feito);
+    } catch {
+      setChecks((current) => ({ ...current, [slug]: !feito }));
+      setErr("não consegui marcar — tenta de novo");
+    }
+  };
+
   const gerar = async () => {
     if (!template) return;
     setBusy(true);
@@ -127,6 +146,7 @@ export default function Fechar() {
         checks: buildClosingChecks(routines, checks),
       });
       setDone(true);
+      getPontos().then(setPlacar).catch(() => {/* o placar é bônus, não trava o fecho */});
     } catch {
       setErr("falha ao gravar — nada se perdeu, tenta de novo");
     } finally {
@@ -153,13 +173,28 @@ export default function Fechar() {
   const routinesUnavailable =
     loadingDia || template === null || loadingRoutines || !!routinesErr;
   const dumpActionsDisabled = busy || routinesUnavailable || !dump.trim();
+  // O modo mínimo fecha o dia mesmo sem diário: as rotinas já foram gravadas por
+  // toque, e obrigar a escrever é o que fazia o dia ruim virar dia não-registrado.
+  const fecharDisabled = busy || routinesUnavailable;
 
   if (done) {
+    // O único momento de dopamina do dia era uma linha de texto. Se o design declara
+    // "check visível" como lei, o fim do rito tem que devolver o que ele produziu.
+    const feitas = routines.filter((r) => checks[r.slug]).length;
     return (
-      <View style={{ padding: 24 }}>
-        <Text style={{ color: colors.text, fontSize: 18 }}>
+      <View style={{ padding: 24, gap: spacing.sm }}>
+        <Text style={{ color: colors.text, fontSize: 20, fontFamily: fonts.serif }}>
           ✓ dia fechado
         </Text>
+        <Text style={{ color: colors.textMuted, fontFamily: fonts.ui, fontSize: 13 }}>
+          {feitas} de {routines.length} ritmos hoje
+          {placar ? ` · ${placar.saldo_total} pts · nível ${placar.nivel}` : ""}
+        </Text>
+        {placar ? (
+          <Text style={{ color: colors.textMuted, fontFamily: fonts.mono, fontSize: 11 }}>
+            ciclo {placar.ciclo.indice} · semana {placar.ciclo.semana}/{placar.ciclo.de}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -230,12 +265,7 @@ export default function Fechar() {
                 return (
                   <Pressable
                     key={r.slug}
-                    onPress={() =>
-                      setChecks((current) => ({
-                        ...current,
-                        [r.slug]: !current[r.slug],
-                      }))
-                    }
+                    onPress={() => marcar(r.slug)}
                     style={{ paddingVertical: 8 }}
                   >
                     <Text style={{ color: on ? colors.primary : colors.textMuted }}>
@@ -322,16 +352,16 @@ export default function Fechar() {
           </Pressable>
           <Pressable
             onPress={() => aprovar(dump)}
-            disabled={dumpActionsDisabled}
+            disabled={fecharDisabled}
             style={{ marginTop: 8 }}
           >
             <Text
               style={{
                 color: colors.textMuted,
-                opacity: dumpActionsDisabled ? 0.45 : 1,
+                opacity: fecharDisabled ? 0.45 : 1,
               }}
             >
-              gravar direto (modo mínimo)
+              {dump.trim() ? "gravar direto (modo mínimo)" : "fechar sem escrever"}
             </Text>
           </Pressable>
         </>
