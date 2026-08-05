@@ -24,12 +24,20 @@ escopo: "leitura, tarefas, cobrança, triagem, lembretes, agenda, diário/daily,
 > | **C2/C3** sem prazo → sem cobrança e ⏰ morto | ✅ chips de prazo + hora; `scheduler` deixou de ser tabela vazia | `70415c6` |
 > | **C5** Mentor sem contexto | ✅ cita as tarefas reais pelo nome (19s vs 46s) | `5f8d538` |
 > | **C4** sem adiar/reagendar | ✅ `PATCH /tasks/{id}` + chips no detalhe | `aee5de0` |
-> | **C5b** Chat sem histórico | ⏳ pendente (`ChatIn` não leva turnos; `App.tsx:330` desmonta a aba) | — |
-> | **A1** 48% das notificações perdidas (PC) | ⏳ depende do VPS — **é infra, não código** | — |
+> | **C5b** Chat sem histórico | ✅ aba fica montada + turnos vão no prompt | `b9f3f52` |
+> | **C1.3** Modo Retorno inexistente | ✅ ≥7 dias → uma porta só, antes de qualquer rito | `9b84cad` |
+> | **A6** Shutdown não fecha nada | ✅ linhas abrem o detalhe (concluir/adiar) | `ebc089b` |
+> | **A11** Triagem inalcançável | ✅ entrou em Ferramentas + link no Shutdown | `ebc089b` |
+> | **A1** 48% das notificações perdidas (PC) | ⏳ **é infra, não código** — depende do VPS | — |
+> | **A12** Revisão não produz artefato | ⏳ pendente | — |
 >
-> **Os 5 críticos estão fechados.** O que sobra de maior impacto: histórico do Chat,
-> Shutdown acionável (A6), Revisão que produz artefato (A12), Modo Retorno (C1.3) e
-> tirar os crons do seu PC (A1).
+> **Todos os críticos e quase todos os altos estão fechados** — 14 achados, cada um
+> com teste escrito antes e visto falhar. O que sobra de maior impacto: tirar os
+> crons do seu PC (A1, infra) e fazer a Revisão gravar no vault (A12).
+>
+> Achado extra, durante o conserto: o botão **"Agenda" da Home abria a Abertura** —
+> o rótulo mentia, e foi o que me fez errar a navegação no teste de UI. Corrigido;
+> a tela de calendário de verdade (`GET /agenda` órfão) continua pendente.
 >
 > Ainda pendente e **fora de código**: decidir o que fazer com os `routine_checks`
 > contaminados (recuperar ou zerar `ciclo_inicio`) — ver o aviso no início do Plano.
