@@ -26,6 +26,7 @@ import {
 } from "react-native";
 
 import Abertura from "./src/screens/Abertura";
+import Agenda from "./src/screens/Agenda";
 import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
 import { flush } from "./src/captureQueue";
 import { registerForPushToken } from "./src/notifications";
@@ -51,6 +52,7 @@ type Tab =
   | "chat"
   | "revisao"
   | "abertura"
+  | "agenda"
   | "shutdown"
   | "fechar"
   | "rotinas"
@@ -71,6 +73,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 const SUBSCREENS: Tab[] = [
   "revisao",
   "abertura",
+  "agenda",
   "shutdown",
   "fechar",
   "rotinas",
@@ -83,6 +86,7 @@ const SUBSCREENS: Tab[] = [
 const TITLES: Partial<Record<Tab, string>> = {
   revisao: "Revisão",
   abertura: "Abertura",
+  agenda: "Agenda",
   shutdown: "Shutdown",
   fechar: "Fechar o dia",
   rotinas: "Rotinas",
@@ -332,6 +336,8 @@ export default function App() {
           <Home onOpenTab={openDestination} />
         ) : tab === "tarefas" ? (
           <Tasks initialTaskId={initialTaskId} onInitialTaskConsumed={() => setInitialTaskId(null)} />
+        ) : tab === "agenda" ? (
+          <Agenda />
         ) : tab === "abertura" ? (
           <Abertura />
         ) : tab === "shutdown" ? (
