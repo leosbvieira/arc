@@ -5,7 +5,8 @@
 >
 > Este é o **mapa vivo** do Escritório (Aeternum). Não é spec nem plano — é o retrato de **como o sistema
 > funciona hoje**, para você (ou uma IA) entender qualquer peça sem reconstruir tudo. Quando o código mudar de
-> forma estrutural, atualize aqui. Fonte: leitura direta do código em 16/jul (`app/` + `bff/`).
+> forma estrutural, atualize aqui. Fonte: leitura direta do código em 16/jul (`app/` + `bff/`),
+> revisto em 04/ago para o portão de staging da nota de leitura (§6.2) — ver `READING-STAGING-SPEC.md`.
 
 ---
 
@@ -131,10 +132,14 @@ Você escreve/dita  →  [Enviar]  →  POST /capture
 Modo Leitura → informa livro/página → [Começar] (com ou sem microfone)
   durante a leitura: fala/escreve trechos, prefixando "citação/comentário/ideia/lista"
   cada registro → buffer local (recuperável se fechar o app) + autosave no servidor
-[Compilar] → BFF junta o buffer → Hermes → NOTA limpa no vault + candidatos ANKI para revisar
+[Compilar] → BFF junta o buffer → Hermes → PREVIEW da nota (read-only; NADA no vault ainda)
+   ├─ [Salvar no vault] → NOTA limpa no vault + candidatos ANKI para revisar
+   └─ [Rejeitar]        → volta às notas cruas para corrigir e compilar de novo
 ```
 - Buffer nunca some: salvo no celular (`readingDraft.ts`) e no servidor (`reading_sessions`/`reading_buffer`). Recupera após fechar o app, reconcilia local×remoto.
-- Só limpa o buffer **depois** que o vault confirma a nota (não perde nada num crash).
+- **Portão humano (lei 3): compilar NÃO publica.** A nota só entra no vault quando você aprova o preview — o mesmo princípio que os candidatos Anki já seguiam. O preview é read-only de propósito: você aprova ou rejeita, nunca edita o texto, então o que vai pro vault continua derivado byte-a-byte do que você ditou.
+- Estado "staged" = `pending` + `draft_md` preenchido (sem status novo no banco). Enquanto há preview o buffer fica **congelado** dos dois lados — o servidor recusa edição com `reading_draft_ja_gerado` — para o `source_digest` não divergir entre gerar e aprovar.
+- Só limpa o buffer **depois** que o vault confirma a nota (não perde nada num crash). Se o vault falhar, a sessão **continua staged** e o retry reusa o rascunho já salvo, sem gastar outra chamada do Hermes.
 
 ### 6.3 Tarefas e cobrança
 
@@ -170,7 +175,7 @@ Cada rito é disparado por **notificação push** (ou cron no servidor) e abre a
 |---|---|
 | **Infra/auth** | `GET /health` · `POST /auth/login` |
 | **Captura** | `POST /capture` (fire-and-forget) · `POST /captures/retry-failed` |
-| **Sessões / Leitura** | `POST /sessions` · `POST /reading/sessions` · `POST/PATCH/DELETE /reading/sessions/{id}/buffer[/{seq}]` · `GET /reading/sessions/pending` · `GET /reading/sessions/{id}` · `POST .../reconcile` · `POST .../compile` · `POST .../discard` |
+| **Sessões / Leitura** | `POST /sessions` · `POST /reading/sessions` · `POST/PATCH/DELETE /reading/sessions/{id}/buffer[/{seq}]` · `GET /reading/sessions/pending` · `GET /reading/sessions/{id}` · `POST .../reconcile` · `POST .../draft` (gera o preview) · `POST .../compile` (aprova → vault) · `DELETE .../draft` (rejeita) · `POST .../discard` |
 | **Chat / Push** | `POST /chat` · `POST/DELETE /devices` |
 | **Tarefas** | `GET /tasks` · `POST /tasks` · `POST /tasks/{id}/complete` · `GET /tasks/{id}` · `GET /digest` |
 | **Pontos/Review** | `GET /pontos` · `GET /review/weekly` · `GET /review/monthly` |
