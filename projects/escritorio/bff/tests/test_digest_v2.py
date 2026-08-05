@@ -78,6 +78,32 @@ def _only(name, area, due_offset):
     return lambda: [tasks._Task("x", name, area, due_offset=due_offset)]
 
 
+def test_count_do_digest_acompanha_as_tarefas_frescas(client, monkeypatch):
+    """O `body` fica congelado (§10: o texto do dia é o mesmo), mas o `count` é o
+    badge COBRANÇAS da Home, exibido ao lado da lista fresca. Congelá-lo faz o badge
+    dizer 2 com um item na tela — e num sistema cuja lei 6 é "cobrança por número
+    frio", número errado corrói justamente o mecanismo que sustenta a cobrança."""
+    async def fake_send(text):
+        return True
+    monkeypatch.setattr(telegram, "send", fake_send)
+    monkeypatch.setattr(tasks, "_open", lambda: [
+        tasks._Task("a", "Pagar fatura", "Finance", due_offset=-2),
+        tasks._Task("b", "Renovar seguro", "Finance", due_offset=-8),
+    ])
+
+    assert client.post("/internal/run-digest", headers=HDR).json()["count"] == 2
+
+    # ele conclui uma durante o dia: a fonte agora devolve só a que sobrou
+    monkeypatch.setattr(tasks, "_open", lambda: [
+        tasks._Task("b", "Renovar seguro", "Finance", due_offset=-8),
+    ])
+
+    g = client.get("/digest").json()
+    assert len(g["tasks"]) == 1
+    assert g["count"] == 1, "o badge tem que acompanhar a lista, não o run das 9h"
+    assert "Pagar fatura" in g["body"], "o corpo do dia continua o mesmo (§10)"
+
+
 def test_run_digest_dedupe_persiste_e_neutraliza(client, monkeypatch):
     sent = []
     async def fake_send(text):

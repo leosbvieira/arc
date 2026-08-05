@@ -1448,7 +1448,9 @@ async def get_digest(_: str = Depends(require_auth)):
     run = store.get_digest_run(date.today().isoformat())
     if run:
         return {
-            "count": run["count"],
+            # O corpo é o do dia (congelado), mas o count é o badge exibido AO LADO
+            # da lista fresca: congelá-lo faz o badge dizer 3 com dois itens na tela.
+            "count": len(fresh["tasks"]),
             "body": run["body"],
             "tasks": fresh["tasks"],
         }

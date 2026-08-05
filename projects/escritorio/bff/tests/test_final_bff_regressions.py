@@ -116,6 +116,49 @@ def test_guard_rejeita_cada_segredo_default(monkeypatch, field):
         main._guard_default_secrets()
 
 
+async def test_fetch_open_deduplica_tarefa_presente_em_duas_listas(monkeypatch):
+    """`move_task` é GET → add → DELETE sem compensação: se o DELETE falhar, a tarefa
+    fica NAS DUAS listas. Sem dedupe ela aparecia 2× na tela, 2× no digest e contava
+    2× em "N abertas · N atrasadas" — com a triagem reportando sucesso.
+
+    O desempate é pela ÁREA, não pela ordem de varredura: Staging é o resíduo do move
+    que falhou; a área de destino é a decisão do Leo. Por isso o fake abaixo põe
+    Staging PRIMEIRO — é a ordem real de AREA_LISTS, onde Staging é a 2ª de 10."""
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"tasks": [{"id": "t1", "name": "Pagar fatura", "status": {"type": "open"}}]}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url, *, params=None, headers=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        clickup_client,
+        "AREA_LISTS",
+        {"Staging": "list-staging", "Finance": "list-finance"},
+    )
+    monkeypatch.setattr(clickup_client.httpx, "AsyncClient", FakeClient)
+
+    abertas = await clickup_client.fetch_open()
+
+    assert [t["id"] for t in abertas] == ["t1"]
+    assert abertas[0]["_area"] == "Finance"
+
+
 async def test_fetch_e_count_reusam_client_e_count_exclui_staging(
     monkeypatch,
 ):

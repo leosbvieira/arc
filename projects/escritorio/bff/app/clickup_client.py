@@ -139,15 +139,33 @@ async def find_task_by_marker(list_id: str, marker: str) -> str | None:
 
 
 async def fetch_open() -> list[dict]:
-    """Tarefas abertas das 10 áreas; cada dict ganha `_area`."""
+    """Tarefas abertas das 10 áreas; cada dict ganha `_area`.
+
+    Deduplica por id: `move_task` é GET → add → DELETE sem compensação, então um
+    DELETE que falha deixa a tarefa NAS DUAS listas. Sem isso ela apareceria 2× na
+    tela, 2× no digest e contaria 2× em "N abertas · N atrasadas".
+
+    O desempate é pela ÁREA, não pela ordem de varredura (Staging é a 2ª de 10 em
+    AREA_LISTS): Staging é o resíduo do move que falhou, a área de destino é a
+    decisão do Leo. Mostrar o resíduo faria ele triar de novo o que já triou."""
     out: list[dict] = []
+    por_id: dict[str, dict] = {}
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
         for area, list_id in AREA_LISTS.items():
             for task in await _fetch_list(list_id, client=client):
                 if ((task.get("status") or {}).get("type")) in ("done", "closed"):
                     continue
                 task["_area"] = area
-                out.append(task)
+                task_id = task.get("id")
+                if task_id is None:
+                    out.append(task)
+                    continue
+                anterior = por_id.get(task_id)
+                if anterior is None:
+                    por_id[task_id] = task
+                    out.append(task)
+                elif anterior["_area"] == STAGING and area != STAGING:
+                    anterior.update(task)          # o destino vence o resíduo
     return out
 
 
