@@ -426,6 +426,8 @@ export type ClosingRotina = {
   nome: string;
   bloco: Bloco;
   passos: string[];
+  /** Estado do dia vindo do servidor: sem ele a tela das 21h apagaria a manhã. */
+  feito: boolean;
 };
 
 export async function closingRoutines(template: string): Promise<ClosingRotina[]> {

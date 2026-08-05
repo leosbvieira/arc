@@ -328,7 +328,9 @@ def test_fechamento_com_o_dia_inteiro_preserva_a_manha(client, vault):
 
 
 def test_fechamento_pode_corrigir_a_marcacao_da_manha(client, vault):
-    """O inverso também vale: se ele marcou errado de manhã, a tela das 21h corrige."""
+    """Desmarcar EXPLICITAMENTE ainda corrige: se ele marcou errado de manhã e
+    desmarca na tela das 21h, o `false` é intencional e vale. O que não pode é
+    rotina NÃO TOCADA virar `false` sozinha — é o que o teste seguinte cobre."""
     client.post("/routines/check", json={"slug": "acordar-5h30", "feito": True})
 
     client.post("/closing/approve", json={
@@ -337,3 +339,43 @@ def test_fechamento_pode_corrigir_a_marcacao_da_manha(client, vault):
     })
 
     assert _checks()["acordar-5h30"] == 0
+
+
+def test_closing_routines_devolve_o_que_ja_foi_marcado(client, vault):
+    """O contrato precisa expor o estado: sem `feito`, a tela das 21h nasce em
+    branco e não tem como saber que a manhã já aconteceu."""
+    client.post("/routines/check", json={"slug": "acordar-5h30", "feito": True})
+
+    rotinas = client.get("/closing/routines", params={"template": "yoga"}).json()["routines"]
+    por_slug = {r["slug"]: r for r in rotinas}
+
+    assert por_slug["acordar-5h30"]["feito"] is True
+    assert por_slug["diario"]["feito"] is False
+
+
+def test_fechamento_montado_a_partir_do_servidor_preserva_a_manha(client, vault):
+    """O caminho REAL, ponta a ponta: o app monta o payload a partir da resposta de
+    /closing/routines e o Leo só toca no que fez à noite. A manhã tem que sobreviver.
+
+    Este teste existe porque os dois acima podiam passar com o rito quebrado: eles
+    digitam o valor esperado na mão, então provavam apenas que INSERT OR REPLACE
+    troca 1 por 1. Aqui o payload vem do servidor — se o contrato não expuser o
+    estado, a asserção cai."""
+    client.post("/routines/check", json={"slug": "acordar-5h30", "feito": True})
+
+    rotinas = client.get("/closing/routines", params={"template": "yoga"}).json()["routines"]
+    checks = [
+        {"rotina": r["slug"], "feito": bool(r.get("feito"))}
+        for r in rotinas
+    ]
+    for check in checks:                       # à noite ele só marcou o diário
+        if check["rotina"] == "diario":
+            check["feito"] = True
+
+    r = client.post("/closing/approve", json={
+        "raw_text": "x", "draft_md": "y", "template": "yoga", "checks": checks,
+    })
+    assert r.status_code == 200
+
+    assert _checks()["acordar-5h30"] == 1      # a manhã SOBREVIVEU
+    assert _checks()["diario"] == 1

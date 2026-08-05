@@ -264,7 +264,7 @@ def test_corrida_sempre_depois_da_academia(client):
 def test_fechamento_devolve_objetos_com_passos(client):
     rotinas = _fechamento(client)["routines"]
     skincare = next(r for r in rotinas if r["slug"] == "skincare")
-    assert set(skincare) == {"id", "slug", "nome", "bloco", "passos"}
+    assert set(skincare) == {"id", "slug", "nome", "bloco", "passos", "feito"}
     assert skincare["nome"] == "skincare AM"
     assert skincare["bloco"] == "manha"
     assert skincare["passos"] == ["limpeza", "hidratante", "protetor solar"]

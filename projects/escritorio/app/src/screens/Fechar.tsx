@@ -10,6 +10,7 @@ import {
   getAbertura,
   setTemplateDia,
 } from "../api";
+import { buildClosingChecks, seedDecisions } from "../closingChecks";
 import { colors, fonts, spacing } from "../theme";
 
 // As rotinas já vêm filtradas pelo BFF (dia da semana + template). Não filtre aqui.
@@ -28,7 +29,6 @@ const BLOCOS: { key: Bloco; label: string }[] = [
 
 export default function Fechar() {
   const [template, setTemplate] = useState<Template | null>(null);
-  const [feitoManha, setFeitoManha] = useState<Record<string, boolean>>({});
   const [loadingDia, setLoadingDia] = useState(true);
   const [routines, setRoutines] = useState<ClosingRotina[]>([]);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
@@ -41,7 +41,10 @@ export default function Fechar() {
   const [routinesErr, setRoutinesErr] = useState("");
   const [routinesReload, setRoutinesReload] = useState(0);
 
-  // O dia (template) e o que já foi marcado de manhã vêm da abertura.
+  // Só o dia (template) vem da abertura. O que já foi marcado NÃO se reconstrói
+  // aqui: `/closing/routines` devolve `feito` para o dia inteiro, e a abertura só
+  // conhecia o bloco da manhã — reconstruir no cliente era a origem do bug que
+  // apagava as marcações no fechamento.
   useEffect(() => {
     let alive = true;
 
@@ -49,9 +52,6 @@ export default function Fechar() {
       .then((a) => {
         if (!alive) return;
         setTemplate(a.template);
-        setFeitoManha(
-          Object.fromEntries(a.rotinas_manha.map((r) => [r.slug, r.feito])),
-        );
       })
       .catch(() => {
         // sem abertura, cai no seletor de fallback abaixo.
@@ -83,12 +83,10 @@ export default function Fechar() {
       .then((rs) => {
         if (!alive) return;
         setRoutines(rs);
-        // NÃO zera: o que já está marcado (na tela ou desde a manhã) fica marcado.
-        setChecks((current) =>
-          Object.fromEntries(
-            rs.map((r) => [r.slug, current[r.slug] ?? feitoManha[r.slug] ?? false]),
-          ),
-        );
+        // O servidor é a fonte do estado do dia (`feito`). Decisão já tomada nesta
+        // tela vence a semente; rotina sem decisão fica FORA do objeto — ausência
+        // não é furo, e é isso que impede o fechamento de apagar a manhã.
+        setChecks((current) => ({ ...seedDecisions(rs), ...current }));
       })
       .catch(() => {
         if (!alive) return;
@@ -102,7 +100,7 @@ export default function Fechar() {
     return () => {
       alive = false;
     };
-  }, [template, routinesReload, feitoManha]);
+  }, [template, routinesReload]);
 
   const gerar = async () => {
     if (!template) return;
@@ -126,10 +124,7 @@ export default function Fechar() {
         raw_text: dump,
         draft_md: md,
         template,
-        checks: routines.map((r) => ({
-          rotina: r.slug,
-          feito: !!checks[r.slug],
-        })),
+        checks: buildClosingChecks(routines, checks),
       });
       setDone(true);
     } catch {

@@ -2244,15 +2244,23 @@ async def closing_routines(
 
     Devolve objetos (antes eram strings): o app precisa do `slug` (chave dos checks),
     do `bloco` (a manhã não aparece no fechamento das 21h) e dos `passos` (roteiro —
-    NÃO são checks; quem conta no scorecard é o item pai)."""
+    NÃO são checks; quem conta no scorecard é o item pai).
+
+    `feito` é obrigatório no contrato: sem ele a tela das 21h nasce em branco e o
+    approve reescreve `false` por cima do que já foi marcado durante o dia. Mesma
+    leitura que `/abertura` faz — o estado do dia mora em `routine_checks`."""
     try:
         ref = date.fromisoformat(dia) if dia else date.today()
     except ValueError:
         raise HTTPException(422, "date inválida; use YYYY-MM-DD") from None
     do_dia = routines.do_dia(store.list_routines(), ref, template)
+    checks = store.get_checks_on(ref.isoformat())
     return {
         "routines": [
-            {k: r[k] for k in ("id", "slug", "nome", "bloco", "passos")}
+            {
+                **{k: r[k] for k in ("id", "slug", "nome", "bloco", "passos")},
+                "feito": checks.get(r["slug"], False),
+            }
             for r in do_dia
         ]
     }
