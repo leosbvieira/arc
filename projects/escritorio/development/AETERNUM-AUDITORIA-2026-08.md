@@ -21,10 +21,15 @@ escopo: "leitura, tarefas, cobrança, triagem, lembretes, agenda, diário/daily,
 > | **M4** fuso no fechamento | ✅ usa a data do Leo, não a do processo | `578e67f` |
 > | **M1** badge do digest mentindo | ✅ count acompanha a lista | `d042bbb` |
 > | **A9** tarefa duplicada | ✅ dedupe por id, destino vence o resíduo | `d042bbb` |
-> | **C2/C3** sem prazo → sem cobrança e ⏰ morto | ⏳ **o maior pendente** | — |
-> | **C4** sem adiar/reagendar | ⏳ pendente | — |
-> | **C5** Mentor sem contexto nem histórico | ⏳ pendente | — |
-> | **A1** 48% das notificações perdidas (PC) | ⏳ depende do VPS | — |
+> | **C2/C3** sem prazo → sem cobrança e ⏰ morto | ✅ chips de prazo + hora; `scheduler` deixou de ser tabela vazia | `70415c6` |
+> | **C5** Mentor sem contexto | ✅ cita as tarefas reais pelo nome (19s vs 46s) | `5f8d538` |
+> | **C4** sem adiar/reagendar | ✅ `PATCH /tasks/{id}` + chips no detalhe | `aee5de0` |
+> | **C5b** Chat sem histórico | ⏳ pendente (`ChatIn` não leva turnos; `App.tsx:330` desmonta a aba) | — |
+> | **A1** 48% das notificações perdidas (PC) | ⏳ depende do VPS — **é infra, não código** | — |
+>
+> **Os 5 críticos estão fechados.** O que sobra de maior impacto: histórico do Chat,
+> Shutdown acionável (A6), Revisão que produz artefato (A12), Modo Retorno (C1.3) e
+> tirar os crons do seu PC (A1).
 >
 > Ainda pendente e **fora de código**: decidir o que fazer com os `routine_checks`
 > contaminados (recuperar ou zerar `ciclo_inicio`) — ver o aviso no início do Plano.
