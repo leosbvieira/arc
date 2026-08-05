@@ -175,12 +175,25 @@ export async function listTasks(): Promise<TasksByArea> {
   return (await r.json()) as TasksByArea;
 }
 
-export async function createTask(name: string, area: string): Promise<void> {
+/** `due` = YYYY-MM-DD e `hora` = HH:MM (o BFF valida fail-closed). Sem `due` a
+ *  tarefa nasce sem prazo e o motor de cobrança NUNCA a seleciona; com `hora`, o
+ *  BFF também agenda o ⏰. */
+export async function createTask(
+  name: string,
+  area: string,
+  due?: string | null,
+  hora?: string | null,
+): Promise<void> {
   const base = await getBffUrl();
   const r = await fetch(`${base}/tasks`, {
     method: "POST",
     headers: await authHeaders(),
-    body: JSON.stringify({ name, area }),
+    body: JSON.stringify({
+      name,
+      area,
+      ...(due ? { due } : {}),
+      ...(hora ? { hora } : {}),
+    }),
   });
   if (!r.ok) throw new Error(`erro ${r.status}`);
 }

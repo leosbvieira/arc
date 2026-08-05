@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { completeTask, createTask, listTasks, Task, TasksByArea } from "../api";
+import { DueChoice, dueFromChoice, horaValida } from "../taskDue";
 import { TaskDetailModal } from "../TaskDetailModal";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { AppButton, ErrorState, Field, SectionHeader, Skeleton } from "../ui";
@@ -84,6 +85,8 @@ export default function Tasks({
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [due, setDue] = useState<DueChoice>(null);
+  const [hora, setHora] = useState("");
   const [scheduledOpen, setScheduledOpen] = useState(false);
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -112,11 +115,20 @@ export default function Tasks({
 
   async function onCreate() {
     if (!name.trim() || busy) return;
+    const horaLimpa = hora.trim();
+    if (horaLimpa && !horaValida(horaLimpa)) {
+      Alert.alert("Horário", "Use o formato HH:MM (ex.: 15:30).");
+      return;
+    }
     setBusy(true);
     let created = false;
     try {
-      await createTask(name.trim(), area);
+      // Sem prazo a tarefa nunca é cobrada; com hora, o BFF também agenda o ⏰.
+      const prazo = dueFromChoice(horaLimpa && due === null ? "hoje" : due);
+      await createTask(name.trim(), area, prazo, horaLimpa || null);
       setName("");
+      setDue(null);
+      setHora("");
       setCreateOpen(false);
       created = true;
     } catch (error) {
@@ -207,6 +219,43 @@ export default function Tasks({
               );
             })}
           </ScrollView>
+          <Text style={styles.fieldLabel}>PRAZO</Text>
+          <View style={styles.dueRow}>
+            {([
+              { key: null, label: "sem prazo" },
+              { key: "hoje", label: "hoje" },
+              { key: "amanha", label: "amanhã" },
+              { key: "semana", label: "em 7 dias" },
+            ] as { key: DueChoice; label: string }[]).map((option) => {
+              const active = option.key === due;
+              return (
+                <Pressable
+                  key={option.label}
+                  onPress={() => setDue(option.key)}
+                  style={[styles.duePill, active && styles.duePillActive]}
+                >
+                  <Text style={[styles.duePillText, active && styles.duePillTextActive]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <Field
+              style={styles.horaField}
+              value={hora}
+              onChangeText={setHora}
+              placeholder="hh:mm"
+              keyboardType="numbers-and-punctuation"
+              maxLength={5}
+            />
+          </View>
+          <Text style={styles.dueHint}>
+            {due === null && !hora.trim()
+              ? "Sem prazo, o sistema não cobra — fica só na lista."
+              : hora.trim()
+                ? "Com horário você recebe um aviso na hora marcada."
+                : "Entra na cobrança do dia."}
+          </Text>
           <AppButton title={area === "Staging" ? "Adicionar à triagem" : `Adicionar em ${area}`} onPress={onCreate} loading={busy} />
         </View>
       ) : null}
@@ -316,6 +365,19 @@ const styles = StyleSheet.create({
   createPanel: { gap: spacing.md, backgroundColor: colors.card2, borderWidth: 1, borderColor: "rgba(222,184,120,0.23)", borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
   createTitle: { fontFamily: fonts.serif, fontSize: 20, color: colors.text },
   fieldLabel: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 1.2 },
+  dueRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.xs },
+  duePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  duePillActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  duePillText: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted },
+  duePillTextActive: { color: colors.text, fontFamily: fonts.uiSemi },
+  horaField: { width: 78 },
+  dueHint: { fontFamily: fonts.ui, fontSize: 11, color: colors.textMuted, marginTop: -spacing.xs },
   areaRail: { gap: spacing.sm, paddingRight: spacing.lg },
   areaPill: { minHeight: 34, flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 11 },
   areaDot: { width: 6, height: 6, borderRadius: 3 },

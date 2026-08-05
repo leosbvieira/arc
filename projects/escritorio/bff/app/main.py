@@ -1402,7 +1402,9 @@ async def create_task(body: CreateTaskIn, _: str = Depends(require_auth)):
     due_ref = (
         date.fromisoformat(body.due)
         if body.due
-        else date.today() if body.hora else None
+        # "hoje" é o do Leo: num VPS em UTC, uma tarefa criada às 22h com hora
+        # seria agendada para o dia seguinte.
+        else pontos.hoje_local() if body.hora else None
     )
     com_hora = body.hora is not None
     due_ts = None
