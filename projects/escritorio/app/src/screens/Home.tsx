@@ -257,7 +257,11 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
               <SectionHeader eyebrow="sistema" title="Ferramentas" />
               <View style={styles.tools}>
                 {[
-                  ["calendar", "Agenda", "abertura", colors.info],
+                  // "Agenda" abria a Abertura: o rótulo mentia. Não existe tela de
+                  // calendário ainda (GET /agenda segue órfão) — até existir, o nome
+                  // diz o que o botão faz.
+                  ["sunrise", "Abertura", "abertura", colors.info],
+                  ["inbox", "Triagem", "triagem", colors.amber],
                   ["repeat", "Ritmos", "rotinas", colors.success],
                   ["trending-down", "Reduzir", "habitos", colors.info],
                   ["compass", "Revisão", "revisao", colors.primary],

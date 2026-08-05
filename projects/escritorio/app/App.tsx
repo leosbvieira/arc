@@ -335,7 +335,7 @@ export default function App() {
         ) : tab === "abertura" ? (
           <Abertura />
         ) : tab === "shutdown" ? (
-          <Shutdown />
+          <Shutdown onOpenTriagem={() => setTab("triagem")} />
         ) : tab === "fechar" ? (
           <Fechar />
         ) : tab === "rotinas" ? (

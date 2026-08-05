@@ -1,5 +1,7 @@
+import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -7,7 +9,8 @@ import {
   View,
 } from "react-native";
 
-import { Shutdown as ShutdownData, Task, getShutdown, postShutdown } from "../api";
+import { Shutdown as ShutdownData, Task, completeTask, getShutdown, postShutdown } from "../api";
+import { TaskDetailModal } from "../TaskDetailModal";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { AppButton, Card, ErrorState, Field, Skeleton } from "../ui";
 
@@ -18,13 +21,14 @@ function tresCampos(prioridades: string[]): string[] {
   return [0, 1, 2].map((i) => prioridades[i] ?? "");
 }
 
-export default function Shutdown() {
+export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void } = {}) {
   const [data, setData] = useState<ShutdownData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [erro, setErro] = useState("");
   const [campos, setCampos] = useState<string[]>(["", "", ""]);
   const [editando, setEditando] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   const load = useCallback(async () => {
@@ -104,21 +108,26 @@ export default function Shutdown() {
       {trabalho_aberto.length === 0 ? (
         <Text style={styles.hint}>nada aberto.</Text>
       ) : (
-        trabalho_aberto.map((t) => <Linha key={t.id} t={t} />)
+        trabalho_aberto.map((t) => <Linha key={t.id} t={t} onOpen={() => setDetailId(t.id)} />)
       )}
 
       <Text style={[styles.label, { marginTop: spacing.xl }]}>FOLLOW-UPS</Text>
       {follow_ups.length === 0 ? (
         <Text style={styles.hint}>nenhum follow-up.</Text>
       ) : (
-        follow_ups.map((t) => <Linha key={t.id} t={t} />)
+        follow_ups.map((t) => <Linha key={t.id} t={t} onOpen={() => setDetailId(t.id)} />)
       )}
 
       {staging.n > 0 && (
-        <Text style={styles.staging}>
-          staging · {staging.n} {staging.n === 1 ? "item" : "itens"} · mais velho{" "}
-          {staging.mais_velho_d}d · triar no ClickUp
-        </Text>
+        <Pressable onPress={onOpenTriagem} disabled={!onOpenTriagem} style={styles.stagingRow}>
+          <Text style={styles.staging}>
+            staging · {staging.n} {staging.n === 1 ? "item" : "itens"} · mais velho{" "}
+            {staging.mais_velho_d}d
+          </Text>
+          {onOpenTriagem ? (
+            <Text style={styles.stagingLink}>triar agora →</Text>
+          ) : null}
+        </Pressable>
       )}
 
       <Text style={[styles.label, { marginTop: spacing.xl, marginBottom: spacing.md }]}>
@@ -176,22 +185,44 @@ export default function Shutdown() {
           )}
         </Card>
       )}
+
+      <TaskDetailModal
+        taskId={detailId}
+        onClose={() => setDetailId(null)}
+        onComplete={async (id) => {
+          await completeTask(id);
+          await load();
+        }}
+        onAdiada={load}
+      />
     </ScrollView>
   );
 }
 
-function Linha({ t }: { t: Task }) {
+// O rito das 19h existe para FECHAR o trabalho. Enquanto a linha era uma View, o
+// Leo via o que ficou aberto e não podia fazer nada com aquilo — abre o detalhe,
+// que já sabe concluir e adiar.
+function Linha({ t, onOpen }: { t: Task; onOpen?: () => void }) {
   const sub = [t.due, t.assignee].filter(Boolean).join(" · ");
   return (
-    <View style={[styles.linha, { borderLeftColor: areaColor(t.area) }]}>
-      <Text style={[styles.area, { color: areaColor(t.area) }]}>{t.area?.toLowerCase()}</Text>
-      <Text style={styles.linhaTitulo}>{t.name}</Text>
-      {!!sub && <Text style={styles.linhaSub}>{sub}</Text>}
-    </View>
+    <Pressable
+      onPress={onOpen}
+      disabled={!onOpen}
+      style={[styles.linha, { borderLeftColor: areaColor(t.area) }]}
+    >
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[styles.area, { color: areaColor(t.area) }]}>{t.area?.toLowerCase()}</Text>
+        <Text style={styles.linhaTitulo}>{t.name}</Text>
+        {!!sub && <Text style={styles.linhaSub}>{sub}</Text>}
+      </View>
+      {onOpen ? <Feather name="arrow-up-right" size={15} color={colors.textMuted} /> : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  stagingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
+  stagingLink: { fontFamily: fonts.uiSemi, fontSize: 12, color: colors.primary },
   intro: {
     fontFamily: fonts.ui,
     fontSize: 13,
