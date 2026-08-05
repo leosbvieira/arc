@@ -863,7 +863,7 @@ class GoogleCalendarEventIn(BaseModel):
 def _semana_tema(valor: str | None) -> str:
     """Valida a query com o mesmo contrato fail-closed usado pelo modelo."""
     if valor is None:
-        return agenda.semana_iso(date.today())
+        return agenda.semana_iso(pontos.hoje_local())
     if not re.fullmatch(r"\d{4}-W\d{2}", valor):
         raise HTTPException(422, "semana inválida; use YYYY-Www")
     return valor
@@ -1497,7 +1497,7 @@ async def get_digest(_: str = Depends(require_auth)):
     (body_app) com as tarefas recalculadas frescas p/ a Home; senão, calcula na hora.
     Mantém `count` e `tasks` no shape (compat com o app)."""
     fresh = await tasks.run_digest()
-    run = store.get_digest_run(date.today().isoformat())
+    run = store.get_digest_run(pontos.hoje_local().isoformat())
     if run:
         return {
             # O corpo é o do dia (congelado), mas o count é o badge exibido AO LADO
@@ -1788,7 +1788,7 @@ def _data_ref(valor: str | None) -> date:
     """`data` opcional (YYYY-MM-DD) → date. Ausente = hoje. Inválida = 422 (fail-closed:
     não se chuta um dia; escrever no dia errado corromperia o histórico do scorecard)."""
     try:
-        return date.fromisoformat(valor) if valor else date.today()
+        return date.fromisoformat(valor) if valor else pontos.hoje_local()
     except (TypeError, ValueError):
         raise HTTPException(422, "data inválida; use YYYY-MM-DD") from None
 
@@ -1838,7 +1838,7 @@ async def abertura(
 
     # `due_hoje` é relativo a HOJE (o due vem do ClickUp em dias até vencer). Pedir a
     # abertura de outro dia devolve o estado daquele dia, mas não reescreve o calendário.
-    tarefas_due = await tasks.due_hoje() if ref == date.today() else []
+    tarefas_due = await tasks.due_hoje() if ref == pontos.hoje_local() else []
 
     temas = store.list_temas(agenda.semana_iso(ref))
     calendario: list[dict] = []
@@ -1950,7 +1950,7 @@ async def get_shutdown(
 async def post_shutdown(body: ShutdownIn, _=Depends(require_auth)):
     """As (até 3) prioridades de AMANHÃ. Gravadas sob a data de HOJE — é o Shutdown de
     hoje que planeja amanhã, e é a abertura de amanhã que lê o Shutdown de ontem."""
-    hoje = date.today().isoformat()
+    hoje = pontos.hoje_local().isoformat()
     salvo = store.save_shutdown(hoje, body.prioridades)
     store.log_event("shutdown", ref=hoje, meta={"n": len(body.prioridades)})
     return {"ok": True, "data": hoje, "prioridades": salvo["prioridades"], "feito": True}
@@ -2160,7 +2160,7 @@ async def praticar_aprendizado(
 ):
     aprendizado = store.definir_pratica(
         id,
-        agenda.semana_iso(date.today()),
+        agenda.semana_iso(pontos.hoje_local()),
     )
     if aprendizado is None:
         raise HTTPException(status_code=404, detail="aprendizado_nao_encontrado")
@@ -2181,7 +2181,7 @@ async def alterar_status_aprendizado(
 
 @app.get("/objetivos")
 async def get_objetivos(_=Depends(require_auth)):
-    return {"objetivos": await objetivos.listar(date.today())}
+    return {"objetivos": await objetivos.listar(pontos.hoje_local())}
 
 
 @app.post("/objetivos")
@@ -2279,7 +2279,7 @@ async def get_agenda(
     ref = _data_ref(dia)
     resposta = await agenda.do_dia(ref)
     resposta["tarefas_due"] = (
-        await tasks.due_hoje() if ref == date.today() else []
+        await tasks.due_hoje() if ref == pontos.hoje_local() else []
     )
     return resposta
 
@@ -2318,7 +2318,7 @@ async def get_temas(
 
 @app.post("/temas")
 async def post_tema(body: TemaIn, _=Depends(require_auth)):
-    semana = body.semana or agenda.semana_iso(date.today())
+    semana = body.semana or agenda.semana_iso(pontos.hoje_local())
     return store.add_tema(semana, body.texto)
 
 
@@ -2345,7 +2345,7 @@ async def closing_routines(
     approve reescreve `false` por cima do que já foi marcado durante o dia. Mesma
     leitura que `/abertura` faz — o estado do dia mora em `routine_checks`."""
     try:
-        ref = date.fromisoformat(dia) if dia else date.today()
+        ref = date.fromisoformat(dia) if dia else pontos.hoje_local()
     except ValueError:
         raise HTTPException(422, "date inválida; use YYYY-MM-DD") from None
     do_dia = routines.do_dia(store.list_routines(), ref, template)
@@ -2423,7 +2423,7 @@ async def internal_nudge(
     if body.kind == "review":
         try:
             text = text + "\n\n" + tasks.weekly_review_text()
-            if tasks.is_primeiro_domingo(date.today()):
+            if tasks.is_primeiro_domingo(pontos.hoje_local()):
                 text = text + "\n\n" + tasks.monthly_review_text()
         except Exception:
             # O nudge-base ainda é entregue se algum agregado estiver indisponível.
@@ -2452,7 +2452,7 @@ async def internal_run_digest(x_internal_token: str = Header(default="")):
     falha de envio NÃO consome o slot do dia (retry same-day permitido, §10). Persiste o
     run pro app reabrir (body neutralizado só no Telegram; body_app tem tudo)."""
     _check_internal(x_internal_token)
-    today = date.today().isoformat()
+    today = pontos.hoje_local().isoformat()
     if store.notif_sent_today("digest"):
         return {"skipped": "digest ja enviado hoje"}
     result = await tasks.run_digest()

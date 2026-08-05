@@ -36,16 +36,16 @@ Duas decisões de modelagem que valem explicitar:
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import routines, store
+from . import routines, store, tz
 from .config import settings
 
 # `data` é TEXT ISO em routine_checks: qualquer data real é >= isto.
 _INICIO_DOS_TEMPOS = "0001-01-01"
-_LOCAL_TZ = ZoneInfo("America/Sao_Paulo")
+_LOCAL_TZ = tz.TZ          # mantido pelo nome antigo; a definicao mora em tz.py
 
 
 def hoje_local() -> date:
-    return datetime.now(_LOCAL_TZ).date()
+    return tz.hoje_local()
 
 
 def segunda_da_semana(d: date) -> date:

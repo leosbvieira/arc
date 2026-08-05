@@ -15,6 +15,7 @@ from uuid import uuid4
 from contextlib import closing
 from datetime import date
 
+from . import tz
 from .config import settings
 
 # Teto de tentativas da fila de captura. `pending_captures` esconde quem passou
@@ -1452,7 +1453,7 @@ def log_notif(evento: str, canal: str, entregue: bool) -> None:
         con.execute(
             "INSERT INTO notif_log (ts, data_local, evento, canal, entregue) "
             "VALUES (?, ?, ?, ?, ?)",
-            (time.time(), date.today().isoformat(), evento, canal, int(entregue)),
+            (time.time(), tz.hoje_local().isoformat(), evento, canal, int(entregue)),
         )
         con.commit()
 
@@ -1462,7 +1463,7 @@ def notif_sent_today(evento: str) -> bool:
         row = con.execute(
             "SELECT 1 FROM notif_log "
             "WHERE evento = ? AND data_local = ? AND entregue = 1 LIMIT 1",
-            (evento, date.today().isoformat()),
+            (evento, tz.hoje_local().isoformat()),
         ).fetchone()
     return row is not None
 
