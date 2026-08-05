@@ -110,6 +110,15 @@ Nenhum teste exercita o caminho real tela → payload. Foi assim que *"código c
 verdes"* foi declarado sobre um rito quebrado. O próprio P2-BACKLOG já avisava: *"contagem de
 testes não prova cobertura de escopo."* Aconteceu de novo.
 
+**A lição de processo é mais fina do que "faltou teste".** O docstring do
+`test_fechamento_pode_corrigir_a_marcacao_da_manha` — *"o inverso também vale: se ele marcou
+errado de manhã, a tela das 21h corrige"* — mostra que a destruição foi **racionalizada como
+feature**, não deixada de fora por descuido. Alguém olhou para o comportamento, construiu uma
+justificativa plausível ("é a correção do dia") e a congelou num teste. Foi essa racionalização,
+e não a ausência de cobertura, que blindou o bug. **O antídoto não é escrever mais testes: é
+exigir que o teste monte o payload a partir da resposta real do servidor**, em vez de digitar à
+mão o valor que torna a asserção verdadeira.
+
 ### C1.2 — O incentivo aponta para **NÃO** fechar o dia
 `pontos.py:24-27` decide (corretamente, pela lei 4) que **linha ausente não é furo**. Mas
 `Fechar.tsx:129-133` grava `false` para tudo que não foi tocado. Logo:
