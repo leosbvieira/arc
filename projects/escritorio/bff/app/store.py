@@ -2049,6 +2049,34 @@ def get_aprendizado(id: int) -> dict | None:
     return dict(row) if row is not None else None
 
 
+def pratica_da_semana(semana: str) -> dict | None:
+    """A prática ATUAL: só vale se foi escolhida para esta semana.
+
+    `pratica_semana` era gravado e nunca comparado, então uma prática de julho
+    seguia sendo anunciada como "prática da SEMANA" em agosto — todo dia, sem
+    nunca perguntar se ele aplicou."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM aprendizados WHERE status = 'pratica' AND pratica_semana = ? "
+            "ORDER BY pratica_em DESC LIMIT 1",
+            (semana,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def praticas_sem_avaliacao(semana_atual: str) -> list[dict]:
+    """Práticas de semanas ANTERIORES que continuam em aberto. A prática vencida não
+    some: vira a pergunta "aplicou?" — senão o loop da edificação nunca fecha."""
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM aprendizados WHERE status = 'pratica' "
+            "AND pratica_semana IS NOT NULL AND pratica_semana <> ? "
+            "ORDER BY pratica_em DESC",
+            (semana_atual,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def definir_pratica(id: int, semana: str) -> dict | None:
     """Escolhe uma única prática ativa, sem alterar estado se o alvo for inválido."""
     with closing(_connect()) as con:

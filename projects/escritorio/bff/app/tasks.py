@@ -15,7 +15,7 @@ from datetime import date
 
 from pydantic import BaseModel
 
-from . import cadence, clickup_client, hermes_client, pontos, store
+from . import agenda, cadence, clickup_client, hermes_client, pontos, store, tz
 from .config import settings
 
 AREAS = ["Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
@@ -286,7 +286,9 @@ def weekly_review_pack(today: str | None = None) -> dict:
         })
 
     aprendizados_novos = store.list_aprendizados(status="novo")
-    praticas = store.list_aprendizados(status="pratica")
+    # Só a prática DESTA semana conta como "a prática da semana": sem o filtro, uma
+    # escolha de julho seguia anunciada em agosto.
+    praticas = [p for p in [store.pratica_da_semana(agenda.semana_iso(ref))] if p]
     return {
         "week": f"{iso_week.year}-W{iso_week.week:02d}",
         "desde": since_iso,
@@ -617,8 +619,7 @@ async def run_digest() -> dict:
     # versão completa destinada ao app; só o corpo do Telegram recebe a variante
     # neutra quando o aprendizado é sensível (lei 7).
     extra_telegram = list(extra)
-    praticas = store.list_aprendizados(status="pratica")
-    pratica = praticas[0] if praticas else None
+    pratica = store.pratica_da_semana(agenda.semana_iso(tz.hoje_local()))
     if pratica is not None:
         texto = str(pratica["texto"]).replace(chr(10), " ")
         extra.append(f"🧭 prática da semana: {texto}")

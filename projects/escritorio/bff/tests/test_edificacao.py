@@ -170,11 +170,11 @@ def test_definir_pratica_troca_anterior_e_atualiza_review(client):
     primeiro = store.add_aprendizado("Praticar pausa")
     segundo = store.add_aprendizado("Escrever a próxima ação")
 
-    assert store.definir_pratica(primeiro["id"], "2026-W28")["status"] == "pratica"
-    escolhido = store.definir_pratica(segundo["id"], "2026-W28")
+    assert store.definir_pratica(primeiro["id"], _semana_atual())["status"] == "pratica"
+    escolhido = store.definir_pratica(segundo["id"], _semana_atual())
 
     assert escolhido["status"] == "pratica"
-    assert escolhido["pratica_semana"] == "2026-W28"
+    assert escolhido["pratica_semana"] == _semana_atual()
     assert store.get_aprendizado(primeiro["id"])["status"] == "novo"
 
     edificacao = tasks.weekly_review_pack()["edificacao"]
@@ -182,12 +182,20 @@ def test_definir_pratica_troca_anterior_e_atualiza_review(client):
     assert edificacao["pratica"]["id"] == segundo["id"]
 
 
+def _semana_atual() -> str:
+    """A prática só vale para a semana em que foi escolhida — fixar "2026-W28" fazia
+    o teste passar por acidente enquanto o código ignorava a semana."""
+    from app import agenda, tz
+
+    return agenda.semana_iso(tz.hoje_local())
+
+
 async def test_digest_neutraliza_pratica_sensivel_no_telegram(client):
     aprendizado = store.add_aprendizado(
         "Aplicar a pergunta antes de responder",
         sensivel=True,
     )
-    store.definir_pratica(aprendizado["id"], "2026-W28")
+    store.definir_pratica(aprendizado["id"], _semana_atual())
 
     digest = await tasks.run_digest()
 
