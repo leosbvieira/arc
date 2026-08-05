@@ -27,6 +27,7 @@ import {
   getDigest,
   getPontos,
   getReviewMonthly,
+  approveWeeklyReview,
   getReviewWeekly,
   exportAnki,
   listAnkiCards,
@@ -152,10 +153,16 @@ function Reviews({
   semanal,
   mensal,
   onOpenEdificacao,
+  onFecharSemana,
+  fechandoReview,
+  reviewFeito,
 }: {
   semanal: ReviewWeekly;
   mensal: ReviewMonthly;
   onOpenEdificacao?: () => void;
+  onFecharSemana: () => void;
+  fechandoReview: boolean;
+  reviewFeito: boolean;
 }) {
   return (
     <>
@@ -189,6 +196,16 @@ function Reviews({
             <Feather name="arrow-right" size={13} color={colors.primary} />
           </Pressable>
         ) : null}
+        {/* O review era um dashboard: rolava, acabava, e nada persistia. Sem
+            artefato no vault e sem registro, "2 semanas puladas → Mentor" era
+            impossível de responder. */}
+        <AppButton
+          title={reviewFeito ? "✓ semana fechada no vault" : "Fechar a semana no vault"}
+          variant={reviewFeito ? "ghost" : undefined}
+          loading={fechandoReview}
+          disabled={reviewFeito || fechandoReview}
+          onPress={onFecharSemana}
+        />
       </Card>
 
       <Card style={styles.monthCard}>
@@ -251,6 +268,21 @@ export default function Revisao({
   );
   const [readingPending, setReadingPending] = useState<ReadingSession[]>([]);
   const [readingPendingError, setReadingPendingError] = useState(false);
+  const [fechandoReview, setFechandoReview] = useState(false);
+  const [reviewFeito, setReviewFeito] = useState(false);
+
+  async function fecharSemana() {
+    setFechandoReview(true);
+    try {
+      const r = await approveWeeklyReview();
+      setReviewFeito(true);
+      Alert.alert("Semana fechada", `Gravado em ${r.vault_path}`);
+    } catch (e: any) {
+      Alert.alert("Review", e?.message ?? "não consegui fechar a semana");
+    } finally {
+      setFechandoReview(false);
+    }
+  }
 
   const loadDigest = useCallback(async () => {
     setLoading(true);
@@ -512,6 +544,9 @@ export default function Revisao({
             semanal={semanal}
             mensal={mensal}
             onOpenEdificacao={onOpenEdificacao}
+            onFecharSemana={fecharSemana}
+            fechandoReview={fechandoReview}
+            reviewFeito={reviewFeito}
           />
         ) : reflexaoErr ? (
           <Card style={styles.conqOff}>

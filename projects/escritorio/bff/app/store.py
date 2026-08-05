@@ -117,6 +117,9 @@ CREATE TABLE IF NOT EXISTS digest_runs (
   data_local TEXT PRIMARY KEY, body TEXT NOT NULL, count INTEGER NOT NULL,
   delivered INTEGER NOT NULL, ts REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS reviews (
+  semana TEXT PRIMARY KEY, feito_em REAL NOT NULL, vault_path TEXT
+);
 CREATE TABLE IF NOT EXISTS scheduler (
   id INTEGER PRIMARY KEY AUTOINCREMENT, quando REAL NOT NULL, tipo TEXT NOT NULL,
   ref TEXT NOT NULL, disparado INTEGER NOT NULL DEFAULT 0
@@ -1367,6 +1370,43 @@ def dias_desde_ultima_interacao() -> int:
     if not ultimo:
         return 0
     return max(0, int((time.time() - float(ultimo)) // 86400))
+
+
+def record_review(semana: str, vault_path: str | None = None) -> None:
+    """Marca que o review daquela semana aconteceu. Idempotente: aprovar 2x é o
+    mesmo review, não dois."""
+    with closing(_connect()) as con:
+        con.execute(
+            "INSERT INTO reviews (semana, feito_em, vault_path) VALUES (?, ?, ?) "
+            "ON CONFLICT(semana) DO UPDATE SET feito_em = excluded.feito_em, "
+            "vault_path = COALESCE(excluded.vault_path, reviews.vault_path)",
+            (semana, time.time(), vault_path),
+        )
+        con.commit()
+
+
+def review_feito(semana: str) -> bool:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT 1 FROM reviews WHERE semana = ?", (semana,)
+        ).fetchone()
+    return row is not None
+
+
+def semanas_sem_review(desde: list[str]) -> list[str]:
+    """Das semanas passadas informadas, quais ficaram sem review. É o que torna
+    'review pulado 2x → Mentor' uma pergunta respondível."""
+    if not desde:
+        return []
+    marcas = ",".join("?" for _ in desde)
+    with closing(_connect()) as con:
+        feitas = {
+            row[0]
+            for row in con.execute(
+                f"SELECT semana FROM reviews WHERE semana IN ({marcas})", desde
+            )
+        }
+    return [semana for semana in desde if semana not in feitas]
 
 
 def log_event(evento: str, ref: str = "", meta: dict | None = None) -> None:

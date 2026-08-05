@@ -756,6 +756,21 @@ export async function getReviewWeekly(): Promise<ReviewWeekly> {
   return (await r.json()) as ReviewWeekly;
 }
 
+/** Fecha o review da semana: grava o artefato no vault e registra que aconteceu.
+ *  Sem esse registro, "2 semanas puladas -> Mentor" e impossivel de responder. */
+export async function approveWeeklyReview(
+  semana?: string,
+): Promise<{ ok: boolean; semana: string; vault_path: string }> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/review/weekly/approve`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(semana ? { semana } : {}),
+  });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+  return (await r.json()) as { ok: boolean; semana: string; vault_path: string };
+}
+
 export async function getReviewMonthly(): Promise<ReviewMonthly> {
   const base = await getBffUrl();
   const r = await fetch(`${base}/review/monthly`, { headers: await authHeaders() });

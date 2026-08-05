@@ -1550,6 +1550,44 @@ async def review_weekly(_=Depends(require_auth)):
     return pack
 
 
+class ReviewApproveIn(BaseModel):
+    semana: str | None = None
+
+    @field_validator("semana")
+    @classmethod
+    def validar_semana(cls, valor: str | None) -> str | None:
+        """Formato ISO (YYYY-Wnn). Semana ambígua gravaria o review no arquivo errado."""
+        if valor is None:
+            return None
+        if not re.fullmatch(r"\d{4}-W\d{2}", valor):
+            raise ValueError("semana inválida; use YYYY-Wnn")
+        return valor
+
+
+@app.post("/review/weekly/approve")
+async def approve_weekly_review(
+    body: ReviewApproveIn,
+    _=Depends(require_auth),
+):
+    """Fecha o review da semana: grava o artefato no vault e REGISTRA que aconteceu.
+
+    Sem a linha em `reviews`, o sistema não tinha como saber se o review foi feito —
+    e "2 semanas puladas → Mentor", que a SPEC promete, era matematicamente
+    impossível. Reflexão que não persiste não vira memória."""
+    semana = body.semana or agenda.semana_iso(pontos.hoje_local())
+    texto = tasks.weekly_review_text()
+    caminho = await vault_client.append_file(
+        f"Fechamentos/Weekly/{semana}.md",
+        texto,
+        f"review semanal {semana}",
+        header_if_new=f"# Review {semana}",
+        dedupe_marker=f"<!-- review:{semana} -->",
+    )
+    store.record_review(semana, caminho)
+    store.log_event("review_aprovado", ref=semana)
+    return {"ok": True, "semana": semana, "vault_path": caminho}
+
+
 @app.get("/review/monthly")
 async def review_monthly(_=Depends(require_auth)):
     pack = tasks.monthly_review_pack()

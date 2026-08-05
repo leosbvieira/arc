@@ -19,7 +19,9 @@ Três regras:
 """
 import logging
 
-from . import pontos, tasks
+from datetime import timedelta
+
+from . import agenda, pontos, store, tasks
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,22 @@ async def montar() -> str:
             linhas.append(f"Rotinas em padrão: {nomes}")
     except Exception as exc:  # noqa: BLE001
         logger.warning("contexto do mentor sem placar: %s", type(exc).__name__)
+
+    try:
+        # A SPEC promete "2 semanas puladas → Mentor". Isso só é respondível desde
+        # que o review passou a gravar em `reviews`; antes, o sistema não tinha como
+        # saber se aconteceu, e a escalada ficava muda.
+        hoje = pontos.hoje_local()
+        anteriores = [
+            agenda.semana_iso(hoje - timedelta(weeks=n)) for n in (1, 2)
+        ]
+        puladas = store.semanas_sem_review(anteriores)
+        if puladas:
+            linhas.append(
+                f"Review semanal pulado: {len(puladas)} das 2 últimas ({', '.join(puladas)})."
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("contexto do mentor sem review: %s", type(exc).__name__)
 
     linhas.append("</estado_do_sistema>")
     return "\n".join(linhas)
