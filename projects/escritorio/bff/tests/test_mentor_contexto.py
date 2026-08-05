@@ -113,3 +113,52 @@ async def test_chat_sem_contexto_continua_funcionando(monkeypatch):
     await hermes_client.chat("organize isto", "Capturas")
 
     assert "estado_do_sistema" not in prompts[0]
+
+
+async def test_chat_manda_os_turnos_anteriores(monkeypatch):
+    """Sem historico, cada mensagem era um subprocesso novo: "e por que?" chegava
+    como pergunta orfa, embora a UI desenhasse baloes encadeados."""
+    from app import hermes_client
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "hermes_mock", False)
+    prompts: list[str] = []
+
+    async def fake_oneshot(prompt):
+        prompts.append(prompt)
+        return "ok"
+
+    monkeypatch.setattr(hermes_client, "_oneshot", fake_oneshot)
+
+    await hermes_client.chat(
+        "e por quê?",
+        "Mentor",
+        historico=[
+            {"role": "user", "text": "o que merece meu foco?"},
+            {"role": "ai", "text": "Pagar a fatura do cartão."},
+        ],
+    )
+
+    assert "Pagar a fatura do cartão" in prompts[0]
+    assert "e por quê?" in prompts[0]
+
+
+async def test_historico_e_limitado(monkeypatch):
+    """O prompt nao pode crescer sem teto: conversa longa viraria custo e latencia."""
+    from app import hermes_client
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "hermes_mock", False)
+    prompts: list[str] = []
+
+    async def fake_oneshot(prompt):
+        prompts.append(prompt)
+        return "ok"
+
+    monkeypatch.setattr(hermes_client, "_oneshot", fake_oneshot)
+
+    historico = [{"role": "user", "text": f"mensagem {i}"} for i in range(40)]
+    await hermes_client.chat("agora", "Mentor", historico=historico)
+
+    assert "mensagem 0" not in prompts[0], "as mais antigas caem"
+    assert "mensagem 39" in prompts[0], "as recentes ficam"

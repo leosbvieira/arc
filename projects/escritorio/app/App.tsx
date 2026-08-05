@@ -323,12 +323,15 @@ export default function App() {
             active={tab === "capturar"}
           />
         </View>
-        {tab === "capturar" ? null : tab === "home" ? (
+        {/* O Chat fica montado como o Capture: desmontar a cada troca de aba
+            apagava a conversa inteira — e o Mentor já não tinha memória nenhuma. */}
+        <View style={tab === "chat" ? styles.mountedScreen : styles.hiddenScreen}>
+          <Chat />
+        </View>
+        {tab === "capturar" || tab === "chat" ? null : tab === "home" ? (
           <Home onOpenTab={openDestination} />
         ) : tab === "tarefas" ? (
           <Tasks initialTaskId={initialTaskId} onInitialTaskConsumed={() => setInitialTaskId(null)} />
-        ) : tab === "chat" ? (
-          <Chat />
         ) : tab === "abertura" ? (
           <Abertura />
         ) : tab === "shutdown" ? (

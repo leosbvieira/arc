@@ -359,7 +359,15 @@ async def compile_reading(
     return draft
 
 
-async def chat(text: str, mode: str, contexto: str | None = None) -> str:
+MAX_TURNOS = 12
+
+
+async def chat(
+    text: str,
+    mode: str,
+    contexto: str | None = None,
+    historico: list[dict] | None = None,
+) -> str:
     """Rota sincrona do Chat (Mentor/Conselho/Capturas como conversa). Mode desconhecido
     segue sem frame. Mock ecoa pra o app rodar sem o Hermes.
 
@@ -371,6 +379,15 @@ async def chat(text: str, mode: str, contexto: str | None = None) -> str:
         return f"[mock:{mode}] {text}"
 
     partes = [MODE_FRAME.get(mode, "")]
+    if historico:
+        # Cada mensagem é um subprocesso novo (`hermes -z`), então sem isto o modelo
+        # nunca via o turno anterior: "e por quê?" chegava como pergunta órfã. Teto
+        # nos turnos recentes — conversa longa viraria custo e latência.
+        linhas = [
+            f"{'Leo' if t.get('role') == 'user' else 'Você'}: {t.get('text', '')}"
+            for t in historico[-MAX_TURNOS:]
+        ]
+        partes.append("Conversa até aqui:\n" + "\n".join(linhas))
     if contexto:
         partes.append(
             "Estado atual do sistema do Leo, para você referenciar com "

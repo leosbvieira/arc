@@ -261,6 +261,14 @@ export default function Chat() {
     if (!t || sending) return;
     const id = activeId;
     const mode = convs[id].mode;
+    // Turnos anteriores vão junto: cada mensagem é um processo novo no Hermes, então
+    // sem isto "e por quê?" chegaria como pergunta órfã. O BFF corta os mais antigos.
+    const historico = convs[id].msgs
+      .filter((m): m is typeof m & { text: string } => typeof m.text === "string")
+      .map((m) => ({
+        role: (m.from === "me" ? "user" : "ai") as "user" | "ai",
+        text: m.text,
+      }));
     setConvs((prev) => ({
       ...prev,
       [id]: { ...prev[id], msgs: [...prev[id].msgs, { from: "me", text: t }] },
@@ -268,7 +276,7 @@ export default function Chat() {
     setDraft("");
     setSending(true);
     try {
-      const reply = await chatSend(t, mode);
+      const reply = await chatSend(t, mode, historico);
       setConvs((prev) => ({
         ...prev,
         [id]: { ...prev[id], msgs: [...prev[id].msgs, { from: "ai", text: reply }] },

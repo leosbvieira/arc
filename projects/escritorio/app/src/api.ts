@@ -101,7 +101,13 @@ export async function logSession(body: {
 
 // Chat síncrono: fala com o Hermes no modo escolhido (Mentor/Conselho/Capturas) e
 // devolve a resposta. Rota separada do /capture (que virou fila fire-and-forget).
-export async function chatSend(text: string, mode: string): Promise<string> {
+export type ChatTurno = { role: "user" | "ai"; text: string };
+
+export async function chatSend(
+  text: string,
+  mode: string,
+  historico: ChatTurno[] = [],
+): Promise<string> {
   const base = await getBffUrl();
   const token = await getToken();
   const r = await fetch(`${base}/chat`, {
@@ -110,7 +116,7 @@ export async function chatSend(text: string, mode: string): Promise<string> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text, mode }),
+    body: JSON.stringify({ text, mode, historico }),
   });
   if (!r.ok) throw new Error(`erro ${r.status}`);
   const data = (await r.json()) as { reply: string };

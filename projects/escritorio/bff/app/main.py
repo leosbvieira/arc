@@ -330,9 +330,17 @@ class ReadingReconcileIn(BaseModel):
         return self
 
 
+class ChatTurno(BaseModel):
+    role: Literal["user", "ai"]
+    text: str
+
+
 class ChatIn(BaseModel):
     text: str
     mode: str = "Mentor"
+    # A conversa mora no app (não é persistida no servidor); ele reenvia os turnos
+    # recentes para o modelo não receber cada pergunta como órfã.
+    historico: list[ChatTurno] = []
 
 
 class ChatOut(BaseModel):
@@ -1378,7 +1386,12 @@ async def chat(body: ChatIn, _: str = Depends(require_auth)):
         else None
     )
     try:
-        reply = await hermes_client.chat(body.text, body.mode, contexto=contexto)
+        reply = await hermes_client.chat(
+            body.text,
+            body.mode,
+            contexto=contexto,
+            historico=[t.model_dump() for t in body.historico],
+        )
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
