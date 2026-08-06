@@ -477,9 +477,16 @@ def weekly_review_text(today: str | None = None) -> str:
     if a_triar:
         plural = "melhoria a triar" if a_triar == 1 else "melhorias a triar"
         texto += f"\nmelhorias: {a_triar} {plural} — um toque cada"
-    for vencida in melhorias["vencidas"]:
-        # Lei 4: constata a semana, não julga o que não aconteceu.
-        texto += f"\nmelhoria escolhida em {vencida['escolhida_semana']} segue em aberto"
+    # UMA linha, nunca N: uma lista que cresce a cada semana sem resposta vira
+    # dívida, e dívida é justamente o que faz ele parar de abrir a tela.
+    # Lei 4: constata a semana, não julga o que não aconteceu.
+    vencidas = melhorias["vencidas"]
+    if len(vencidas) == 1:
+        texto += (
+            f"\nmelhoria escolhida em {vencidas[0]['escolhida_semana']} segue em aberto"
+        )
+    elif vencidas:
+        texto += f"\n{len(vencidas)} melhorias escolhidas antes seguem em aberto"
     if melhorias["app"]:
         texto += f"\nmelhorias de app: {melhorias['app']} pro Claude"
     return texto

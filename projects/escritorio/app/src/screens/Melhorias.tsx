@@ -46,11 +46,17 @@ function Item({
   item,
   destaque,
   ocupado,
+  travado,
   comBusy,
 }: {
   item: Melhoria;
   destaque?: boolean;
+  /** Este card é o que está agindo — só ele recebe o esmaecido. */
   ocupado: boolean;
+  /** Alguma ação em voo, em qualquer card. `busy` é um slot só e todo `comBusy`
+   *  termina num `load()`: deixar outro card clicável faria duas respostas
+   *  correrem sem ordem e a tela mostrar um estado que o servidor não tem. */
+  travado: boolean;
   comBusy: AcaoMelhoria;
 }) {
   return (
@@ -64,10 +70,13 @@ function Item({
       </View>
       <Text style={styles.itemTexto}>{item.texto}</Text>
       <View style={styles.actions}>
-        {item.status === "novo" ? (
+        {/* Alvo `app` não recebe "fazer esta semana": o próprio grupo diz que
+            elas não entram na conta do review, e o BFF recusa com 422. Oferecer
+            o botão aqui era a tela contradizendo o texto logo acima dela. */}
+        {item.status === "novo" && item.alvo !== "app" ? (
           <Pressable
             style={styles.primaryAction}
-            disabled={ocupado}
+            disabled={travado}
             onPress={() => comBusy(item.id, () => escolherMelhoria(item.id))}
           >
             <Feather name="target" size={13} color={colors.primaryText} />
@@ -77,7 +86,7 @@ function Item({
         {item.status === "escolhida" ? (
           <Pressable
             style={styles.action}
-            disabled={ocupado}
+            disabled={travado}
             onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "novo"))}
           >
             <Text style={styles.actionText}>devolver à fila</Text>
@@ -85,14 +94,14 @@ function Item({
         ) : null}
         <Pressable
           style={styles.action}
-          disabled={ocupado}
+          disabled={travado}
           onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "feita"))}
         >
           <Text style={styles.actionText}>feita</Text>
         </Pressable>
         <Pressable
           style={styles.action}
-          disabled={ocupado}
+          disabled={travado}
           onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "descartada"))}
         >
           <Text style={styles.actionMuted}>descartar</Text>
@@ -100,18 +109,27 @@ function Item({
       </View>
       {/* Triar era porta de uma via: um toque errado mandava a melhoria pro balde
           `app`, que o review não cobra, e nenhum controle daqui trocava de volta —
-          nem "descartar → voltar à fila", que não mexe no alvo. */}
-      <View style={styles.chips}>
-        {ALVOS_MELHORIA.filter((alvo) => alvo !== item.alvo).map((alvo) => (
-          <Pressable
-            key={alvo}
-            style={styles.chipDiscreto}
-            disabled={ocupado}
-            onPress={() => comBusy(item.id, () => setMelhoriaAlvo(item.id, alvo))}
-          >
-            <Text style={styles.chipMuted}>→ {ALVO_LABEL[alvo]}</Text>
-          </Pressable>
-        ))}
+          nem "descartar → voltar à fila", que não mexe no alvo.
+
+          Separado das ações por uma linha e com a mesma área de toque delas: como
+          chip miúdo colado 8px abaixo do CTA, ele era o menor alvo da tela E o de
+          consequência mais silenciosa — o dedo escorregava do "fazer esta semana"
+          para "→ app" e a melhoria sumia da conta do review sem aviso nenhum. */}
+      <View style={styles.retriagem}>
+        <Text style={styles.retriagemLabel}>mover para</Text>
+        <View style={styles.chips}>
+          {ALVOS_MELHORIA.filter((alvo) => alvo !== item.alvo).map((alvo) => (
+            <Pressable
+              key={alvo}
+              style={styles.chip}
+              disabled={travado}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              onPress={() => comBusy(item.id, () => setMelhoriaAlvo(item.id, alvo))}
+            >
+              <Text style={styles.chipMuted}>{ALVO_LABEL[alvo]}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
     </Card>
   );
@@ -245,7 +263,7 @@ export default function Melhorias() {
           title="Guardar melhoria"
           onPress={adicionar}
           loading={busy === "novo"}
-          disabled={!texto.trim()}
+          disabled={!texto.trim() || busy !== null}
         />
         <Text style={styles.hint}>
           na captura universal: comece com “melhoria:” ou “melhoria app:”
@@ -261,6 +279,7 @@ export default function Melhorias() {
             item={grupos.escolhida}
             destaque
             ocupado={busy === grupos.escolhida.id}
+            travado={busy !== null}
             comBusy={comBusy}
           />
         </>
@@ -273,7 +292,7 @@ export default function Melhorias() {
         <>
           <Text style={styles.sectionLabel}>escolhidas antes · fez?</Text>
           {grupos.vencidas.map((item) => (
-            <Item key={item.id} item={item} ocupado={busy === item.id} comBusy={comBusy} />
+            <Item key={item.id} item={item} ocupado={busy === item.id} travado={busy !== null} comBusy={comBusy} />
           ))}
         </>
       ) : null}
@@ -281,14 +300,22 @@ export default function Melhorias() {
       {grupos.aTriar.length > 0 ? (
         <>
           <Text style={styles.sectionLabel}>a triar · um toque</Text>
+          {/* Estes cards são o destino do "N a triar — um toque cada" do review e
+              eram os únicos sem trava nem sinal de espera: numa rede lenta o toque
+              não mudava nada, ele tocava de novo em outro chip e as duas respostas
+              corriam sem ordem, deixando na tela um alvo diferente do gravado. */}
           {grupos.aTriar.map((item) => (
-            <Card key={item.id} style={styles.itemCard}>
+            <Card
+              key={item.id}
+              style={[styles.itemCard, busy === item.id && styles.cardOcupado]}
+            >
               <Text style={styles.itemTexto}>{item.texto}</Text>
               <View style={styles.chips}>
                 {ALVOS_MELHORIA.map((alvo) => (
                   <Pressable
                     key={alvo}
                     style={styles.chip}
+                    disabled={busy !== null}
                     onPress={() => comBusy(item.id, () => setMelhoriaAlvo(item.id, alvo))}
                   >
                     <Text style={styles.chipText}>{ALVO_LABEL[alvo]}</Text>
@@ -296,6 +323,7 @@ export default function Melhorias() {
                 ))}
                 <Pressable
                   style={styles.chip}
+                  disabled={busy !== null}
                   onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "descartada"))}
                 >
                   <Text style={styles.chipMuted}>descartar</Text>
@@ -318,7 +346,7 @@ export default function Melhorias() {
               </Text>
             ) : null}
             {grupos.porAlvo[alvo].map((item) => (
-              <Item key={item.id} item={item} ocupado={busy === item.id} comBusy={comBusy} />
+              <Item key={item.id} item={item} ocupado={busy === item.id} travado={busy !== null} comBusy={comBusy} />
             ))}
           </View>
         ),
@@ -383,7 +411,8 @@ const styles = StyleSheet.create({
   itemCard: { gap: spacing.sm, marginBottom: spacing.sm },
   destaqueCard: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   cardOcupado: { opacity: 0.55 },
-  chipDiscreto: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4 },
+  retriagem: { gap: 6, marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  retriagemLabel: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1, textTransform: "uppercase" },
   itemHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   alvoTag: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1, textTransform: "uppercase" },
   alvoTagDestaque: { color: colors.primary },

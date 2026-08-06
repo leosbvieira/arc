@@ -160,7 +160,9 @@ def test_paradas_ignoram_as_do_app():
     store.add_melhoria("melhoria de fluxo", alvo="fluxo")
     store.add_melhoria("ainda sem alvo")
 
-    paradas = [m["texto"] for m in store.melhorias_paradas()]
+    paradas = [
+        m["texto"] for m in store.melhorias_a_triar() + store.melhorias_escolhiveis()
+    ]
 
     assert "melhoria do app" not in paradas
     assert set(paradas) == {
@@ -175,7 +177,8 @@ def test_parada_deixa_de_contar_quando_e_escolhida():
 
     store.escolher_melhoria(empresa["id"], "2026-W32")
 
-    assert store.melhorias_paradas() == []
+    assert store.melhorias_escolhiveis() == []
+    assert store.melhorias_a_triar() == []
 
 
 # --- a semana da escolha VENCE ------------------------------------------------
@@ -215,6 +218,91 @@ def test_escolha_da_semana_corrente_nao_esta_vencida():
     assert store.melhoria_da_semana("2026-W32")["id"] == atual["id"]
 
 
+def test_escolher_a_da_semana_nao_apaga_a_vencida():
+    """A vaga em disputa é a DESTA semana, não a história.
+
+    O conserto anterior criou `melhorias_vencidas` prometendo que a escolha de
+    semana passada não some — mas `escolher_melhoria` continuava rebaixando
+    QUALQUER outra linha 'escolhida'. Resultado: a pergunta "fez?" era destruída
+    justamente quando ele fazia o que o review manda (escolher a da semana), sem
+    ele responder nada. Estado mudando sozinho é violação da lei 3."""
+    antiga = store.add_melhoria("escolhida em junho", alvo="empresa")
+    store.escolher_melhoria(antiga["id"], "2026-W26")
+    nova = store.add_melhoria("a desta semana", alvo="fluxo")
+
+    store.escolher_melhoria(nova["id"], "2026-W32")
+
+    sobreviveu = store.get_melhoria(antiga["id"])
+    assert sobreviveu["status"] == "escolhida"
+    assert sobreviveu["escolhida_semana"] == "2026-W26"
+    assert [m["id"] for m in store.melhorias_vencidas("2026-W32")] == [antiga["id"]]
+    assert store.melhoria_da_semana("2026-W32")["id"] == nova["id"]
+
+
+def test_trocar_de_ideia_na_mesma_semana_ainda_substitui():
+    """A disputa pela vaga da semana corrente continua valendo — uma por vez."""
+    primeira = store.add_melhoria("primeira", alvo="empresa")
+    segunda = store.add_melhoria("segunda", alvo="fluxo")
+
+    store.escolher_melhoria(primeira["id"], "2026-W32")
+    store.escolher_melhoria(segunda["id"], "2026-W32")
+
+    assert store.get_melhoria(primeira["id"])["status"] == "novo"
+    assert store.get_melhoria(primeira["id"])["escolhida_semana"] is None
+    assert store.melhoria_da_semana("2026-W32")["id"] == segunda["id"]
+
+
+# --- `app` não entra na máquina de cobrança ------------------------------------
+#
+# A tela diz, no próprio grupo: "estas saem comigo numa sessão de programação —
+# não entram na conta do review". Oferecer ali a ação do review contradizia o
+# texto — e, escolhida e não feita, a melhoria de app virava linha semanal
+# perpétua no artefato do vault e no lockscreen, cobrando o que ele não faz sozinho.
+
+
+def test_melhoria_de_app_nao_ocupa_a_vaga_da_semana():
+    do_app = store.add_melhoria("refatorar o parser", alvo="app")
+
+    assert store.escolher_melhoria(do_app["id"], "2026-W32") is None
+    assert store.get_melhoria(do_app["id"])["status"] == "novo"
+
+
+def test_app_retriada_depois_de_escolhida_nao_vira_cobranca():
+    """Caminho real: escolhe como empresa, depois re-tria para app.
+
+    `definir_alvo` é UPDATE puro e aceita qualquer status, então esta linha
+    EXISTE. Sem o filtro, ela viraria uma vencida de alvo `app` cobrando toda
+    semana."""
+    item = store.add_melhoria("era da empresa", alvo="empresa")
+    store.escolher_melhoria(item["id"], "2026-W26")
+
+    store.definir_alvo(item["id"], "app")
+
+    assert store.melhorias_vencidas("2026-W32") == []
+
+
+def test_texto_do_review_nao_cresce_com_o_numero_de_vencidas(client):
+    """Uma linha, não N. Contador que só cresce é dívida, e dívida ele não abre.
+
+    Lei 4: constata, não julga."""
+    from app import tasks
+
+    for n, semana in enumerate(["2026-W26", "2026-W28", "2026-W30"]):
+        item = client.post(
+            "/melhorias",
+            json={"texto": f"antiga {n}", "alvo": "empresa"},
+        ).json()
+        store.escolher_melhoria(item["id"], semana)
+
+    texto = tasks.weekly_review_text()
+
+    linhas_vencidas = [l for l in texto.splitlines() if "em aberto" in l]
+    assert len(linhas_vencidas) == 1, texto
+    assert "3 melhorias escolhidas antes" in linhas_vencidas[0]
+    for palavra in ("atrasad", "furou", "falhou", "deveria", "ainda não"):
+        assert palavra not in texto.lower()
+
+
 # --- a triar não é escolhível --------------------------------------------------
 #
 # O CTA do review dizia "escolher 1 para a semana" contando também os itens sem
@@ -226,11 +314,10 @@ def test_paradas_separam_o_que_e_triagem_do_que_e_escolha():
     store.add_melhoria("ainda sem alvo")
     store.add_melhoria("outra sem alvo")
     store.add_melhoria("da empresa", alvo="empresa")
+    store.add_melhoria("do app", alvo="app")
 
     assert len(store.melhorias_a_triar()) == 2
     assert [m["texto"] for m in store.melhorias_escolhiveis()] == ["da empresa"]
-    # `paradas` continua sendo o total das duas — é o número que ele vê.
-    assert len(store.melhorias_paradas()) == 3
 
 
 # --- hook de captura ---------------------------------------------------------
@@ -482,6 +569,19 @@ def test_escolher_usa_a_semana_corrente_do_servidor(client):
     assert resposta.status_code == 200
     assert resposta.json()["status"] == "escolhida"
     assert resposta.json()["escolhida_semana"] == agenda.semana_iso(pontos.hoje_local())
+
+
+def test_escolher_melhoria_de_app_diz_o_porque(client):
+    """404 genérico esconderia a razão no caso mais provável de recusa."""
+    do_app = client.post(
+        "/melhorias",
+        json={"texto": "refatorar o parser", "alvo": "app"},
+    ).json()
+
+    resposta = client.post(f"/melhorias/{do_app['id']}/escolher")
+
+    assert resposta.status_code == 422
+    assert resposta.json()["detail"] == "melhoria_de_app_fora_da_semana"
 
 
 def test_escolher_o_que_ja_foi_resolvido_e_404(client):

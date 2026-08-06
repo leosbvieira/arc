@@ -2193,13 +2193,17 @@ def definir_pratica(id: int, semana: str) -> dict | None:
             con.rollback()
             return None
 
-        # Limpa também os metadados da prática anterior para o estado refletir
-        # exatamente a escolha atual.
+        # Só a prática DA MESMA semana perde a vaga — é ela que está em disputa.
+        # Rebaixar também as de semanas anteriores apagava a pergunta que
+        # `praticas_sem_avaliacao` existe para fazer ("aplicou?"), e apagava
+        # justamente quando ele fazia o que o review manda. Sem ele responder
+        # nada: estado mudando sozinho é violação da lei 3. Mesmo defeito da fila
+        # de melhorias (`escolher_melhoria`), fechado junto.
         con.execute(
             "UPDATE aprendizados "
             "SET status = 'novo', pratica_semana = NULL, pratica_em = NULL "
-            "WHERE status = 'pratica' AND id <> ?",
-            (id,),
+            "WHERE status = 'pratica' AND pratica_semana = ? AND id <> ?",
+            (semana, id),
         )
         con.execute(
             "UPDATE aprendizados "
@@ -2361,18 +2365,6 @@ def melhorias_escolhiveis() -> list[dict]:
     )
 
 
-def melhorias_paradas() -> list[dict]:
-    """As que esperam decisão DELE: sem alvo ainda, ou de empresa/fluxo.
-
-    É o número que o review semanal mostra. As de `app` ficam de fora — elas
-    dependem de uma sessão comigo, então cobrá-las no review só empilharia culpa
-    sem oferecer ação."""
-    return _melhorias_novas(
-        f"(alvo IS NULL OR alvo IN ({', '.join('?' for _ in _ALVO_DELE)}))",
-        _ALVO_DELE,
-    )
-
-
 def melhoria_da_semana(semana: str) -> dict | None:
     """A escolhida DESTA semana — a de outra semana não conta.
 
@@ -2395,13 +2387,21 @@ def melhorias_vencidas(semana_atual: str) -> list[dict]:
 
     Não se apaga a escolha na virada da semana: apagar seria o sistema decidindo
     por ele (lei 3). Ela sai do lugar de "compromisso desta semana" e vira uma
-    pergunta, exatamente como `praticas_sem_avaliacao` faz na edificação."""
+    pergunta, exatamente como `praticas_sem_avaliacao` faz na edificação.
+
+    Alvo `app` fica de fora como em todo o resto da cobrança. `escolher_melhoria`
+    já recusa app, mas `definir_alvo` é UPDATE puro e aceita qualquer status: dá
+    para escolher como empresa e re-triar para app depois. Sem este filtro, essa
+    linha viraria cobrança semanal perpétua no artefato do vault e no lockscreen
+    por algo que ele não faz sozinho."""
+    marcadores = ", ".join("?" for _ in _ALVO_DELE)
     with closing(_connect()) as con:
         rows = con.execute(
             "SELECT * FROM melhorias WHERE status = 'escolhida' "
             "AND escolhida_semana IS NOT NULL AND escolhida_semana <> ? "
+            f"AND (alvo IS NULL OR alvo IN ({marcadores})) "
             "ORDER BY escolhida_em DESC",
-            (semana_atual,),
+            (semana_atual, *_ALVO_DELE),
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -2432,23 +2432,32 @@ def escolher_melhoria(id: int, semana: str) -> dict | None:
     """Escolhe UMA melhoria para a semana; duas escolhas valem tanto quanto nenhuma.
 
     Só `novo`/`escolhida` entram: reabrir uma feita ou descartada desfaria uma
-    decisão que ele já tomou."""
+    decisão que ele já tomou. Alvo `app` também não entra — a vaga é do que ELE
+    faz na semana, e a tela promete no próprio grupo que as de app não entram na
+    conta do review."""
     with closing(_connect()) as con:
         con.execute("BEGIN IMMEDIATE")
-        alvo = con.execute(
-            "SELECT status FROM melhorias WHERE id = ?",
+        atual = con.execute(
+            "SELECT status, alvo FROM melhorias WHERE id = ?",
             (id,),
         ).fetchone()
-        if alvo is None or alvo["status"] not in ("novo", "escolhida"):
+        if (
+            atual is None
+            or atual["status"] not in ("novo", "escolhida")
+            or atual["alvo"] == "app"
+        ):
             con.rollback()
             return None
 
-        # A anterior volta a `novo` limpa: o estado tem que refletir só a escolha atual.
+        # Só a escolha DA MESMA semana perde a vaga — é ela que está em disputa.
+        # Rebaixar também as de semanas anteriores destruía a pergunta "fez?"
+        # justamente quando ele fazia o que o review manda, e sem ele responder
+        # nada: estado mudando sozinho é violação da lei 3.
         con.execute(
             "UPDATE melhorias "
             "SET status = 'novo', escolhida_semana = NULL, escolhida_em = NULL "
-            "WHERE status = 'escolhida' AND id <> ?",
-            (id,),
+            "WHERE status = 'escolhida' AND escolhida_semana = ? AND id <> ?",
+            (semana, id),
         )
         con.execute(
             "UPDATE melhorias "

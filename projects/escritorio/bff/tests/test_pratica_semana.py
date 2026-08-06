@@ -56,3 +56,39 @@ def test_digest_nao_anuncia_pratica_de_outra_semana():
 
     linhas = tasks.routine_lines()
     assert not any("prática" in linha.lower() for linha in linhas)
+
+
+def test_escolher_a_pratica_da_semana_nao_apaga_a_pratica_vencida():
+    """A vaga em disputa é a DESTA semana, não a história.
+
+    `praticas_sem_avaliacao` existe para transformar a prática vencida na pergunta
+    "aplicou?" — mas `definir_pratica` rebaixava QUALQUER outra linha em prática,
+    inclusive as de semanas anteriores. A pergunta era destruída exatamente quando
+    ele fazia o que o review manda (escolher a prática da semana), sem ele
+    responder nada: estado mudando sozinho é violação da lei 3.
+
+    Mesmo defeito encontrado na fila de melhorias; os dois foram fechados juntos."""
+    antiga = _aprendizado("perguntar antes de prometer")
+    store.definir_pratica(antiga, _semana(-6))
+    nova = _aprendizado("escrever o combinado no mesmo dia")
+
+    store.definir_pratica(nova, _semana())
+
+    sobreviveu = store.get_aprendizado(antiga)
+    assert sobreviveu["status"] == "pratica"
+    assert sobreviveu["pratica_semana"] == _semana(-6)
+    assert [p["id"] for p in store.praticas_sem_avaliacao(_semana())] == [antiga]
+    assert store.pratica_da_semana(_semana())["id"] == nova
+
+
+def test_trocar_de_pratica_na_mesma_semana_ainda_substitui():
+    """A disputa pela vaga da semana corrente continua valendo — uma por vez."""
+    primeira = _aprendizado("primeira")
+    segunda = _aprendizado("segunda")
+
+    store.definir_pratica(primeira, _semana())
+    store.definir_pratica(segunda, _semana())
+
+    assert store.get_aprendizado(primeira)["status"] == "novo"
+    assert store.get_aprendizado(primeira)["pratica_semana"] is None
+    assert store.pratica_da_semana(_semana())["id"] == segunda

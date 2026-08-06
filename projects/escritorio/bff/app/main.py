@@ -2322,6 +2322,13 @@ async def escolher_melhoria_da_semana(
     _: str = Depends(require_auth),
 ):
     """A semana vem do servidor: relógio de celular errado gravaria a semana errada."""
+    # 404 genérico esconderia o porquê no caso mais provável de recusa: a vaga da
+    # semana é do que ELE faz, e a tela já promete que as de `app` não entram na
+    # conta do review. O store recusa de novo — guarda em duas camadas.
+    atual = store.get_melhoria(id)
+    if atual is not None and atual["alvo"] == "app":
+        raise HTTPException(status_code=422, detail="melhoria_de_app_fora_da_semana")
+
     melhoria = store.escolher_melhoria(id, agenda.semana_iso(pontos.hoje_local()))
     if melhoria is None:
         raise HTTPException(status_code=404, detail="melhoria_nao_escolhivel")

@@ -114,7 +114,7 @@ Você escreve/dita  →  [Enviar]  →  POST /capture
                          2. Hermes classifica → tipo/título/quando
                          3. se tarefa/cobrança → cria card em STAGING (ClickUp)
                             se `hack:`/`aprendizado:`/`insight:`   → vira Edificação (não é tarefa)
-                            se `melhoria:`/`ideia:` (+ alvo opcional) → vira Melhoria (não é tarefa)
+                            se `melhoria:` (+ alvo opcional)           → vira Melhoria (não é tarefa)
                             se só nota                              → fica no vault
                          4. se tem hora marcada → agenda lembrete (scheduler)
                                       ▼

@@ -47,12 +47,19 @@ auditoria de 2026-08 encontrou nos ritos.
 
 - **D-A — alvo, não área.** `app` | `empresa` | `fluxo`, e `NULL` = a triar. O alvo é
   opcional na captura porque decidir na hora é atrito; a fila pergunta depois, num toque.
-- **D-B — `app` fica fora da cobrança.** O review conta `paradas` = `novo` com alvo
-  `NULL`/`empresa`/`fluxo`. As de `app` aparecem numa linha informativa separada. Contá-las
-  no "escolhe 1" transformaria a fila numa dívida crescente, e ele registra melhoria de app
-  o tempo todo.
-- **D-C — uma escolhida por vez.** Duas escolhas simultâneas valem tanto quanto nenhuma.
-  Espelha `definir_pratica` da Edificação.
+- **D-B — `app` fica fora da cobrança, inteira.** O review conta `novo` com alvo
+  `NULL`/`empresa`/`fluxo`; as de `app` aparecem numa linha informativa separada. E `app`
+  **não pode ocupar a vaga da semana**: o store recusa, o endpoint devolve 422
+  `melhoria_de_app_fora_da_semana`, a tela não desenha o botão, e `melhorias_vencidas`
+  filtra alvo `app` (alcançável por re-triagem, já que `definir_alvo` aceita qualquer
+  status). Sem isso, uma melhoria de app escolhida e não feita virava linha semanal
+  perpétua no artefato do vault e no lockscreen — cobrando o que ele não faz sozinho —
+  enquanto o grupo dela, na mesma tela, promete "não entram na conta do review".
+- **D-C — uma escolhida por semana, e a disputa é só pela vaga corrente.** Escolher outra
+  desbanca a **da mesma semana** (mudei de ideia hoje). Escolhas de semanas anteriores
+  **não** são rebaixadas: elas são a pergunta "fez?", e apagá-las quando ele faz o que o
+  review manda seria o sistema decidindo por ele (lei 3). Espelha `definir_pratica` da
+  Edificação — que tinha exatamente o mesmo furo e foi consertado junto.
 - **D-D — sem write extra no vault.** O Raw verbatim da captura já cumpre a lei 1
   (`write_raw` roda **antes** dos hooks). As melhorias de alvo `app` são lidas por mim via
   `GET /melhorias?alvo=app` — mesma durabilidade que aprendizados, pontos e rotinas.
@@ -123,7 +130,7 @@ Só os três alvos conhecidos casam. `melhoria xyz:` **não** é hook — cai na
 | GET | `/melhorias?alvo=&status=` | lista a fila + a semana ISO corrente; filtros validados na borda (422) |
 | POST | `/melhorias` | cria manualmente (`texto`, `alvo?`, `sensivel?`) |
 | POST | `/melhorias/{id}/alvo` | triagem: define `app`/`empresa`/`fluxo` |
-| POST | `/melhorias/{id}/escolher` | marca a da semana; 404 se já `feita`/`descartada` |
+| POST | `/melhorias/{id}/escolher` | marca a da semana; 422 se alvo `app`; 404 se já `feita`/`descartada` |
 | POST | `/melhorias/{id}/status` | `novo` / `feita` / `descartada` (`escolhida` é 422) |
 
 `GET /review/weekly` ganhou o bloco:
@@ -143,9 +150,14 @@ E `weekly_review_text()` ganhou linhas com pesos diferentes — `escolhiveis` pe
 ```
 melhorias: 1 melhoria parada — escolher 1 no review
 melhorias: 2 melhorias a triar — um toque cada
-melhoria escolhida em 2026-W30 segue em aberto
+melhoria escolhida em 2026-W30 segue em aberto      ← 1 vencida
+3 melhorias escolhidas antes seguem em aberto       ← N vencidas: UMA linha, nunca N
 melhorias de app: 5 pro Claude
 ```
+
+As vencidas ocupam **uma linha só**, com contagem, independentemente de quantas forem: uma
+lista que cresce a cada semana sem resposta vira dívida, e dívida é o que faz ele parar de
+abrir a tela.
 
 ⚠️ **Lei 7 neste texto.** `weekly_review_text()` vira artefato no vault **e** corpo de nudge, e
 o corpo inteiro do nudge aparece no lockscreen. Aqui só entra **contagem e semana** — o texto
@@ -186,9 +198,15 @@ provando que a guarda morde.
 - [x] o checkbox "sensível" do formulário chega ao registro
 - [x] o texto de uma melhoria sensível nunca entra em `weekly_review_text()` (lei 7)
 - [x] o Raw sai ANTES do hook, verbatim e com prefixo (lei 1) — asserido, não presumido
+- [x] escolher a melhoria da semana NÃO apaga a vencida (a pergunta "fez?" sobrevive)
+- [x] trocar de ideia na MESMA semana continua substituindo
+- [x] alvo `app` não ocupa a vaga da semana — store, endpoint (422) e tela
+- [x] `app` re-triada depois de escolhida não vira cobrança perpétua
+- [x] N vencidas rendem UMA linha no review, não N
+- [x] o mesmo furo em `definir_pratica` (Edificação) foi fechado junto, com teste próprio
 
 **Todas as guardas acima foram provadas por MUTAÇÃO**: cada uma foi quebrada de propósito e
 o teste correspondente falhou. Nenhuma passa por acidente.
 
-**Testes:** `bff/tests/test_melhorias.py` (44) · `bff/tests/test_edificacao.py` (guarda irmã) ·
+**Testes:** `bff/tests/test_melhorias.py` (50) · `bff/tests/test_pratica_semana.py` (irmão) · `bff/tests/test_edificacao.py` (guarda irmã) ·
 `app/tests/melhoriasView.test.mjs` (11).
