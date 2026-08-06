@@ -34,6 +34,9 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS devices (
   token TEXT PRIMARY KEY, created REAL
 );
+CREATE TABLE IF NOT EXISTS push_receipts (
+  ticket_id TEXT PRIMARY KEY, token TEXT NOT NULL, criado REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS routine_checks (
   data TEXT NOT NULL, rotina TEXT NOT NULL, feito INTEGER NOT NULL,
   template TEXT NOT NULL, PRIMARY KEY (data, rotina)
@@ -1408,6 +1411,43 @@ def semanas_sem_review(desde: list[str]) -> list[str]:
             )
         }
     return [semana for semana in desde if semana not in feitas]
+
+
+def registrar_tickets(pares: list[tuple[str, str]]) -> None:
+    """Guarda (ticket, token) para conferir o recibo depois. O ticket só diz que a
+    Expo ACEITOU a mensagem; quem diz se chegou é o recibo, minutos depois."""
+    if not pares:
+        return
+    agora = time.time()
+    with closing(_connect()) as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO push_receipts (ticket_id, token, criado) "
+            "VALUES (?, ?, ?)",
+            [(tid, token, agora) for tid, token in pares],
+        )
+        con.commit()
+
+
+def tickets_a_conferir(idade_minima_s: float = 900) -> list[dict]:
+    """Só os maduros: a Expo leva minutos para publicar o recibo, e perguntar cedo
+    demais devolve 'not ready' e vira ruído."""
+    corte = time.time() - idade_minima_s
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT ticket_id, token, criado FROM push_receipts WHERE criado <= ? "
+            "ORDER BY criado",
+            (corte,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def descartar_tickets(ids: list[str]) -> None:
+    if not ids:
+        return
+    marcas = ",".join("?" for _ in ids)
+    with closing(_connect()) as con:
+        con.execute(f"DELETE FROM push_receipts WHERE ticket_id IN ({marcas})", ids)
+        con.commit()
 
 
 def log_event(evento: str, ref: str = "", meta: dict | None = None) -> None:

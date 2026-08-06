@@ -127,6 +127,13 @@ async def _scheduler_worker() -> None:
             await fire_due_schedules()
         except Exception:  # noqa: BLE001 - a rodada nunca derruba o loop
             logger.exception("scheduler")
+        try:
+            # Segunda passada do push: o ticket dizia "aceito", o recibo diz se CHEGOU.
+            # Sem isso um token morto ficava registrado para sempre e o notif_log
+            # gravava sucesso de um aviso que sumiu.
+            await notify.conferir_recibos()
+        except Exception:  # noqa: BLE001
+            logger.exception("recibos de push")
         await asyncio.sleep(60)
 
 

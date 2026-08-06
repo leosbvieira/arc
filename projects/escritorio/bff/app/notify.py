@@ -50,6 +50,19 @@ def _avaliar_push(resultado: dict, tokens: list[str]) -> tuple[bool, list[str]]:
     return entregou, stale
 
 
+def _tickets_com_token(resultado: dict, tokens: list[str]) -> list[tuple[str, str]]:
+    """Pareia ticket↔token por posição, como o `_avaliar_push` — a Expo devolve os
+    tickets na mesma ordem das mensagens enviadas."""
+    tickets = resultado.get("tickets")
+    if not isinstance(tickets, list) or len(tickets) != len(tokens):
+        return []
+    pares = []
+    for token, ticket in zip(tokens, tickets, strict=True):
+        if isinstance(ticket, dict) and isinstance(ticket.get("id"), str):
+            pares.append((ticket["id"], token))
+    return pares
+
+
 async def _tentar_push(kind: str, corpo: str) -> bool:
     try:
         tokens = store.list_devices()
@@ -60,10 +73,14 @@ async def _tentar_push(kind: str, corpo: str) -> bool:
         return False
     try:
         # `data` carrega só o kind (pro app abrir na tela certa) — nunca conteúdo.
-        entregou, stale = _avaliar_push(
-            await push.send_push(tokens, TITULO, corpo, {"kind": kind}),
-            tokens,
-        )
+        resultado = await push.send_push(tokens, TITULO, corpo, {"kind": kind})
+        entregou, stale = _avaliar_push(resultado, tokens)
+        # O ticket só diz que a Expo ACEITOU. Guarda para conferir o recibo depois —
+        # é lá que ela reporta DeviceNotRegistered, e sem isso o log mente.
+        try:
+            store.registrar_tickets(_tickets_com_token(resultado, tokens))
+        except Exception:  # noqa: BLE001 — conferência é bônus, não trava o aviso
+            logger.warning("notificar: registro de tickets falhou")
         if stale:
             try:
                 store.remove_devices(stale)
@@ -81,6 +98,46 @@ async def _tentar_telegram(corpo: str) -> bool:
     except Exception as e:  # noqa: BLE001 - canal nunca propaga falha ao chamador
         logger.warning("telegram falhou: %s", type(e).__name__)
         return False
+
+
+async def conferir_recibos(idade_minima_s: float = 900) -> None:
+    """Segunda passada: pergunta à Expo se o push realmente chegou.
+
+    Sem isto, um token morto devolvia ticket `ok`, o `_avaliar_push` concluía
+    "entregou", a ponte do Telegram nunca subia e o `notif_log` registrava sucesso —
+    o log mentindo justamente sobre a falha que a gente usaria o log para achar.
+
+    Best-effort: Expo fora do ar não derruba nada e não descarta o ticket, que volta
+    na próxima passada.
+    """
+    pendentes = store.tickets_a_conferir(idade_minima_s)
+    if not pendentes:
+        return
+
+    por_ticket = {p["ticket_id"]: p["token"] for p in pendentes}
+    try:
+        recibos = await push.get_receipts(list(por_ticket))
+    except Exception as e:  # noqa: BLE001 — lei 7: só a classe do erro
+        logger.warning("recibos de push: %s", type(e).__name__)
+        return
+
+    mortos: list[str] = []
+    resolvidos: list[str] = []
+    for ticket_id, recibo in recibos.items():
+        if not isinstance(recibo, dict):
+            continue
+        resolvidos.append(ticket_id)
+        detalhes = recibo.get("details")
+        erro = detalhes.get("error") if isinstance(detalhes, dict) else None
+        if erro == "DeviceNotRegistered":
+            token = por_ticket.get(ticket_id)
+            if token:
+                mortos.append(token)
+
+    if mortos:
+        store.remove_devices(mortos)
+        store.log_event("push_device_expirado", meta={"n": len(mortos)})
+    store.descartar_tickets(resolvidos)
 
 
 async def notificar(kind: str, texto: str, *, sensivel: bool = False) -> dict:
