@@ -1,5 +1,5 @@
 import * as SecureStore from "./storage";
-import { capture, logSession } from "./api";
+import { capture, completeTask, logSession } from "./api";
 
 const IDX = "oq_idx_v2"; // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
 // Limite do SecureStore e em BYTES (~2048). Fatiamos por CARACTERES no pior caso UTF-8:
@@ -9,7 +9,9 @@ const IDX = "oq_idx_v2"; // indice da fila: [{id, chunks}] — so metadados, nun
 const CHUNK_CHARS = 600;
 
 export type QueuedItem = {
-  kind: "capture" | "session";
+  // `complete` entrou depois: a garantia "nada se perde" cobria a CAPTURA e deixava a
+  // EXECUÇÃO de fora — concluir no metrô mostrava um alerta e a ação evaporava.
+  kind: "capture" | "session" | "complete";
   payload: any;
   ts: number;
 };
@@ -120,6 +122,8 @@ async function sendOne(it: QueuedItem): Promise<void> {
       it.payload.client_key,
       Boolean(it.payload.sensivel),
     );
+  } else if (it.kind === "complete") {
+    await completeTask(it.payload.id);
   } else {
     await logSession(it.payload);
   }

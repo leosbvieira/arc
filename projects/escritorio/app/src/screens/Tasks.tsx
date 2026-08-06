@@ -14,6 +14,8 @@ import {
 } from "react-native";
 
 import { completeTask, createTask, listTasks, Task, TasksByArea } from "../api";
+import { enqueue } from "../captureQueue";
+import { ehFalhaDeRede } from "../offlineError";
 import { DueChoice, dueFromChoice, horaValida } from "../taskDue";
 import { TaskDetailModal } from "../TaskDetailModal";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
@@ -128,6 +130,7 @@ export default function Tasks({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [pendingCompletion, setPendingCompletion] = useState<Task | null>(null);
+  const [statusFila, setStatusFila] = useState("");
 
   const load = useCallback(async (refresh = false) => {
     refresh ? setRefreshing(true) : setLoading(true);
@@ -181,6 +184,21 @@ export default function Tasks({
     try {
       await completeTask(id);
     } catch (error) {
+      // Sem rede, a conclusão vai pra fila em vez de evaporar num alerta: a garantia
+      // "nada se perde" cobria a captura e deixava a execução de fora. Erro do
+      // servidor (404/401/500) continua aparecendo — reenviar não conserta nenhum
+      // deles, e o 500 pode ter concluído do outro lado.
+      if (ehFalhaDeRede(error)) {
+        try {
+          await enqueue({ kind: "complete", payload: { id }, ts: Date.now() });
+          setPendingCompletion(null);
+          setStatusFila("sem conexão — conclusão salva, envio quando voltar");
+          setCompletingId(null);
+          return true;
+        } catch {
+          /* fila indisponível: cai no alerta abaixo, nada some em silêncio */
+        }
+      }
       Alert.alert("Concluir tarefa", error instanceof Error ? error.message : "Não foi possível concluir.");
       return false;
     } finally {
@@ -236,6 +254,13 @@ export default function Tasks({
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.primary} />}
       >
+      {statusFila ? (
+        <Pressable onPress={() => setStatusFila("")} style={styles.filaAviso}>
+          <Feather name="cloud-off" size={13} color={colors.amber} />
+          <Text style={styles.filaAvisoTexto}>{statusFila}</Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.toolbar}>
         <View style={{ flex: 1 }}>
           <Text style={styles.kicker}>CENTRAL DE EXECUÇÃO</Text>
@@ -417,6 +442,18 @@ const styles = StyleSheet.create({
   signalNumber: { fontFamily: fonts.serif, color: colors.text, fontSize: 20 },
   signalLabel: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 9.5, marginTop: 2 },
   group: { marginBottom: spacing.xl },
+  filaAviso: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.amber,
+    marginBottom: spacing.sm,
+  },
+  filaAvisoTexto: { flex: 1, fontFamily: fonts.ui, fontSize: 12, color: colors.amber },
   taskRowConfirm: { borderColor: colors.success, backgroundColor: `${colors.success}12` },
   confirmLabel: { fontFamily: fonts.mono, fontSize: 9.5, letterSpacing: 1.2, color: colors.success },
   confirmCancel: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted },
