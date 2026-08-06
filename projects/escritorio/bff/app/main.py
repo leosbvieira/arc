@@ -2213,6 +2213,129 @@ async def alterar_status_aprendizado(
     return aprendizado
 
 
+class MelhoriaIn(BaseModel):
+    """Entrada manual; espaços isolados não constituem melhoria."""
+
+    model_config = {"extra": "forbid"}
+
+    texto: str
+    alvo: str | None = None
+    sensivel: bool = False
+
+    @field_validator("texto")
+    @classmethod
+    def validar_texto(cls, value: str) -> str:
+        texto = value.strip()
+        if not texto:
+            raise ValueError("texto não pode ser vazio")
+        return texto
+
+    @field_validator("alvo")
+    @classmethod
+    def validar_alvo(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"app", "empresa", "fluxo"}:
+            raise ValueError("alvo inválido; use app, empresa ou fluxo")
+        return value
+
+
+class MelhoriaAlvoIn(BaseModel):
+    """Triagem da fila: o alvo é obrigatório aqui (é o que o endpoint decide)."""
+
+    model_config = {"extra": "forbid"}
+
+    alvo: str
+
+    @field_validator("alvo")
+    @classmethod
+    def validar_alvo(cls, value: str) -> str:
+        if value not in {"app", "empresa", "fluxo"}:
+            raise ValueError("alvo inválido; use app, empresa ou fluxo")
+        return value
+
+
+class MelhoriaStatusIn(BaseModel):
+    """Transições manuais; escolher a da semana usa o endpoint que grava a semana."""
+
+    model_config = {"extra": "forbid"}
+
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validar_status(cls, value: str) -> str:
+        if value not in {"novo", "feita", "descartada"}:
+            raise ValueError("status inválido")
+        return value
+
+
+@app.get("/melhorias")
+async def listar_melhorias(
+    alvo: str | None = None,
+    status: str | None = None,
+    _: str = Depends(require_auth),
+):
+    """Fila sem prazo. Não é tarefa: nada aqui vai pro ClickUp nem cobra."""
+    if alvo is not None and alvo not in {"app", "empresa", "fluxo"}:
+        raise HTTPException(status_code=422, detail="alvo_invalido")
+    if status is not None and status not in {
+        "novo",
+        "escolhida",
+        "feita",
+        "descartada",
+    }:
+        raise HTTPException(status_code=422, detail="status_invalido")
+    return {"melhorias": store.list_melhorias(alvo=alvo, status=status)}
+
+
+@app.post("/melhorias")
+async def criar_melhoria(
+    body: MelhoriaIn,
+    _: str = Depends(require_auth),
+):
+    return store.add_melhoria(
+        body.texto,
+        alvo=body.alvo,
+        sensivel=body.sensivel,
+    )
+
+
+@app.post("/melhorias/{id}/alvo")
+async def definir_alvo_melhoria(
+    id: int,
+    body: MelhoriaAlvoIn,
+    _: str = Depends(require_auth),
+):
+    melhoria = store.definir_alvo(id, body.alvo)
+    if melhoria is None:
+        raise HTTPException(status_code=404, detail="melhoria_nao_encontrada")
+    return melhoria
+
+
+@app.post("/melhorias/{id}/escolher")
+async def escolher_melhoria_da_semana(
+    id: int,
+    _: str = Depends(require_auth),
+):
+    """A semana vem do servidor: relógio de celular errado gravaria a semana errada."""
+    melhoria = store.escolher_melhoria(id, agenda.semana_iso(pontos.hoje_local()))
+    if melhoria is None:
+        raise HTTPException(status_code=404, detail="melhoria_nao_escolhivel")
+    store.log_event("melhoria_escolhida", ref=str(id))
+    return melhoria
+
+
+@app.post("/melhorias/{id}/status")
+async def alterar_status_melhoria(
+    id: int,
+    body: MelhoriaStatusIn,
+    _: str = Depends(require_auth),
+):
+    melhoria = store.set_status_melhoria(id, body.status)
+    if melhoria is None:
+        raise HTTPException(status_code=404, detail="melhoria_nao_encontrada")
+    return melhoria
+
+
 @app.get("/objetivos")
 async def get_objetivos(_=Depends(require_auth)):
     return {"objetivos": await objetivos.listar(pontos.hoje_local())}

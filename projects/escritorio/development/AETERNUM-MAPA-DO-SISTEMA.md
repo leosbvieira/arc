@@ -92,6 +92,7 @@ As demais entram pela Home e voltam pelo chevron. (`App.tsx`)
 | **Rotinas** | `Rotinas.tsx` | CRUD das rotinas editáveis (bloco/dias/passos ordenados) |
 | **Revisão** | `Revisao.tsx` | Review semanal/mensal, scorecard, objetivos, pontos/conquistas, edificação |
 | **Edificação** | `Edificacao.tsx` | Aprendizados capturados → escolher 1 para praticar → acompanhar |
+| **Melhorias** | `Melhorias.tsx` | Fila SEM PRAZO de melhorias por alvo (app / empresa / fluxo). Não vira tarefa, não vai pro ClickUp, não cobra atraso |
 | **Triagem** | `Triagem.tsx` | Distribuir itens do Staging para as áreas em lote (a IA propõe, você confirma) |
 | **Hábitos a reduzir** | `Habitos.tsx` | Registrar ocorrências de hábitos a reduzir; penalidade nos pontos |
 | **Ajustes** | `Settings.tsx` | URL do BFF, login/logout, push |
@@ -113,10 +114,11 @@ Você escreve/dita  →  [Enviar]  →  POST /capture
                          2. Hermes classifica → tipo/título/quando
                          3. se tarefa/cobrança → cria card em STAGING (ClickUp)
                             se `hack:`/`aprendizado:`/`insight:`   → vira Edificação (não é tarefa)
+                            se `melhoria:`/`ideia:` (+ alvo opcional) → vira Melhoria (não é tarefa)
                             se só nota                              → fica no vault
                          4. se tem hora marcada → agenda lembrete (scheduler)
                                       ▼
-                        materializa em:  ClickUp/Staging  ·  Vault (Raw)  ·  Edificação
+                        materializa em:  ClickUp/Staging  ·  Vault (Raw)  ·  Edificação  ·  Melhorias
                                       ▼
                         você distribui depois pela TRIAGEM (Staging → área)
 ```

@@ -288,6 +288,11 @@ def weekly_review_pack(today: str | None = None) -> dict:
     # Só a prática DESTA semana conta como "a prática da semana": sem o filtro, uma
     # escolha de julho seguia anunciada em agosto.
     praticas = [p for p in [store.pratica_da_semana(agenda.semana_iso(ref))] if p]
+
+    # `paradas` exclui as de alvo `app` de propósito: aquelas dependem de uma
+    # sessão de programação, não de uma decisão dele no domingo. Contá-las aqui
+    # transformaria a fila numa dívida crescente — a inversão de incentivo de novo.
+    escolhidas = store.list_melhorias(status="escolhida")
     return {
         "week": f"{iso_week.year}-W{iso_week.week:02d}",
         "desde": since_iso,
@@ -296,6 +301,11 @@ def weekly_review_pack(today: str | None = None) -> dict:
         "edificacao": {
             "novos": len(aprendizados_novos),
             "pratica": praticas[0] if praticas else None,
+        },
+        "melhorias": {
+            "paradas": len(store.melhorias_paradas()),
+            "escolhida": escolhidas[0] if escolhidas else None,
+            "app": len(store.list_melhorias(alvo="app", status="novo")),
         },
         "dailies": store.count_events_since("closing_approved", since_ts),
         "capturas": store.count_events_since("capture_done", since_ts),
@@ -440,6 +450,17 @@ def weekly_review_text(today: str | None = None) -> str:
             f"\nedificação: {novos} aprendizados sem prática "
             "— escolher 1 no review"
         )
+
+    # Duas linhas com pesos diferentes: `paradas` pede uma decisão dele, `app` é
+    # só informação. Misturar as duas num número só seria cobrar o que ele não
+    # tem como fazer sozinho.
+    melhorias = pack["melhorias"]
+    paradas = melhorias["paradas"]
+    if paradas:
+        plural = "melhoria parada" if paradas == 1 else "melhorias paradas"
+        texto += f"\nmelhorias: {paradas} {plural} — escolher 1 no review"
+    if melhorias["app"]:
+        texto += f"\nmelhorias de app: {melhorias['app']} pro Claude"
     return texto
 
 

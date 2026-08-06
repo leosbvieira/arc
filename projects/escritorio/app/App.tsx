@@ -36,6 +36,7 @@ import Edificacao from "./src/screens/Edificacao";
 import Fechar from "./src/screens/Fechar";
 import Habitos from "./src/screens/Habitos";
 import Home from "./src/screens/Home";
+import Melhorias from "./src/screens/Melhorias";
 import Revisao from "./src/screens/Revisao";
 import Rotinas from "./src/screens/Rotinas";
 import Shutdown from "./src/screens/Shutdown";
@@ -57,6 +58,7 @@ type Tab =
   | "fechar"
   | "rotinas"
   | "edificacao"
+  | "melhorias"
   | "triagem"
   | "habitos"
   | "settings";
@@ -78,6 +80,7 @@ const SUBSCREENS: Tab[] = [
   "fechar",
   "rotinas",
   "edificacao",
+  "melhorias",
   "triagem",
   "habitos",
   "settings",
@@ -91,6 +94,7 @@ const TITLES: Partial<Record<Tab, string>> = {
   fechar: "Fechar o dia",
   rotinas: "Rotinas",
   edificacao: "Edificação",
+  melhorias: "Melhorias",
   triagem: "Triagem",
   habitos: "Hábitos a reduzir",
   settings: "Ajustes",
@@ -348,6 +352,8 @@ export default function App() {
           <Rotinas />
         ) : tab === "edificacao" ? (
           <Edificacao />
+        ) : tab === "melhorias" ? (
+          <Melhorias />
         ) : tab === "triagem" ? (
           <Triagem />
         ) : tab === "habitos" ? (
@@ -362,6 +368,7 @@ export default function App() {
           <Revisao
             onOpenCapture={() => openDestination("capturar")}
             onOpenEdificacao={() => setTab("edificacao")}
+            onOpenMelhorias={() => setTab("melhorias")}
           />
         )}
       </View>

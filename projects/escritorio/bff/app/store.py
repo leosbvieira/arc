@@ -176,6 +176,17 @@ CREATE TABLE IF NOT EXISTS aprendizados (
   pratica_semana TEXT,
   pratica_em REAL
 );
+CREATE TABLE IF NOT EXISTS melhorias (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  texto TEXT NOT NULL,
+  alvo TEXT,
+  sensivel INTEGER NOT NULL DEFAULT 0,
+  origem_captura_id INTEGER UNIQUE,
+  criado REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'novo',
+  escolhida_semana TEXT,
+  escolhida_em REAL
+);
 CREATE TABLE IF NOT EXISTS anki_cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id INTEGER,
@@ -2223,6 +2234,200 @@ def set_status_aprendizado(id: int, status: str) -> dict | None:
 
         row = con.execute(
             "SELECT * FROM aprendizados WHERE id = ?",
+            (id,),
+        ).fetchone()
+        con.commit()
+
+    return dict(row) if row is not None else None
+
+
+# --- melhorias (fila sem prazo; app / empresa / fluxo) ------------------------
+#
+# Fila separada das tarefas de propósito: melhoria não tem prazo, tem MOMENTO.
+# No ClickUp ela cairia no bucket `backlog` da tela Tasks (days_overdue nulo) e
+# morreria lá; nas áreas da triagem não há nenhuma que seja "o sistema".
+#
+# `app` é acionável só quando o Leo está programando comigo, então essas ficam
+# FORA do "escolhe 1 da semana" — contá-las transformaria a fila em dívida.
+
+_ALVO_MELHORIA = {"app", "empresa", "fluxo"}
+_MELHORIA_STATUS = {"novo", "escolhida", "feita", "descartada"}
+_MELHORIA_STATUS_MANUAL = {"novo", "feita", "descartada"}
+# Alvos que o próprio Leo executa; `app` sai porque não depende dele sozinho.
+_ALVO_DELE = ("empresa", "fluxo")
+
+
+def _validar_alvo(alvo: str | None) -> None:
+    """Alvo livre viraria taxonomia informal e a fila deixaria de ser filtrável."""
+    if alvo is not None and alvo not in _ALVO_MELHORIA:
+        raise ValueError("alvo_melhoria_invalido")
+
+
+def add_melhoria(
+    texto: str,
+    *,
+    alvo: str | None = None,
+    sensivel: bool = False,
+    origem_captura_id: int | None = None,
+) -> dict:
+    """Registra uma melhoria; a origem torna retries da captura idempotentes."""
+    _validar_alvo(alvo)
+
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO melhorias "
+            "(texto, alvo, sensivel, origem_captura_id, criado) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (texto, alvo, int(sensivel), origem_captura_id, time.time()),
+        )
+
+        if origem_captura_id is not None:
+            row = con.execute(
+                "SELECT * FROM melhorias WHERE origem_captura_id = ?",
+                (origem_captura_id,),
+            ).fetchone()
+        else:
+            row = con.execute(
+                "SELECT * FROM melhorias WHERE id = ?",
+                (cur.lastrowid,),
+            ).fetchone()
+
+        con.commit()
+
+    assert row is not None
+    return dict(row)
+
+
+def list_melhorias(
+    alvo: str | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    """Lista em ordem estável, com as mais recentes primeiro."""
+    _validar_alvo(alvo)
+    if status is not None and status not in _MELHORIA_STATUS:
+        raise ValueError("status_melhoria_invalido")
+
+    sql = "SELECT * FROM melhorias"
+    filtros: list[str] = []
+    params: list = []
+    if alvo is not None:
+        filtros.append("alvo = ?")
+        params.append(alvo)
+    if status is not None:
+        filtros.append("status = ?")
+        params.append(status)
+    if filtros:
+        sql += " WHERE " + " AND ".join(filtros)
+    sql += " ORDER BY criado DESC, id DESC"
+
+    with closing(_connect()) as con:
+        rows = con.execute(sql, tuple(params)).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_melhoria(id: int) -> dict | None:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM melhorias WHERE id = ?",
+            (id,),
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def melhorias_paradas() -> list[dict]:
+    """As que esperam decisão DELE: sem alvo ainda, ou de empresa/fluxo.
+
+    É o número que o review semanal mostra. As de `app` ficam de fora — elas
+    dependem de uma sessão comigo, então cobrá-las no review só empilharia culpa
+    sem oferecer ação."""
+    marcadores = ", ".join("?" for _ in _ALVO_DELE)
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT * FROM melhorias WHERE status = 'novo' "
+            f"AND (alvo IS NULL OR alvo IN ({marcadores})) "
+            "ORDER BY criado DESC, id DESC",
+            _ALVO_DELE,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def definir_alvo(id: int, alvo: str) -> dict | None:
+    """Triagem da fila: um toque, sem obrigar a decidir na hora da captura."""
+    _validar_alvo(alvo)
+
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE melhorias SET alvo = ? WHERE id = ?",
+            (alvo, id),
+        )
+        if cur.rowcount == 0:
+            con.commit()
+            return None
+
+        row = con.execute(
+            "SELECT * FROM melhorias WHERE id = ?",
+            (id,),
+        ).fetchone()
+        con.commit()
+
+    return dict(row) if row is not None else None
+
+
+def escolher_melhoria(id: int, semana: str) -> dict | None:
+    """Escolhe UMA melhoria para a semana; duas escolhas valem tanto quanto nenhuma.
+
+    Só `novo`/`escolhida` entram: reabrir uma feita ou descartada desfaria uma
+    decisão que ele já tomou."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        alvo = con.execute(
+            "SELECT status FROM melhorias WHERE id = ?",
+            (id,),
+        ).fetchone()
+        if alvo is None or alvo["status"] not in ("novo", "escolhida"):
+            con.rollback()
+            return None
+
+        # A anterior volta a `novo` limpa: o estado tem que refletir só a escolha atual.
+        con.execute(
+            "UPDATE melhorias "
+            "SET status = 'novo', escolhida_semana = NULL, escolhida_em = NULL "
+            "WHERE status = 'escolhida' AND id <> ?",
+            (id,),
+        )
+        con.execute(
+            "UPDATE melhorias "
+            "SET status = 'escolhida', escolhida_semana = ?, escolhida_em = ? "
+            "WHERE id = ?",
+            (semana, time.time(), id),
+        )
+        row = con.execute(
+            "SELECT * FROM melhorias WHERE id = ?",
+            (id,),
+        ).fetchone()
+        con.commit()
+
+    return dict(row) if row is not None else None
+
+
+def set_status_melhoria(id: int, status: str) -> dict | None:
+    """Transições manuais; `escolhida` exige semana e usa escolher_melhoria."""
+    if status not in _MELHORIA_STATUS_MANUAL:
+        raise ValueError("status_melhoria_invalido")
+
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE melhorias "
+            "SET status = ?, escolhida_semana = NULL, escolhida_em = NULL "
+            "WHERE id = ?",
+            (status, id),
+        )
+        if cur.rowcount == 0:
+            con.commit()
+            return None
+
+        row = con.execute(
+            "SELECT * FROM melhorias WHERE id = ?",
             (id,),
         ).fetchone()
         con.commit()

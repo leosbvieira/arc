@@ -1465,6 +1465,24 @@ export default function Capture({
               ))}
             </View>
           </View>
+
+          {/* Os prefixos existiam desde o P2 item 10 e nunca apareceram em tela
+              nenhuma. Atalho que o Leo não vê é atalho que ele não usa — e o de
+              melhoria é o único caminho pra fila que não cobra prazo. */}
+          <View style={styles.captureExamples}>
+            <Text style={styles.examplesTitle}>COMEÇANDO COM</Text>
+            {[
+              ["melhoria:", "vai pra fila de melhorias, sem virar tarefa"],
+              ["melhoria app:", "idem, já marcada como coisa do Aeternum"],
+              ["hack:", "vira aprendizado na Edificação"],
+              ["sensivel:", "o mesmo que o botão aqui de cima"],
+            ].map(([prefixo, o_que_faz]) => (
+              <View key={prefixo} style={styles.prefixRow}>
+                <Text style={styles.prefixCode}>{prefixo}</Text>
+                <Text style={styles.prefixText}>{o_que_faz}</Text>
+              </View>
+            ))}
+          </View>
         </ScrollView>
       ) : sessionStart === null ? (
         <ScrollView
@@ -1803,6 +1821,9 @@ const styles = StyleSheet.create({
   exampleGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   exampleItem: { width: "48%", flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
   exampleText: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted },
+  prefixRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, marginTop: 6 },
+  prefixCode: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.primary, minWidth: 96 },
+  prefixText: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted, flex: 1 },
   readingSetup: { paddingTop: spacing.md, paddingBottom: spacing.xxxl, gap: spacing.md },
   readingHero: { borderRadius: radius.xl, borderWidth: 1, borderColor: "rgba(222,184,120,0.18)", padding: spacing.xl, gap: 9, overflow: "hidden" },
   heroIcon: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft, marginBottom: spacing.sm },

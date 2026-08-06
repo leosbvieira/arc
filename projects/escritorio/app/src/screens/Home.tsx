@@ -271,6 +271,7 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
                   ["trending-down", "Reduzir", "habitos", colors.info],
                   ["compass", "Revisão", "revisao", colors.primary],
                   ["layers", "Edificação", "edificacao", colors.lilac],
+                  ["zap", "Melhorias", "melhorias", colors.amber],
                   ["sunset", "Shutdown", "shutdown", colors.primary],
                   ["moon", "Fechar dia", "fechar", colors.info],
                   ["settings", "Ajustes", "settings", colors.textMuted],

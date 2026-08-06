@@ -18,10 +18,18 @@ TZ = tz.TZ
 
 # Hooks textuais determinísticos (P2 item 10) — resolvidos ANTES do Hermes porque
 # não exigem inferência. `sensivel:` marca a captura (lei 7); `hack:`/`aprendizado:`/
-# `insight:` viram aprendizado (edificação) e nunca task.
+# `insight:` viram aprendizado (edificação) e nunca task; `melhoria:`/`ideia:` viram
+# item da fila de melhorias e também nunca task.
 _SENSIVEL_PREFIX = re.compile(r"^\s*sens[ií]vel\s*:\s*", re.IGNORECASE)
 _APRENDIZADO_PREFIX = re.compile(
     r"^\s*(?:hack|aprendizado|insight)\s*:\s*",
+    re.IGNORECASE,
+)
+# O alvo é opcional e só aceita os três conhecidos. `melhoria xyz:` NÃO casa de
+# propósito: cair na captura normal (Raw + triagem) é melhor que criar uma
+# melhoria cujo texto começaria com "xyz:" — ruído que ninguém veria.
+_MELHORIA_PREFIX = re.compile(
+    r"^\s*(?:melhoria|ideia)(?:\s+(app|empresa|fluxo))?\s*:\s*",
     re.IGNORECASE,
 )
 
@@ -40,6 +48,18 @@ def _texto_aprendizado(texto: str) -> str | None:
     if match is None:
         return None
     return texto[match.end():].strip()
+
+
+def _texto_melhoria(texto: str) -> tuple[str, str | None] | None:
+    """Reconhece melhoria por prefixo e devolve (texto, alvo); alvo é opcional.
+
+    Declarar o alvo na captura é atrito, então sem ele o item entra a triar e a
+    fila pergunta depois — um toque."""
+    match = _MELHORIA_PREFIX.match(texto)
+    if match is None:
+        return None
+    alvo = match.group(1)
+    return texto[match.end():].strip(), alvo.lower() if alvo else None
 
 
 async def _create_task(area, nome, due_ts=None, tags=None, description=None):
@@ -93,6 +113,22 @@ async def _process_one(row: dict) -> None:
         )
         store.mark_capture(cid, status="done")
         store.log_event("capture_done", ref=str(cid), meta={"tipo": "aprendizado"})
+        return
+
+    # Hook de melhoria: fila própria, sem prazo e sem ClickUp. Uma melhoria em
+    # lista de tarefas ou não tem prazo (morre no backlog) ou ganha um prazo
+    # inventado (vira atraso). O UNIQUE de origem_captura_id retoma sem duplicar.
+    melhoria = _texto_melhoria(texto_processamento)
+    if melhoria is not None:
+        texto_melhoria, alvo = melhoria
+        store.add_melhoria(
+            texto_melhoria,
+            alvo=alvo,
+            sensivel=sensivel,
+            origem_captura_id=cid,
+        )
+        store.mark_capture(cid, status="done")
+        store.log_event("capture_done", ref=str(cid), meta={"tipo": "melhoria"})
         return
 
     # Classifica em todo retry ainda não concluído. Isso recompõe due/tipo mesmo se

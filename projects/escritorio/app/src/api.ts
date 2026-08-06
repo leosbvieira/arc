@@ -729,6 +729,9 @@ export type ReviewWeekly = {
   scorecard: ScorecardReview;
   objetivos: { nome: string; n_semana: number; alvo: number | null; pct: number | null }[];
   edificacao: { novos: number; pratica: Aprendizado | null };
+  /** Opcional de propósito: um APK novo pode falar com um BFF antigo, e a tela
+   *  não pode quebrar por causa de um campo que ainda não existe do outro lado. */
+  melhorias?: { paradas: number; escolhida: Melhoria | null; app: number };
   dailies: number;
   capturas: number;
   sessoes_leitura: { n: number; min_total: number };
@@ -903,6 +906,90 @@ export async function setAprendizadoStatus(
   });
   if (!r.ok) throw new Error(`aprendizados: ${r.status}`);
   return (await r.json()) as Aprendizado;
+}
+
+// ---- Melhorias (fila sem prazo: app / empresa / fluxo) ----
+//
+// Não é tarefa e não vai pro ClickUp de propósito: melhoria não tem prazo, tem
+// momento. Nas áreas da triagem não existe nenhuma que seja "o sistema", e sem
+// prazo ela cairia no bucket `backlog` da tela Tasks — o cemitério.
+// O vocabulário de alvo mora em `melhoriasView.ts` (módulo puro, testável fora
+// do react-native) e é reexportado aqui para quem só conhece a camada de API.
+export { ALVOS_MELHORIA } from "./melhoriasView";
+export type { AlvoMelhoria } from "./melhoriasView";
+
+import type { AlvoMelhoria } from "./melhoriasView";
+
+export type MelhoriaStatus = "novo" | "escolhida" | "feita" | "descartada";
+
+export type Melhoria = {
+  id: number;
+  texto: string;
+  alvo: AlvoMelhoria | null;
+  sensivel: number | boolean;
+  origem_captura_id: number | null;
+  status: MelhoriaStatus;
+  escolhida_semana: string | null;
+  escolhida_em: number | null;
+  criado: number;
+};
+
+export async function listMelhorias(alvo?: AlvoMelhoria): Promise<Melhoria[]> {
+  const base = await getBffUrl();
+  const query = alvo ? `?alvo=${encodeURIComponent(alvo)}` : "";
+  const r = await fetch(`${base}/melhorias${query}`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`melhorias: ${r.status}`);
+  return ((await r.json()) as { melhorias: Melhoria[] }).melhorias;
+}
+
+export async function createMelhoria(
+  texto: string,
+  alvo: AlvoMelhoria | null,
+  sensivel: boolean,
+): Promise<Melhoria> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/melhorias`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ texto, alvo, sensivel }),
+  });
+  if (!r.ok) throw new Error(`melhorias: ${r.status}`);
+  return (await r.json()) as Melhoria;
+}
+
+export async function setMelhoriaAlvo(id: number, alvo: AlvoMelhoria): Promise<Melhoria> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/melhorias/${id}/alvo`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ alvo }),
+  });
+  if (!r.ok) throw new Error(`melhorias: ${r.status}`);
+  return (await r.json()) as Melhoria;
+}
+
+export async function escolherMelhoria(id: number): Promise<Melhoria> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/melhorias/${id}/escolher`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`melhorias: ${r.status}`);
+  return (await r.json()) as Melhoria;
+}
+
+export async function setMelhoriaStatus(
+  id: number,
+  status: Exclude<MelhoriaStatus, "escolhida">,
+): Promise<Melhoria> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/melhorias/${id}/status`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ status }),
+  });
+  if (!r.ok) throw new Error(`melhorias: ${r.status}`);
+  return (await r.json()) as Melhoria;
 }
 
 // ---- Triagem em lote (P2-13) ----

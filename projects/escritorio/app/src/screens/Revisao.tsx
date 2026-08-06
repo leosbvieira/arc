@@ -153,6 +153,7 @@ function Reviews({
   semanal,
   mensal,
   onOpenEdificacao,
+  onOpenMelhorias,
   onFecharSemana,
   fechandoReview,
   reviewFeito,
@@ -160,6 +161,7 @@ function Reviews({
   semanal: ReviewWeekly;
   mensal: ReviewMonthly;
   onOpenEdificacao?: () => void;
+  onOpenMelhorias?: () => void;
   onFecharSemana: () => void;
   fechandoReview: boolean;
   reviewFeito: boolean;
@@ -195,6 +197,31 @@ function Reviews({
             </Text>
             <Feather name="arrow-right" size={13} color={colors.primary} />
           </Pressable>
+        ) : null}
+        {/* Melhoria não é tarefa: aparece no rito onde ele já para pra pensar em
+            sistema, nunca na lista de execução. As de alvo `app` ficam fora da
+            cobrança — dependem de uma sessão de programação, não dele sozinho. */}
+        {semanal.melhorias?.escolhida ? (
+          <View style={styles.praticaResumo}>
+            <Feather name="zap" size={14} color={colors.primary} />
+            <Text style={styles.praticaResumoText} numberOfLines={2}>
+              melhoria: {semanal.melhorias.escolhida.texto}
+            </Text>
+          </View>
+        ) : semanal.melhorias?.paradas ? (
+          <Pressable onPress={onOpenMelhorias} style={styles.praticaLink}>
+            <Text style={styles.reviewHint}>
+              {semanal.melhorias.paradas}{" "}
+              {semanal.melhorias.paradas === 1 ? "melhoria parada" : "melhorias paradas"}
+              {" — escolher 1 para a semana."}
+            </Text>
+            <Feather name="arrow-right" size={13} color={colors.primary} />
+          </Pressable>
+        ) : null}
+        {semanal.melhorias?.app ? (
+          <Text style={styles.reviewHint}>
+            {semanal.melhorias.app} de app aguardam uma sessão de programação.
+          </Text>
         ) : null}
         {/* O review era um dashboard: rolava, acabava, e nada persistia. Sem
             artefato no vault e sem registro, "2 semanas puladas → Mentor" era
@@ -237,9 +264,11 @@ function Reviews({
 export default function Revisao({
   onOpenCapture,
   onOpenEdificacao,
+  onOpenMelhorias,
 }: {
   onOpenCapture?: () => void;
   onOpenEdificacao?: () => void;
+  onOpenMelhorias?: () => void;
 }) {
   const [d, setD] = useState<Digest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -544,6 +573,7 @@ export default function Revisao({
             semanal={semanal}
             mensal={mensal}
             onOpenEdificacao={onOpenEdificacao}
+            onOpenMelhorias={onOpenMelhorias}
             onFecharSemana={fecharSemana}
             fechandoReview={fechandoReview}
             reviewFeito={reviewFeito}
