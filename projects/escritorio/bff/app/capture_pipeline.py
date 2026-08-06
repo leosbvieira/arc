@@ -18,8 +18,8 @@ TZ = tz.TZ
 
 # Hooks textuais determinísticos (P2 item 10) — resolvidos ANTES do Hermes porque
 # não exigem inferência. `sensivel:` marca a captura (lei 7); `hack:`/`aprendizado:`/
-# `insight:` viram aprendizado (edificação) e nunca task; `melhoria:`/`ideia:` viram
-# item da fila de melhorias e também nunca task.
+# `insight:` viram aprendizado (edificação) e nunca task; `melhoria:` vira item da
+# fila de melhorias e também nunca task.
 _SENSIVEL_PREFIX = re.compile(r"^\s*sens[ií]vel\s*:\s*", re.IGNORECASE)
 _APRENDIZADO_PREFIX = re.compile(
     r"^\s*(?:hack|aprendizado|insight)\s*:\s*",
@@ -28,8 +28,14 @@ _APRENDIZADO_PREFIX = re.compile(
 # O alvo é opcional e só aceita os três conhecidos. `melhoria xyz:` NÃO casa de
 # propósito: cair na captura normal (Raw + triagem) é melhor que criar uma
 # melhoria cujo texto começaria com "xyz:" — ruído que ninguém veria.
+#
+# `ideia:` NÃO entra aqui. A palavra já é da casa: é um dos modos da gramática de
+# leitura (CAPTURE-GRAMMAR-SPEC.md) e a tela de Captura manda dizer "ideia" no
+# ditado. Sequestrá-la fazia "ideia: levar a Maria pra jantar sexta" nunca chegar
+# ao classificador — sem data, sem card, sem lembrete — com o recibo genérico
+# "✅ anotado" escondendo a troca de destino.
 _MELHORIA_PREFIX = re.compile(
-    r"^\s*(?:melhoria|ideia)(?:\s+(app|empresa|fluxo))?\s*:\s*",
+    r"^\s*melhoria(?:\s+(app|empresa|fluxo))?\s*:\s*",
     re.IGNORECASE,
 )
 
@@ -43,23 +49,36 @@ def _texto_sem_prefixo_sensivel(texto: str) -> tuple[str, bool]:
 
 
 def _texto_aprendizado(texto: str) -> str | None:
-    """Reconhece aprendizado por prefixo, sem depender de classificação probabilística."""
+    """Reconhece aprendizado por prefixo, sem depender de classificação probabilística.
+
+    Prefixo sozinho (ditado cortado, envio acidental) NÃO é aprendizado: cai no
+    caminho normal em vez de virar um registro em branco que ninguém consegue ler
+    nem descartar com sentido."""
     match = _APRENDIZADO_PREFIX.match(texto)
     if match is None:
         return None
-    return texto[match.end():].strip()
+    return texto[match.end():].strip() or None
 
 
 def _texto_melhoria(texto: str) -> tuple[str, str | None] | None:
     """Reconhece melhoria por prefixo e devolve (texto, alvo); alvo é opcional.
 
     Declarar o alvo na captura é atrito, então sem ele o item entra a triar e a
-    fila pergunta depois — um toque."""
+    fila pergunta depois — um toque.
+
+    Prefixo sem texto cai no caminho normal, mesma política de `melhoria xyz:`. A
+    borda HTTP já recusava texto em branco com 422; a fila — que é justamente
+    quem recebe entrada não controlada (voz, Telegram) — entrava sem guarda e
+    produzia um card vazio impossível de triar, engrossando o "escolher 1" do
+    review."""
     match = _MELHORIA_PREFIX.match(texto)
     if match is None:
         return None
+    corpo = texto[match.end():].strip()
+    if not corpo:
+        return None
     alvo = match.group(1)
-    return texto[match.end():].strip(), alvo.lower() if alvo else None
+    return corpo, alvo.lower() if alvo else None
 
 
 async def _create_task(area, nome, due_ts=None, tags=None, description=None):

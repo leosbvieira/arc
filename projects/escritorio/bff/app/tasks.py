@@ -292,7 +292,13 @@ def weekly_review_pack(today: str | None = None) -> dict:
     # `paradas` exclui as de alvo `app` de propósito: aquelas dependem de uma
     # sessão de programação, não de uma decisão dele no domingo. Contá-las aqui
     # transformaria a fila numa dívida crescente — a inversão de incentivo de novo.
-    escolhidas = store.list_melhorias(status="escolhida")
+    #
+    # E a escolhida é filtrada pela semana pelo MESMO motivo do bloco acima: sem o
+    # filtro, uma escolha de junho seguia servida como "a desta semana" e, porque a
+    # tela usa ternário encadeado, o convite "escolher 1" nunca mais aparecia.
+    semana_ref = agenda.semana_iso(ref)
+    a_triar = store.melhorias_a_triar()
+    escolhiveis = store.melhorias_escolhiveis()
     return {
         "week": f"{iso_week.year}-W{iso_week.week:02d}",
         "desde": since_iso,
@@ -303,8 +309,11 @@ def weekly_review_pack(today: str | None = None) -> dict:
             "pratica": praticas[0] if praticas else None,
         },
         "melhorias": {
-            "paradas": len(store.melhorias_paradas()),
-            "escolhida": escolhidas[0] if escolhidas else None,
+            "paradas": len(a_triar) + len(escolhiveis),
+            "a_triar": len(a_triar),
+            "escolhiveis": len(escolhiveis),
+            "escolhida": store.melhoria_da_semana(semana_ref),
+            "vencidas": store.melhorias_vencidas(semana_ref),
             "app": len(store.list_melhorias(alvo="app", status="novo")),
         },
         "dailies": store.count_events_since("closing_approved", since_ts),
@@ -451,14 +460,26 @@ def weekly_review_text(today: str | None = None) -> str:
             "— escolher 1 no review"
         )
 
-    # Duas linhas com pesos diferentes: `paradas` pede uma decisão dele, `app` é
-    # só informação. Misturar as duas num número só seria cobrar o que ele não
-    # tem como fazer sozinho.
+    # Linhas com pesos diferentes: `escolhiveis` pede uma decisão dele, `a_triar`
+    # pede um toque, `app` é só informação. Misturar tudo num número só cobraria o
+    # que ele não tem como fazer sozinho — e prometeria uma ação que a tela de
+    # destino não oferece naquela seção.
+    #
+    # ⚠️ Lei 7: este texto vira artefato no vault E corpo de nudge, e o corpo
+    # inteiro do nudge aparece no lockscreen. Aqui só entra CONTAGEM e semana —
+    # o texto da melhoria fica no pack, que só sai por /review/weekly (atrás do login).
     melhorias = pack["melhorias"]
-    paradas = melhorias["paradas"]
-    if paradas:
-        plural = "melhoria parada" if paradas == 1 else "melhorias paradas"
-        texto += f"\nmelhorias: {paradas} {plural} — escolher 1 no review"
+    escolhiveis = melhorias["escolhiveis"]
+    a_triar = melhorias["a_triar"]
+    if escolhiveis:
+        plural = "melhoria parada" if escolhiveis == 1 else "melhorias paradas"
+        texto += f"\nmelhorias: {escolhiveis} {plural} — escolher 1 no review"
+    if a_triar:
+        plural = "melhoria a triar" if a_triar == 1 else "melhorias a triar"
+        texto += f"\nmelhorias: {a_triar} {plural} — um toque cada"
+    for vencida in melhorias["vencidas"]:
+        # Lei 4: constata a semana, não julga o que não aconteceu.
+        texto += f"\nmelhoria escolhida em {vencida['escolhida_semana']} segue em aberto"
     if melhorias["app"]:
         texto += f"\nmelhorias de app: {melhorias['app']} pro Claude"
     return texto

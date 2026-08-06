@@ -200,7 +200,11 @@ function Reviews({
         ) : null}
         {/* Melhoria não é tarefa: aparece no rito onde ele já para pra pensar em
             sistema, nunca na lista de execução. As de alvo `app` ficam fora da
-            cobrança — dependem de uma sessão de programação, não dele sozinho. */}
+            cobrança — dependem de uma sessão de programação, não dele sozinho.
+
+            O `escolhida` do pack já vem filtrado pela semana corrente: sem isso,
+            uma escolha de junho seguia exibida como a desta semana e, por ser um
+            ternário encadeado, o convite abaixo nunca mais era renderizado. */}
         {semanal.melhorias?.escolhida ? (
           <View style={styles.praticaResumo}>
             <Feather name="zap" size={14} color={colors.primary} />
@@ -208,12 +212,35 @@ function Reviews({
               melhoria: {semanal.melhorias.escolhida.texto}
             </Text>
           </View>
-        ) : semanal.melhorias?.paradas ? (
+        ) : semanal.melhorias?.escolhiveis ? (
           <Pressable onPress={onOpenMelhorias} style={styles.praticaLink}>
             <Text style={styles.reviewHint}>
-              {semanal.melhorias.paradas}{" "}
-              {semanal.melhorias.paradas === 1 ? "melhoria parada" : "melhorias paradas"}
+              {semanal.melhorias.escolhiveis}{" "}
+              {semanal.melhorias.escolhiveis === 1 ? "melhoria parada" : "melhorias paradas"}
               {" — escolher 1 para a semana."}
+            </Text>
+            <Feather name="arrow-right" size={13} color={colors.primary} />
+          </Pressable>
+        ) : null}
+        {/* Separado de propósito: o card de "a triar" só tem os chips de alvo. Se
+            o convite dissesse "escolher 1", ele iria procurar um botão que aquela
+            seção não oferece. */}
+        {semanal.melhorias?.a_triar ? (
+          <Pressable onPress={onOpenMelhorias} style={styles.praticaLink}>
+            <Text style={styles.reviewHint}>
+              {semanal.melhorias.a_triar}{" "}
+              {semanal.melhorias.a_triar === 1 ? "melhoria a triar" : "melhorias a triar"}
+              {" — um toque cada."}
+            </Text>
+            <Feather name="arrow-right" size={13} color={colors.primary} />
+          </Pressable>
+        ) : null}
+        {semanal.melhorias?.vencidas?.length ? (
+          <Pressable onPress={onOpenMelhorias} style={styles.praticaLink}>
+            <Text style={styles.reviewHint}>
+              {semanal.melhorias.vencidas.length === 1
+                ? `1 melhoria escolhida em ${semanal.melhorias.vencidas[0].escolhida_semana} segue em aberto.`
+                : `${semanal.melhorias.vencidas.length} melhorias escolhidas antes seguem em aberto.`}
             </Text>
             <Feather name="arrow-right" size={13} color={colors.primary} />
           </Pressable>

@@ -36,8 +36,90 @@ const ALVO_HINT: Record<AlvoMelhoria, string> = {
   fluxo: "processo, hábito, jeito de fazer",
 };
 
+type AcaoMelhoria = (id: number, acao: () => Promise<unknown>) => void;
+
+// Fora do corpo de Melhorias() de propósito: definido lá dentro, o React via um
+// TIPO novo a cada render e desmontava/remontava todos os cards — e o campo de
+// nova melhoria mora no mesmo ScrollView, então cada tecla digitada remontava a
+// lista inteira.
+function Item({
+  item,
+  destaque,
+  ocupado,
+  comBusy,
+}: {
+  item: Melhoria;
+  destaque?: boolean;
+  ocupado: boolean;
+  comBusy: AcaoMelhoria;
+}) {
+  return (
+    <Card style={[styles.itemCard, destaque && styles.destaqueCard, ocupado && styles.cardOcupado]}>
+      <View style={styles.itemHead}>
+        <Text style={[styles.alvoTag, destaque && styles.alvoTagDestaque]}>
+          {item.alvo ? ALVO_LABEL[item.alvo] : "sem alvo"}
+          {item.escolhida_semana ? ` · semana ${item.escolhida_semana}` : ""}
+        </Text>
+        {item.sensivel ? <Feather name="lock" size={12} color={colors.textMuted} /> : null}
+      </View>
+      <Text style={styles.itemTexto}>{item.texto}</Text>
+      <View style={styles.actions}>
+        {item.status === "novo" ? (
+          <Pressable
+            style={styles.primaryAction}
+            disabled={ocupado}
+            onPress={() => comBusy(item.id, () => escolherMelhoria(item.id))}
+          >
+            <Feather name="target" size={13} color={colors.primaryText} />
+            <Text style={styles.primaryActionText}>fazer esta semana</Text>
+          </Pressable>
+        ) : null}
+        {item.status === "escolhida" ? (
+          <Pressable
+            style={styles.action}
+            disabled={ocupado}
+            onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "novo"))}
+          >
+            <Text style={styles.actionText}>devolver à fila</Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          style={styles.action}
+          disabled={ocupado}
+          onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "feita"))}
+        >
+          <Text style={styles.actionText}>feita</Text>
+        </Pressable>
+        <Pressable
+          style={styles.action}
+          disabled={ocupado}
+          onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "descartada"))}
+        >
+          <Text style={styles.actionMuted}>descartar</Text>
+        </Pressable>
+      </View>
+      {/* Triar era porta de uma via: um toque errado mandava a melhoria pro balde
+          `app`, que o review não cobra, e nenhum controle daqui trocava de volta —
+          nem "descartar → voltar à fila", que não mexe no alvo. */}
+      <View style={styles.chips}>
+        {ALVOS_MELHORIA.filter((alvo) => alvo !== item.alvo).map((alvo) => (
+          <Pressable
+            key={alvo}
+            style={styles.chipDiscreto}
+            disabled={ocupado}
+            onPress={() => comBusy(item.id, () => setMelhoriaAlvo(item.id, alvo))}
+          >
+            <Text style={styles.chipMuted}>→ {ALVO_LABEL[alvo]}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
 export default function Melhorias() {
   const [itens, setItens] = useState<Melhoria[]>([]);
+  const [semana, setSemana] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [texto, setTexto] = useState("");
@@ -49,7 +131,9 @@ export default function Melhorias() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setItens(await listMelhorias());
+      const resposta = await listMelhorias();
+      setItens(resposta.melhorias);
+      setSemana(resposta.semana);
       setError(false);
     } catch {
       setError(true);
@@ -62,17 +146,20 @@ export default function Melhorias() {
     load();
   }, [load]);
 
-  async function comBusy(id: number | "novo", acao: () => Promise<unknown>) {
-    setBusy(id);
-    try {
-      await acao();
-      await load();
-    } catch (e: any) {
-      Alert.alert("Melhorias", e?.message ?? "não consegui atualizar");
-    } finally {
-      setBusy(null);
-    }
-  }
+  const comBusy = useCallback(
+    async (id: number | "novo", acao: () => Promise<unknown>) => {
+      setBusy(id);
+      try {
+        await acao();
+        await load();
+      } catch (e: any) {
+        Alert.alert("Melhorias", e?.message ?? "não consegui atualizar");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [load],
+  );
 
   async function adicionar() {
     const valor = texto.trim();
@@ -105,56 +192,7 @@ export default function Melhorias() {
     );
   }
 
-  const grupos = agruparMelhorias(itens);
-
-  function Item({ item, destaque }: { item: Melhoria; destaque?: boolean }) {
-    const ocupado = busy === item.id;
-    return (
-      <Card style={[styles.itemCard, destaque && styles.destaqueCard]}>
-        <View style={styles.itemHead}>
-          <Text style={[styles.alvoTag, destaque && styles.alvoTagDestaque]}>
-            {item.alvo ? ALVO_LABEL[item.alvo] : "sem alvo"}
-          </Text>
-          {item.sensivel ? <Feather name="lock" size={12} color={colors.textMuted} /> : null}
-        </View>
-        <Text style={styles.itemTexto}>{item.texto}</Text>
-        {item.escolhida_semana ? (
-          <Text style={styles.meta}>semana {item.escolhida_semana}</Text>
-        ) : null}
-        <View style={styles.actions}>
-          {item.status === "novo" ? (
-            <Pressable
-              style={[styles.primaryAction, ocupado && styles.acaoOcupada]}
-              onPress={() => comBusy(item.id, () => escolherMelhoria(item.id))}
-            >
-              <Feather name="target" size={13} color={colors.primaryText} />
-              <Text style={styles.primaryActionText}>fazer esta semana</Text>
-            </Pressable>
-          ) : null}
-          {item.status === "escolhida" ? (
-            <Pressable
-              style={styles.action}
-              onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "novo"))}
-            >
-              <Text style={styles.actionText}>devolver à fila</Text>
-            </Pressable>
-          ) : null}
-          <Pressable
-            style={styles.action}
-            onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "feita"))}
-          >
-            <Text style={styles.actionText}>feita</Text>
-          </Pressable>
-          <Pressable
-            style={styles.action}
-            onPress={() => comBusy(item.id, () => setMelhoriaStatus(item.id, "descartada"))}
-          >
-            <Text style={styles.actionMuted}>descartar</Text>
-          </Pressable>
-        </View>
-      </Card>
-    );
-  }
+  const grupos = agruparMelhorias(itens, semana);
 
   return (
     <ScrollView
@@ -216,8 +254,27 @@ export default function Melhorias() {
 
       {grupos.escolhida ? (
         <>
-          <Text style={styles.sectionLabel}>desta semana</Text>
-          <Item item={grupos.escolhida} destaque />
+          <Text style={styles.sectionLabel}>
+            {semana ? `desta semana · ${semana}` : "escolhida"}
+          </Text>
+          <Item
+            item={grupos.escolhida}
+            destaque
+            ocupado={busy === grupos.escolhida.id}
+            comBusy={comBusy}
+          />
+        </>
+      ) : null}
+
+      {/* Escolha de semana anterior não some nem vira "desta semana": vira a
+          pergunta. Apagar seria o sistema decidindo por ele (lei 3), e manter no
+          topo era a mentira que travava o convite do review por meses. */}
+      {grupos.vencidas.length > 0 ? (
+        <>
+          <Text style={styles.sectionLabel}>escolhidas antes · fez?</Text>
+          {grupos.vencidas.map((item) => (
+            <Item key={item.id} item={item} ocupado={busy === item.id} comBusy={comBusy} />
+          ))}
         </>
       ) : null}
 
@@ -261,7 +318,7 @@ export default function Melhorias() {
               </Text>
             ) : null}
             {grupos.porAlvo[alvo].map((item) => (
-              <Item key={item.id} item={item} />
+              <Item key={item.id} item={item} ocupado={busy === item.id} comBusy={comBusy} />
             ))}
           </View>
         ),
@@ -325,6 +382,8 @@ const styles = StyleSheet.create({
   emptyText: { fontFamily: fonts.ui, fontSize: 13, color: colors.textMuted },
   itemCard: { gap: spacing.sm, marginBottom: spacing.sm },
   destaqueCard: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  cardOcupado: { opacity: 0.55 },
+  chipDiscreto: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4 },
   itemHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   alvoTag: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1, textTransform: "uppercase" },
   alvoTagDestaque: { color: colors.primary },

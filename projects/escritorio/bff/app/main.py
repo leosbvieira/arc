@@ -2284,7 +2284,12 @@ async def listar_melhorias(
         "descartada",
     }:
         raise HTTPException(status_code=422, detail="status_invalido")
-    return {"melhorias": store.list_melhorias(alvo=alvo, status=status)}
+    # A semana vai junto para a tela poder dizer se a escolhida é DESTA semana sem
+    # recalcular data no cliente — onde este projeto já se queimou com fuso.
+    return {
+        "melhorias": store.list_melhorias(alvo=alvo, status=status),
+        "semana": agenda.semana_iso(pontos.hoje_local()),
+    }
 
 
 @app.post("/melhorias")

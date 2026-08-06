@@ -730,8 +730,19 @@ export type ReviewWeekly = {
   objetivos: { nome: string; n_semana: number; alvo: number | null; pct: number | null }[];
   edificacao: { novos: number; pratica: Aprendizado | null };
   /** Opcional de propósito: um APK novo pode falar com um BFF antigo, e a tela
-   *  não pode quebrar por causa de um campo que ainda não existe do outro lado. */
-  melhorias?: { paradas: number; escolhida: Melhoria | null; app: number };
+   *  não pode quebrar por causa de um campo que ainda não existe do outro lado.
+   *
+   *  `escolhiveis` e `a_triar` são separados porque o CTA precisa prometer a ação
+   *  que a tela de destino realmente oferece: o card de "a triar" só tem os chips
+   *  de alvo, o botão "fazer esta semana" mora no card da fila. */
+  melhorias?: {
+    paradas: number;
+    a_triar: number;
+    escolhiveis: number;
+    escolhida: Melhoria | null;
+    vencidas: Melhoria[];
+    app: number;
+  };
   dailies: number;
   capturas: number;
   sessoes_leitura: { n: number; min_total: number };
@@ -934,12 +945,18 @@ export type Melhoria = {
   criado: number;
 };
 
-export async function listMelhorias(alvo?: AlvoMelhoria): Promise<Melhoria[]> {
+/** A `semana` vem junto para a tela saber se a escolhida é DESTA semana sem
+ *  recalcular data no cliente. Um BFF antigo não manda o campo — daí o `?? null`,
+ *  que faz a tela mostrar a semana do próprio item em vez de chutar. */
+export async function listMelhorias(
+  alvo?: AlvoMelhoria,
+): Promise<{ melhorias: Melhoria[]; semana: string | null }> {
   const base = await getBffUrl();
   const query = alvo ? `?alvo=${encodeURIComponent(alvo)}` : "";
   const r = await fetch(`${base}/melhorias${query}`, { headers: await authHeaders() });
   if (!r.ok) throw new Error(`melhorias: ${r.status}`);
-  return ((await r.json()) as { melhorias: Melhoria[] }).melhorias;
+  const corpo = (await r.json()) as { melhorias: Melhoria[]; semana?: string };
+  return { melhorias: corpo.melhorias, semana: corpo.semana ?? null };
 }
 
 export async function createMelhoria(

@@ -79,6 +79,28 @@ async def test_hook_aprendizado_nao_classifica_nem_cria_task(
     assert len(store.list_aprendizados()) == 1
 
 
+@pytest.mark.parametrize("texto", ["hack:", "aprendizado:   ", "insight:"])
+async def test_prefixo_sem_texto_nao_vira_aprendizado_vazio(client, monkeypatch, texto):
+    """Ditado cortado não pode virar registro em branco no repertório.
+
+    O mesmo buraco existia no hook de melhoria e foi fechado junto: `strip()` de um
+    prefixo sozinho devolve "", que não é None, então o `if ... is not None` disparava
+    e gravava um aprendizado sem texto — impossível de ler, praticar ou arquivar com
+    sentido. Cai no caminho normal, que preserva o Raw e mostra o item na triagem."""
+    monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
+
+    async def classify_como_nota(text):
+        return {"tipo": "nota", "titulo": None, "quando": None}
+
+    monkeypatch.setattr(hermes_client, "classify", classify_como_nota)
+
+    cid = store.enqueue_capture(texto, None)
+    row = next(item for item in store.pending_captures() if item["id"] == cid)
+    await capture_pipeline._process_one(row)
+
+    assert store.list_aprendizados() == []
+
+
 async def test_prefixo_sensivel_antes_do_aprendizado(client, monkeypatch):
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 

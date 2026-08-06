@@ -87,5 +87,57 @@ test("lista vazia devolve todos os grupos, não undefined", () => {
   assert.equal(grupos.escolhida, null);
   assert.deepEqual(grupos.aTriar, []);
   assert.deepEqual(grupos.resolvidas, []);
+  assert.deepEqual(grupos.vencidas, []);
   assert.deepEqual(grupos.porAlvo, { app: [], empresa: [], fluxo: [] });
+});
+
+// --- a semana da escolha vence -------------------------------------------------
+//
+// O BFF já filtra por semana no review; a TELA repetia a mentira por conta
+// própria: uma escolha de junho aparecia sob o cabeçalho "desta semana". A semana
+// corrente vem do servidor junto com a lista — nada de recalcular data no cliente,
+// que é exatamente onde o projeto já se queimou com fuso.
+
+test("escolha de outra semana não é a desta semana", () => {
+  const grupos = agruparMelhorias(
+    [m({ id: 1, alvo: "empresa", status: "escolhida", escolhida_semana: "2026-W26" })],
+    "2026-W32",
+  );
+
+  assert.equal(grupos.escolhida, null);
+  assert.deepEqual(grupos.vencidas.map((i) => i.id), [1]);
+});
+
+test("a escolha da semana corrente continua no topo", () => {
+  const grupos = agruparMelhorias(
+    [m({ id: 1, alvo: "empresa", status: "escolhida", escolhida_semana: "2026-W32" })],
+    "2026-W32",
+  );
+
+  assert.equal(grupos.escolhida?.id, 1);
+  assert.deepEqual(grupos.vencidas, []);
+});
+
+test("sem a semana do servidor a tela não inventa qual é a atual", () => {
+  // APK novo falando com BFF antigo: sem `semana` na resposta não dá para decidir.
+  // Classificar como vencida acusaria uma escolha legítima de estar velha — a tela
+  // mantém o grupo e mostra a semana do próprio item no cabeçalho.
+  const grupos = agruparMelhorias([
+    m({ id: 1, alvo: "empresa", status: "escolhida", escolhida_semana: "2026-W32" }),
+  ]);
+
+  assert.equal(grupos.escolhida?.id, 1);
+  assert.deepEqual(grupos.vencidas, []);
+});
+
+test("várias vencidas vêm da mais recente para a mais antiga", () => {
+  const grupos = agruparMelhorias(
+    [
+      m({ id: 1, status: "escolhida", escolhida_semana: "2026-W26", escolhida_em: 100 }),
+      m({ id: 2, status: "escolhida", escolhida_semana: "2026-W30", escolhida_em: 300 }),
+    ],
+    "2026-W32",
+  );
+
+  assert.deepEqual(grupos.vencidas.map((i) => i.id), [2, 1]);
 });

@@ -2334,19 +2334,74 @@ def get_melhoria(id: int) -> dict | None:
     return dict(row) if row is not None else None
 
 
+def _melhorias_novas(condicao: str, params: tuple = ()) -> list[dict]:
+    with closing(_connect()) as con:
+        rows = con.execute(
+            f"SELECT * FROM melhorias WHERE status = 'novo' AND {condicao} "
+            "ORDER BY criado DESC, id DESC",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def melhorias_a_triar() -> list[dict]:
+    """Sem alvo ainda. Na tela, o card delas só oferece os chips de alvo."""
+    return _melhorias_novas("alvo IS NULL")
+
+
+def melhorias_escolhiveis() -> list[dict]:
+    """Já triadas para empresa/fluxo: são estas que aceitam "fazer esta semana".
+
+    Separadas de `melhorias_a_triar` porque o review prometia "escolher 1" contando
+    as duas, e o card de "a triar" não tem esse botão — o texto mandava o Leo
+    procurar uma ação que aquela seção não oferece."""
+    return _melhorias_novas(
+        f"alvo IN ({', '.join('?' for _ in _ALVO_DELE)})",
+        _ALVO_DELE,
+    )
+
+
 def melhorias_paradas() -> list[dict]:
     """As que esperam decisão DELE: sem alvo ainda, ou de empresa/fluxo.
 
     É o número que o review semanal mostra. As de `app` ficam de fora — elas
     dependem de uma sessão comigo, então cobrá-las no review só empilharia culpa
     sem oferecer ação."""
-    marcadores = ", ".join("?" for _ in _ALVO_DELE)
+    return _melhorias_novas(
+        f"(alvo IS NULL OR alvo IN ({', '.join('?' for _ in _ALVO_DELE)}))",
+        _ALVO_DELE,
+    )
+
+
+def melhoria_da_semana(semana: str) -> dict | None:
+    """A escolhida DESTA semana — a de outra semana não conta.
+
+    `escolhida_semana` era gravada e nunca comparada: o mesmo defeito que
+    `pratica_da_semana` (acima) existe para consertar. Sem o filtro, uma escolha de
+    junho seguia anunciada como "a melhoria desta semana" em agosto, e como a tela
+    usa ternário encadeado (escolhida ? … : paradas ? …), o convite "escolher 1"
+    nunca mais era renderizado. A fila travava em silêncio."""
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM melhorias WHERE status = 'escolhida' AND escolhida_semana = ? "
+            "ORDER BY escolhida_em DESC LIMIT 1",
+            (semana,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def melhorias_vencidas(semana_atual: str) -> list[dict]:
+    """Escolhas de semanas ANTERIORES ainda em aberto — viram a pergunta "fez?".
+
+    Não se apaga a escolha na virada da semana: apagar seria o sistema decidindo
+    por ele (lei 3). Ela sai do lugar de "compromisso desta semana" e vira uma
+    pergunta, exatamente como `praticas_sem_avaliacao` faz na edificação."""
     with closing(_connect()) as con:
         rows = con.execute(
-            "SELECT * FROM melhorias WHERE status = 'novo' "
-            f"AND (alvo IS NULL OR alvo IN ({marcadores})) "
-            "ORDER BY criado DESC, id DESC",
-            _ALVO_DELE,
+            "SELECT * FROM melhorias WHERE status = 'escolhida' "
+            "AND escolhida_semana IS NOT NULL AND escolhida_semana <> ? "
+            "ORDER BY escolhida_em DESC",
+            (semana_atual,),
         ).fetchall()
     return [dict(row) for row in rows]
 
