@@ -239,6 +239,36 @@ def test_escolher_a_da_semana_nao_apaga_a_vencida():
     assert store.melhoria_da_semana("2026-W32")["id"] == nova["id"]
 
 
+def test_vencida_pode_ser_recompromissada_sem_passar_pela_fila():
+    """"Ainda quero — põe nesta semana" é um movimento só, não dois.
+
+    A alternativa seria devolver à fila e escolher de novo — mas `devolver à
+    fila` limpa `escolhida_semana`, então o caminho de duas etapas destrói o
+    registro de que ele tinha se comprometido em W26 antes de recriá-lo."""
+    antiga = store.add_melhoria("renegociar o ERP", alvo="empresa")
+    store.escolher_melhoria(antiga["id"], "2026-W26")
+
+    recompromissada = store.escolher_melhoria(antiga["id"], "2026-W32")
+
+    assert recompromissada["escolhida_semana"] == "2026-W32"
+    assert store.melhorias_vencidas("2026-W32") == []
+    assert store.melhoria_da_semana("2026-W32")["id"] == antiga["id"]
+
+
+def test_recompromissar_uma_vencida_libera_a_vaga_da_semana():
+    """A vaga é uma: recompromissar a de junho desbanca a escolha de hoje."""
+    antiga = store.add_melhoria("renegociar o ERP", alvo="empresa")
+    store.escolher_melhoria(antiga["id"], "2026-W26")
+    de_hoje = store.add_melhoria("cachear o dashboard", alvo="fluxo")
+    store.escolher_melhoria(de_hoje["id"], "2026-W32")
+
+    store.escolher_melhoria(antiga["id"], "2026-W32")
+
+    assert store.get_melhoria(de_hoje["id"])["status"] == "novo"
+    assert store.melhoria_da_semana("2026-W32")["id"] == antiga["id"]
+    assert store.melhorias_vencidas("2026-W32") == []
+
+
 def test_trocar_de_ideia_na_mesma_semana_ainda_substitui():
     """A disputa pela vaga da semana corrente continua valendo — uma por vez."""
     primeira = store.add_melhoria("primeira", alvo="empresa")

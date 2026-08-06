@@ -45,12 +45,18 @@ type AcaoMelhoria = (id: number, acao: () => Promise<unknown>) => void;
 function Item({
   item,
   destaque,
+  vencida,
   ocupado,
   travado,
   comBusy,
 }: {
   item: Melhoria;
   destaque?: boolean;
+  /** Escolha de semana anterior ainda em aberto. Ela precisa do movimento
+   *  "ainda quero, põe nesta semana" em UM toque: o caminho alternativo
+   *  (devolver à fila → escolher) passa por `devolver`, que limpa
+   *  `escolhida_semana` — destrói o registro do compromisso antes de recriá-lo. */
+  vencida?: boolean;
   /** Este card é o que está agindo — só ele recebe o esmaecido. */
   ocupado: boolean;
   /** Alguma ação em voo, em qualquer card. `busy` é um slot só e todo `comBusy`
@@ -73,14 +79,16 @@ function Item({
         {/* Alvo `app` não recebe "fazer esta semana": o próprio grupo diz que
             elas não entram na conta do review, e o BFF recusa com 422. Oferecer
             o botão aqui era a tela contradizendo o texto logo acima dela. */}
-        {item.status === "novo" && item.alvo !== "app" ? (
+        {(item.status === "novo" || vencida) && item.alvo !== "app" ? (
           <Pressable
             style={styles.primaryAction}
             disabled={travado}
             onPress={() => comBusy(item.id, () => escolherMelhoria(item.id))}
           >
             <Feather name="target" size={13} color={colors.primaryText} />
-            <Text style={styles.primaryActionText}>fazer esta semana</Text>
+            <Text style={styles.primaryActionText}>
+              {vencida ? "ainda quero — nesta semana" : "fazer esta semana"}
+            </Text>
           </Pressable>
         ) : null}
         {item.status === "escolhida" ? (
@@ -292,7 +300,7 @@ export default function Melhorias() {
         <>
           <Text style={styles.sectionLabel}>escolhidas antes · fez?</Text>
           {grupos.vencidas.map((item) => (
-            <Item key={item.id} item={item} ocupado={busy === item.id} travado={busy !== null} comBusy={comBusy} />
+            <Item key={item.id} item={item} vencida ocupado={busy === item.id} travado={busy !== null} comBusy={comBusy} />
           ))}
         </>
       ) : null}
