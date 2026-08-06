@@ -87,7 +87,9 @@ novo ──────────────► escolhida ──────�
   │                        │                 │
   │                        ▼ virou a semana  │
   │                     VENCIDA ─────────────┘
-  │                     "fez?" — não some, não vira "desta semana"
+  │                        │  "fez?" — não some, não vira "desta semana"
+  │                        └──► escolher(semana atual) = "ainda quero"
+  │                             (um toque; devolver-à-fila apagaria a semana)
   │                        │
   └────────────────────────┴───────────────► descartada
                                                 │
@@ -175,6 +177,11 @@ provando que a guarda morde.
 - **Revisão**: linha da escolhida **desta semana**, ou "N paradas — escolher 1"; linha
   separada "N a triar — um toque cada"; linha das vencidas ("fez?"); linha informativa das
   de app. Toque abre a tela.
+- **Card da vencida**: traz **"ainda quero — nesta semana"**, que chama o mesmo
+  `POST /escolher`. O caminho alternativo (devolver à fila → escolher) passaria por
+  `set_status_melhoria`, que limpa `escolhida_semana` — destruiria o registro do
+  compromisso antes de recriá-lo. Para quem se declara procrastinador esse é o movimento
+  mais provável da tela, e era o mais caro.
 - **Capturar**: bloco "COMEÇANDO COM" listando os prefixos. Os hooks existiam desde o P2
   item 10 e **nunca apareceram em tela nenhuma** — atalho invisível é atalho não usado.
 
@@ -204,9 +211,10 @@ provando que a guarda morde.
 - [x] `app` re-triada depois de escolhida não vira cobrança perpétua
 - [x] N vencidas rendem UMA linha no review, não N
 - [x] o mesmo furo em `definir_pratica` (Edificação) foi fechado junto, com teste próprio
+- [x] a vencida pode ser recompromissada em UM toque, sem perder a semana original
 
 **Todas as guardas acima foram provadas por MUTAÇÃO**: cada uma foi quebrada de propósito e
 o teste correspondente falhou. Nenhuma passa por acidente.
 
-**Testes:** `bff/tests/test_melhorias.py` (50) · `bff/tests/test_pratica_semana.py` (irmão) · `bff/tests/test_edificacao.py` (guarda irmã) ·
+**Testes:** `bff/tests/test_melhorias.py` (52) · `bff/tests/test_pratica_semana.py` (irmão) · `bff/tests/test_edificacao.py` (guarda irmã) ·
 `app/tests/melhoriasView.test.mjs` (11).
