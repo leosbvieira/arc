@@ -186,6 +186,12 @@ async def test_hermes_caido_preserva_raw_e_retenta(spies, monkeypatch):
     store.enqueue_capture("nada se perde", None)
 
     await cp.process_pending()
+    # A falha agenda a próxima tentativa: o item não volta na rodada seguinte, senão
+    # 25s de instabilidade queimariam as 5 tentativas.
+    assert store.pending_captures() == []
+    with store._connect() as con:
+        con.execute("UPDATE capture_queue SET proxima_em = 0")
+        con.commit()
     row = store.pending_captures()[0]
     assert row["raw_path"]
     assert row["attempts"] == 1

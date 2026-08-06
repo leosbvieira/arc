@@ -80,6 +80,18 @@ def test_capture_claim_atomico_e_recover(tmp_path, monkeypatch):
     assert store.recover_processing() == 0
 
 
+def _vencer_backoff(cid: int) -> None:
+    """A falha agenda a próxima tentativa (backoff). Aqui a gente adianta o relógio
+    para observar a escada de tentativas sem esperar minutos de verdade."""
+    import time as _t
+
+    with store._connect() as con:
+        con.execute(
+            "UPDATE capture_queue SET proxima_em = ? WHERE id = ?", (_t.time() - 1, cid)
+        )
+        con.commit()
+
+
 def test_capture_vira_failed_e_reapresenta(tmp_path, monkeypatch):
     _fresh_db(tmp_path, monkeypatch)
     cid = store.enqueue_capture("x", None)
@@ -87,6 +99,8 @@ def test_capture_vira_failed_e_reapresenta(tmp_path, monkeypatch):
         assert store.claim_capture(cid) is True
         store.mark_capture(cid, bump_attempts=True, error="HermesTimeout")
         if attempt < 4:
+            assert store.pending_captures() == [], "espera o backoff antes de retentar"
+            _vencer_backoff(cid)
             row = store.pending_captures()[0]
             assert row["attempts"] == attempt + 1
 

@@ -56,9 +56,9 @@ def _guard_default_secrets() -> None:
 
 
 async def _capture_worker() -> None:
-    """Worker de fundo da fila de captura (B6/§10): recupera claims órfãos e
-    reapresenta failed uma vez no startup, drena pending_captures em loop e
-    dorme `capture_worker_interval`.
+    """Worker de fundo da fila de captura (B6/§10): recupera claims órfãos,
+    reapresenta failed (no startup E a cada rodada, para não depender de restart),
+    drena pending_captures em loop e dorme `capture_worker_interval`.
 
     NUNCA derruba o processo durante uma rodada — process_pending já isola cada item;
     os try aqui cobrem falha de infra (ex.: DB), logada SEM conteúdo (lei 7).
@@ -79,6 +79,12 @@ async def _capture_worker() -> None:
             await capture_pipeline.process_pending()
         except Exception:  # noqa: BLE001 - a rodada nunca derruba o loop
             logger.exception("worker de captura: rodada falhou")
+        try:
+            # Reapresentação CONTINUADA: só no startup, um item em `failed` ficava
+            # invisível até alguém reiniciar o BFF.
+            store.reapresentar_failed()
+        except Exception:  # noqa: BLE001
+            logger.exception("worker de captura: reapresentação periódica falhou")
         await asyncio.sleep(settings.capture_worker_interval)
 
 

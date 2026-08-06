@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS notif_log (
 CREATE TABLE IF NOT EXISTS capture_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, text TEXT NOT NULL,
   profile TEXT, client_key TEXT, status TEXT NOT NULL DEFAULT 'pending',
-  attempts INTEGER NOT NULL DEFAULT 0, raw_path TEXT, clickup_task_id TEXT, last_error TEXT
+  attempts INTEGER NOT NULL DEFAULT 0, raw_path TEXT, clickup_task_id TEXT, last_error TEXT,
+  proxima_em REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS digest_runs (
   data_local TEXT PRIMARY KEY, body TEXT NOT NULL, count INTEGER NOT NULL,
@@ -263,6 +264,13 @@ def init_db() -> None:
         }
         if "export_claimed" not in anki_columns:
             con.execute("ALTER TABLE anki_cards ADD COLUMN export_claimed REAL")
+        fila_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(capture_queue)")
+        }
+        if "proxima_em" not in fila_columns:
+            con.execute(
+                "ALTER TABLE capture_queue ADD COLUMN proxima_em REAL NOT NULL DEFAULT 0"
+            )
         con.execute(
             "UPDATE anki_cards SET status = 'aprovado', export_claimed = NULL "
             "WHERE status = 'exporting' "
@@ -1549,10 +1557,19 @@ def pending_captures(max_attempts: int = MAX_ATTEMPTS) -> list[dict]:
     with closing(_connect()) as con:
         rows = con.execute(
             f"SELECT {_CAPTURE_COLS} FROM capture_queue "
-            "WHERE status = 'pending' AND attempts < ? ORDER BY id",
-            (max_attempts,),
+            "WHERE status = 'pending' AND attempts < ? AND proxima_em <= ? "
+            "ORDER BY id",
+            (max_attempts, time.time()),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def proxima_tentativa_em(id: int) -> float:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT proxima_em FROM capture_queue WHERE id = ?", (id,)
+        ).fetchone()
+    return float(row["proxima_em"]) if row else 0.0
 
 
 def claim_capture(id: int) -> bool:
@@ -1587,6 +1604,17 @@ def failed_captures() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _attempts_atual(con, id) -> int:
+    row = con.execute("SELECT attempts FROM capture_queue WHERE id = ?", (id,)).fetchone()
+    return int(row["attempts"]) if row else 0
+
+
+def _espera_do_retry(tentativa: int) -> float:
+    """30s, 2min, 4min30, 8min… (tentativa² × 30). Cobre um blip de rede sem gastar o
+    orçamento, e dá tempo do Hermes voltar antes da última tentativa."""
+    return (tentativa ** 2) * 30
+
+
 def mark_capture(
     id,
     *,
@@ -1618,6 +1646,11 @@ def mark_capture(
         sets, params = [], []
         if bump_attempts:
             sets.append("attempts = attempts + 1")
+            # Backoff: sem ele, MAX_ATTEMPTS=5 × worker de 5s queimava as 5 tentativas
+            # em 25 segundos. Uma instabilidade curta do Hermes bastava para mandar a
+            # captura pra `failed`, de onde ela só voltava com restart do BFF.
+            sets.append("proxima_em = ?")
+            params.append(time.time() + _espera_do_retry(_attempts_atual(con, id) + 1))
         if status is not None:
             sets.append("status = ?")
             params.append(status)
@@ -1647,10 +1680,30 @@ def mark_capture(
         )
         con.commit()
 
+def reapresentar_failed(idade_minima_s: float = 3600) -> int:
+    """Devolve à fila as capturas que falharam há tempo suficiente.
+
+    `retry_failed_captures` só era chamado no boot (main.py), então sem reiniciar o
+    BFF um item em `failed` ficava invisível para sempre — a lei 1 respeitada na
+    letra (o registro fica) e violada no espírito. Roda periodicamente no worker.
+    """
+    corte = time.time() - idade_minima_s
+    with closing(_connect()) as con:
+        cur = con.execute(
+            "UPDATE capture_queue SET status = 'pending', attempts = 0, proxima_em = 0 "
+            "WHERE status = 'failed' AND proxima_em <= ?",
+            (corte,),
+        )
+        con.commit()
+        return cur.rowcount
+
+
 def retry_failed_captures() -> int:
     with closing(_connect()) as con:
         cur = con.execute(
-            "UPDATE capture_queue SET status = 'pending', attempts = 0 "
+            # `proxima_em` TAMBÉM zera: reapresentar sem limpar a espera devolvia o
+            # item a `pending` e ele seguia invisível para `pending_captures`.
+            "UPDATE capture_queue SET status = 'pending', attempts = 0, proxima_em = 0 "
             "WHERE status = 'failed'"
         )
         con.commit()
