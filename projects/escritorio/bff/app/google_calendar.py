@@ -8,15 +8,15 @@ import base64
 import hashlib
 from datetime import date, datetime, time, timedelta
 from urllib.parse import quote
-from zoneinfo import ZoneInfo
 
 import httpx
 
+from . import tz
 from .config import settings
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 CALENDAR_API = "https://www.googleapis.com/calendar/v3"
-TZ = ZoneInfo("America/Sao_Paulo")
+TZ = tz.TZ
 
 
 class GoogleCalendarNotConfigured(RuntimeError):

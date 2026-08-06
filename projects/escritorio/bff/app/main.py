@@ -6,7 +6,6 @@ from pathlib import Path
 from datetime import date, datetime, time as _time, timedelta
 from typing import Literal
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +26,7 @@ from . import (
     routines,
     store,
     tasks,
+    tz,
     vault_client,
 )
 from .auth import make_token, require_auth
@@ -34,7 +34,7 @@ from .config import DEFAULTS, settings
 
 logger = logging.getLogger(__name__)
 
-TZ = ZoneInfo("America/Sao_Paulo")
+TZ = tz.TZ
 
 # Tom: seco e factual (lei 4 — o sistema não motiva, não envergonha; diz o fato e o custo).
 NUDGE_COPY = {
@@ -1562,9 +1562,8 @@ async def review_weekly(_=Depends(require_auth)):
     pack = tasks.weekly_review_pack()
     try:
         from datetime import time, timedelta, timezone
-        from zoneinfo import ZoneInfo
 
-        local_tz = ZoneInfo("America/Sao_Paulo")
+        local_tz = tz.TZ
         today = datetime.now(local_tz).date()
         monday = today - timedelta(days=today.weekday())
         monday_local = datetime.combine(
@@ -1629,9 +1628,8 @@ async def review_monthly(_=Depends(require_auth)):
     pack = tasks.monthly_review_pack()
     try:
         from datetime import time, timedelta, timezone
-        from zoneinfo import ZoneInfo
 
-        local_tz = ZoneInfo("America/Sao_Paulo")
+        local_tz = tz.TZ
         today = datetime.now(local_tz).date()
         inicio_mes_atual = today.replace(day=1)
         fim_mes_anterior = inicio_mes_atual - timedelta(days=1)

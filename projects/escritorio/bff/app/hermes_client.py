@@ -12,18 +12,17 @@ import re as _re
 import shutil
 import subprocess
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+from . import tz
 from .config import settings
 
 logger = logging.getLogger(__name__)
 
 # Fuso do Leo. `classify` injeta o AGORA neste fuso (não o do host) pra o modelo resolver
 # "às 15h" com o mesmo relógio que _parse_quando usa pra virar due_ts — no VPS Ubuntu (UTC)
-# um `now` naïve daria horário defasado. Duplica a const de capture_pipeline de propósito:
-# capture_pipeline importa hermes_client (não o contrário), então compartilhar daqui criaria
-# ciclo; se virar um 3º uso, extrair pra um app/tz.py comum.
-TZ = ZoneInfo("America/Sao_Paulo")
+# um `now` naïve daria horário defasado. A extração pedida por este comentário aconteceu:
+# a definição mora em app/tz.py, que não importa nada do app e por isso não cria ciclo.
+TZ = tz.TZ
 
 # Enquadramento por modo (o SOUL.md já define o escritório; isto só escolhe o chapéu).
 MODE_FRAME = {
@@ -55,25 +54,6 @@ def _clean(s: str) -> str:
             break
     cleaned = "\n".join(lines[i:]).strip()
     return cleaned or s.strip()
-
-
-async def capture(text: str, profile: str | None = None) -> str:
-    """Manda o texto pro Hermes (com o enquadramento do modo) e devolve a resposta."""
-    prof = profile or settings.hermes_profile_capture
-
-    if settings.hermes_mock:
-        return f"[mock:{prof}] anotado: {text}"
-
-    frame = MODE_FRAME.get(prof, "")
-    if not frame:
-        logger.warning(
-            "profile desconhecido %r - captura segue sem frame",
-            prof,
-        )
-    suppress = "(Responda direto ao Leo, sem exibir o menu de modos nem o manual.)"
-    prompt = "\n\n".join(p for p in (frame, text, suppress) if p)
-
-    return await _oneshot(prompt)
 
 
 def _hermes_python() -> str:

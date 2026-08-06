@@ -2,16 +2,16 @@
 
 import time
 from datetime import date, datetime, time as _time, timedelta
-from zoneinfo import ZoneInfo
 
 import httpx
 import recurring_ical_events
 from icalendar import Calendar
 
-from . import store
+from . import store, tz
+from . import tz
 from .config import settings
 
-TZ = ZoneInfo("America/Sao_Paulo")
+TZ = tz.TZ
 
 
 async def _fetch(url: str) -> str:

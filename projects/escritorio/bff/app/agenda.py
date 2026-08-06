@@ -1,11 +1,10 @@
 """Composição da agenda operacional do dia."""
 
 from datetime import date, datetime, time as _time, timedelta
-from zoneinfo import ZoneInfo
 
-from . import ics_client, store
+from . import ics_client, store, tz
 
-TZ = ZoneInfo("America/Sao_Paulo")
+TZ = tz.TZ
 
 
 def semana_iso(ref: date) -> str:

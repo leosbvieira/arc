@@ -8,14 +8,13 @@ Higiene (lei 7): nenhum log/telemetria carrega o texto capturado nem stdout do H
 import logging
 import re
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-from . import clickup_client, hermes_client, store, vault_client
+from . import clickup_client, hermes_client, store, vault_client, tz
 from .clickup_client import STAGING
 
 logger = logging.getLogger(__name__)
 VALID_TIPOS = {"nota", "tarefa_pessoal", "tarefa_trabalho", "cobranca"}
-TZ = ZoneInfo("America/Sao_Paulo")
+TZ = tz.TZ
 
 # Hooks textuais determinísticos (P2 item 10) — resolvidos ANTES do Hermes porque
 # não exigem inferência. `sensivel:` marca a captura (lei 7); `hack:`/`aprendizado:`/

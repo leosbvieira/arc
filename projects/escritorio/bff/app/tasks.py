@@ -244,9 +244,8 @@ def _scorecard(checks: list[dict]) -> dict:
 def weekly_review_pack(today: str | None = None) -> dict:
     """Números da semana ISO corrente, com fronteira local em America/Sao_Paulo."""
     from datetime import date, datetime, time, timedelta
-    from zoneinfo import ZoneInfo
 
-    local_tz = ZoneInfo("America/Sao_Paulo")
+    local_tz = tz.TZ
     ref = date.fromisoformat(today) if today else datetime.now(local_tz).date()
     monday = ref - timedelta(days=ref.weekday())
     since_iso = monday.isoformat()
@@ -317,9 +316,8 @@ def is_primeiro_domingo(ref: date) -> bool:
 def monthly_review_pack(today: str | None = None) -> dict:
     """Números finais do mês civil anterior, em America/Sao_Paulo."""
     from datetime import datetime, time, timedelta
-    from zoneinfo import ZoneInfo
 
-    local_tz = ZoneInfo("America/Sao_Paulo")
+    local_tz = tz.TZ
     ref = date.fromisoformat(today) if today else datetime.now(local_tz).date()
 
     inicio_mes_atual = ref.replace(day=1)
