@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -38,16 +39,51 @@ function severityColor(task: Task): string {
   return areaColor(task.area);
 }
 
+// A confirmação nasce DENTRO da linha, no dedo. Antes ela renderizava no topo do
+// scroll: tocar no check de um item lá embaixo não dava feedback nenhum e parecia
+// que o app tinha ignorado o toque — na ação primária da tela.
 function TaskRow({
   task,
   onOpen,
   onComplete,
+  confirmando,
+  concluindo,
+  onCancelar,
 }: {
   task: Task;
   onOpen: () => void;
   onComplete: () => void;
+  confirmando: boolean;
+  concluindo: boolean;
+  onCancelar: () => void;
 }) {
   const color = severityColor(task);
+  if (confirmando) {
+    return (
+      <View style={[styles.taskRow, styles.taskRowConfirm]}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.confirmLabel}>CONCLUIR?</Text>
+          <Text style={styles.taskName} numberOfLines={1}>{task.name}</Text>
+        </View>
+        <Pressable onPress={onCancelar} hitSlop={8} disabled={concluindo}>
+          <Text style={styles.confirmCancel}>cancelar</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Confirmar conclusão de ${task.name}`}
+          onPress={onComplete}
+          disabled={concluindo}
+          style={styles.confirmOk}
+        >
+          {concluindo ? (
+            <ActivityIndicator size="small" color={colors.primaryText} />
+          ) : (
+            <Feather name="check" size={16} color={colors.primaryText} />
+          )}
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <View style={styles.taskRow}>
       <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={5} style={[styles.check, { borderColor: `${color}AA` }]}>
@@ -175,7 +211,14 @@ export default function Tasks({
         key={task.id}
         task={task}
         onOpen={() => setDetailId(task.id)}
-        onComplete={() => setPendingCompletion(task)}
+        confirmando={pendingCompletion?.id === task.id}
+        concluindo={completingId === task.id}
+        onCancelar={() => setPendingCompletion(null)}
+        onComplete={() =>
+          pendingCompletion?.id === task.id
+            ? completeById(task.id)
+            : setPendingCompletion(task)
+        }
       />
     ));
   }
@@ -272,28 +315,6 @@ export default function Tasks({
         })}
       </ScrollView>
 
-      {pendingCompletion ? (
-        <View style={styles.completionConfirm}>
-          <View style={styles.completionIcon}><Feather name="check" size={15} color={colors.success} /></View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.completionLabel}>CONCLUIR TAREFA?</Text>
-            <Text style={styles.completionName} numberOfLines={1}>{pendingCompletion.name}</Text>
-          </View>
-          <Pressable accessibilityRole="button" onPress={() => setPendingCompletion(null)} hitSlop={8}>
-            <Text style={styles.completionCancel}>cancelar</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            disabled={completingId === pendingCompletion.id}
-            onPress={async () => {
-              if (await completeById(pendingCompletion.id)) setPendingCompletion(null);
-            }}
-            style={styles.completionDo}
-          >
-            <Text style={styles.completionDoText}>{completingId === pendingCompletion.id ? "…" : "concluir"}</Text>
-          </Pressable>
-        </View>
-      ) : null}
 
       {loading ? (
         <View style={{ marginTop: spacing.md }}><Skeleton height={76} /><Skeleton height={76} /><Skeleton height={76} /></View>
@@ -389,11 +410,6 @@ const styles = StyleSheet.create({
   filterText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
   filterTextActive: { color: colors.primary, fontFamily: fonts.uiSemi },
   listContent: { paddingBottom: spacing.xxl },
-  completionConfirm: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minHeight: 62, marginBottom: spacing.md, padding: spacing.sm, borderWidth: 1, borderColor: "rgba(111,181,140,0.3)", borderRadius: radius.md, backgroundColor: "rgba(111,181,140,0.06)" },
-  completionIcon: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(111,181,140,0.12)" },
-  completionLabel: { fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 1, color: colors.success },
-  completionName: { fontFamily: fonts.uiSemi, fontSize: 11.5, color: colors.text, marginTop: 2 },
-  completionCancel: { fontFamily: fonts.ui, fontSize: 10.5, color: colors.textMuted },
   completionDo: { height: 34, justifyContent: "center", paddingHorizontal: 10, borderRadius: radius.sm, backgroundColor: colors.success },
   completionDoText: { fontFamily: fonts.uiSemi, fontSize: 10.5, color: colors.primaryText },
   signalRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
@@ -401,6 +417,17 @@ const styles = StyleSheet.create({
   signalNumber: { fontFamily: fonts.serif, color: colors.text, fontSize: 20 },
   signalLabel: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 9.5, marginTop: 2 },
   group: { marginBottom: spacing.xl },
+  taskRowConfirm: { borderColor: colors.success, backgroundColor: `${colors.success}12` },
+  confirmLabel: { fontFamily: fonts.mono, fontSize: 9.5, letterSpacing: 1.2, color: colors.success },
+  confirmCancel: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted },
+  confirmOk: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.success,
+  },
   taskRow: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 10 },
   check: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
   checkCore: { width: 12, height: 12, borderRadius: 6 },
