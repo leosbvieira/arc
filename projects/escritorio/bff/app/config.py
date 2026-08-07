@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -83,6 +84,31 @@ class Settings(BaseSettings):
     internal_token: str = DEFAULTS["internal_token"]
 
     db_path: str = str(_PROJECT_DIR / "data.db")
+
+    @field_validator("db_path")
+    @classmethod
+    def ancorar_db_path(cls, valor: str) -> str:
+        """Caminho relativo vira absoluto, ancorado no projeto.
+
+        `sqlite3.connect` resolve contra o CWD, então `DB_PATH=data.db` faz o banco
+        depender de onde o servidor foi iniciado. Subir de `projects/escritorio/`
+        em vez de `projects/escritorio/bff/` cria um banco novo e VAZIO em silêncio
+        — sem erro, sem aviso: pontos, rotinas, capturas e histórico somem da tela
+        e voltam quando você inicia do lugar certo. Já aconteceu: existe um
+        `projects/escritorio/data.db` de 05/07 com zero linhas."""
+        caminho = Path(valor)
+        return valor if caminho.is_absolute() else str(_PROJECT_DIR / caminho)
+
+    # Lei 7 dentro da própria ferramenta: sem isto, QUALQUER traceback que mencione
+    # `settings` (um assert do pytest, um erro 500 com locals, um log de debug)
+    # despeja senha, JWT secret, PAT do vault e token do ClickUp em texto claro —
+    # no terminal, no CI e em qualquer transcript. O repr é caminho de vazamento.
+    _CAMPOS_SIGILOSOS = ("password", "secret", "token", "pat", "key", "chat_id", "url")
+
+    def __repr_args__(self):
+        for nome, valor in super().__repr_args__():
+            sigiloso = any(marca in (nome or "").lower() for marca in self._CAMPOS_SIGILOSOS)
+            yield nome, ("<oculto>" if sigiloso and valor else valor)
 
 
 settings = Settings()
