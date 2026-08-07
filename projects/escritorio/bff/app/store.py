@@ -9,14 +9,18 @@ Higiene (lei 7): `log_event.meta` e `capture_queue.last_error` NUNCA recebem o
 conteúdo capturado — só classe/código de erro e metadados sem PII.
 """
 import json
+import logging
 import sqlite3
 import time
 from uuid import uuid4
 from contextlib import closing
 from datetime import date
+from pathlib import Path
 
 from . import tz
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 # Teto de tentativas da fila de captura. `pending_captures` esconde quem passou
 # do teto e `mark_capture(bump_attempts=True)` marca 'failed' ao atingi-lo.
@@ -2777,3 +2781,63 @@ def finish_anki_export(card_ids: list[int], *, success: bool) -> None:
             (destino, *card_ids),
         )
         con.commit()
+
+
+# --- backup do banco ----------------------------------------------------------
+#
+# `data.db` guarda o que o vault NÃO guarda: pontos, nível, rotinas, checks do
+# dia, aprendizados, melhorias, fila de captura. Não havia backup nenhum — um
+# snapshot manual de 12/jul e mais nada. E `data.db*` está no `.gitignore`, então
+# nem o push do repositório cobre.
+#
+# O nível é vitalício por desenho (lei 4: não regride). Um disco ruim tornaria
+# essa promessa mentira, e a série de checks diários não existe em lugar nenhum
+# para reconstruir.
+
+_MANTER_BACKUPS = 14
+
+
+def fazer_backup(destino: Path | str, *, hoje: str, manter: int = _MANTER_BACKUPS):
+    """Snapshot do banco em `destino/data-<hoje>.db`. Devolve o caminho ou None.
+
+    Usa a API online do SQLite, não cópia de arquivo: o BFF escreve enquanto o
+    backup roda, e copiar por baixo produz snapshot rasgado no meio de uma
+    transação.
+
+    Um arquivo por dia, sobrescrito — o worker roda várias vezes ao dia e um
+    arquivo por execução encheria o disco sem dizer mais nada que "o estado mais
+    recente daquele dia".
+
+    Nunca levanta: o backup é rede de segurança e não pode ser o motivo de o BFF
+    cair. Falha vira log e None."""
+    parcial = None
+    try:
+        pasta = Path(destino)
+        pasta.mkdir(parents=True, exist_ok=True)
+
+        with closing(_connect()) as origem:
+            # Integridade ANTES de sobrescrever: copiar lixo por cima do último
+            # estado bom é pior que não fazer backup, e o erro só apareceria no
+            # dia em que ele precisasse do arquivo.
+            veredito = origem.execute("PRAGMA integrity_check").fetchone()[0]
+            if veredito != "ok":
+                logger.error("backup abortado: integrity_check falhou")
+                return None
+
+            alvo = pasta / f"data-{hoje}.db"
+            parcial = pasta / f"data-{hoje}.db.parcial"
+            with closing(sqlite3.connect(parcial)) as copia:
+                origem.backup(copia)
+        # Só troca o arquivo bom depois que a cópia inteira terminou.
+        parcial.replace(alvo)
+
+        antigos = sorted(pasta.glob("data-*.db"))
+        for velho in antigos[:-manter] if manter > 0 else antigos:
+            velho.unlink(missing_ok=True)
+        return alvo
+    except Exception as e:  # noqa: BLE001 — rede de segurança nunca derruba o app
+        logger.warning("backup falhou: %s", type(e).__name__)
+        # Meio-arquivo na pasta se passa por backup e não restaura.
+        if parcial is not None:
+            parcial.unlink(missing_ok=True)
+        return None

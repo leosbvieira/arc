@@ -143,21 +143,47 @@ async def _scheduler_worker() -> None:
         await asyncio.sleep(60)
 
 
+# `data.db` guarda o que o vault NAO guarda: pontos, nivel, rotinas, checks do dia,
+# aprendizados, melhorias. Nao havia backup nenhum — um snapshot manual de 12/jul e
+# mais nada — e `data.db*` esta no .gitignore, entao nem o push do repo cobre.
+# Dentro do BFF, e nao numa tarefa do Windows, para viajar junto quando isto subir
+# para um servidor.
+INTERVALO_BACKUP_S = 6 * 3600
+DIR_BACKUPS = "backups"
+
+
+async def _backup_worker() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(
+                store.fazer_backup,
+                Path(settings.db_path).parent / DIR_BACKUPS,
+                hoje=pontos.hoje_local().isoformat(),
+            )
+        except Exception:  # noqa: BLE001 - rede de seguranca nunca derruba o loop
+            logger.exception("backup")
+        await asyncio.sleep(INTERVALO_BACKUP_S)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _guard_default_secrets()
     store.init_db()
     worker = asyncio.create_task(_capture_worker())
     scheduler = asyncio.create_task(_scheduler_worker())
+    backup = asyncio.create_task(_backup_worker())
     try:
         yield
     finally:
         worker.cancel()
         scheduler.cancel()
+        backup.cancel()
         with suppress(asyncio.CancelledError):
             await worker
         with suppress(asyncio.CancelledError):
             await scheduler
+        with suppress(asyncio.CancelledError):
+            await backup
 
 
 app = FastAPI(title="escritório BFF", lifespan=lifespan)
