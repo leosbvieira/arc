@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D2 — Instrumento · painel de precisão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@300;400;500;600;700&family=Inter+Tight:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* base escura — inalterada (mandato comum) */
+  --bg:#080A0D; --bgRaised:#0C0F13; --surface:#0E1116; --card:#15191F; --card2:#11151A;
+  --border:rgba(235,222,202,0.11); --hair:rgba(235,222,202,0.07);
+  --text:#F4EFE7; --muted:#9A9BA3;
+  /* D2: o accent quente recua. Aço-petróleo frio e discreto é o accent; bronze vira detalhe raro */
+  --steel:#8FB6C4;            /* accent frio — fios, ticks, leituras, UM elemento preenchido por tela */
+  --steelText:#08100F;        /* texto sobre preenchimento steel */
+  --steelSoft:rgba(143,182,196,0.12);
+  --bronze:#DEB878;           /* detalhe raro: marca permanente (dia atual da fita, selo de nível) */
+  --danger:#D77969; --success:#71B49A; --info:#7D9FD0; --lilac:#A99ACB;
+  --mono:'Martian Mono','IBM Plex Mono',ui-monospace,'SF Mono',monospace;
+  --sans:'Inter Tight',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:#05070A}
+body{
+  background:#05070A;color:var(--text);font-family:var(--sans);
+  font-size:15px;line-height:1.55;padding:56px 28px 120px;
+  background-image:radial-gradient(ellipse 900px 500px at 70% -5%,rgba(143,182,196,0.035),transparent 60%);
+}
+.page{max-width:1180px;margin:0 auto}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tnum{font-variant-numeric:tabular-nums}
+.mut{color:var(--muted)}
+.stl{color:var(--steel)}
+
+/* ---------- documento ---------- */
+.doc-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:2.4px;color:var(--steel);text-transform:uppercase}
+h1.doc-title{font-family:var(--sans);font-weight:600;font-size:clamp(34px,4.6vw,52px);letter-spacing:-1.2px;line-height:1.06;margin:14px 0 18px;max-width:820px}
+h1.doc-title em{font-style:normal;color:var(--steel)}
+.doc-lede{color:var(--muted);font-size:16px;max-width:720px;line-height:1.65}
+.doc-lede b{color:var(--text);font-weight:600}
+hr.rule{border:0;border-top:1px solid var(--border);margin:56px 0}
+h2.sec{font-family:var(--sans);font-weight:600;font-size:26px;letter-spacing:-0.6px;margin:0 0 6px}
+.sec-eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:2.2px;color:var(--steel);text-transform:uppercase;margin-bottom:10px}
+.sec-note{color:var(--muted);font-size:13.5px;max-width:680px;margin-bottom:26px}
+h3.sub{font-family:var(--sans);font-weight:600;font-size:17px;margin:34px 0 10px;letter-spacing:-0.2px}
+p.body,li.body{font-size:14px;color:var(--muted);max-width:700px}
+p.body b,li.body b{color:var(--text);font-weight:600}
+ul.list{list-style:none;margin:12px 0}
+ul.list li{padding:9px 0 9px 22px;position:relative;border-bottom:1px solid var(--hair);font-size:14px;color:var(--muted);max-width:760px}
+ul.list li:last-child{border-bottom:0}
+ul.list li::before{content:"";position:absolute;left:2px;top:17px;width:8px;height:1px;background:var(--steel)}
+ul.list li b{color:var(--text);font-weight:600}
+code,.mono-inline{font-family:var(--mono);font-size:0.86em;color:var(--steel);background:var(--steelSoft);padding:1px 5px;border-radius:4px}
+
+/* princípios */
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1px;background:var(--border);border:1px solid var(--border);margin-top:26px}
+.pr{background:var(--bgRaised);padding:22px 22px 26px}
+.pr .n{font-family:var(--mono);font-size:10px;color:var(--steel);letter-spacing:2px}
+.pr h4{font-family:var(--sans);font-weight:600;font-size:15.5px;margin:10px 0 7px;letter-spacing:-0.2px}
+.pr p{font-size:13px;color:var(--muted);line-height:1.6}
+
+/* ---------- moldura de celular ---------- */
+.frames{display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start}
+.frame-col{display:flex;flex-direction:column;gap:16px}
+.phone{
+  width:390px;height:844px;border-radius:40px;overflow:hidden;position:relative;flex:none;
+  background:var(--bg);border:1px solid rgba(235,222,202,0.16);
+  box-shadow:0 30px 80px rgba(0,0,0,0.55), inset 0 0 0 6px #04060а, inset 0 0 0 7px rgba(235,222,202,0.1);
+  box-shadow:0 30px 80px rgba(0,0,0,0.55), inset 0 0 0 6px #04060A, inset 0 0 0 7px rgba(235,222,202,0.1);
+}
+.scr{position:absolute;inset:7px;border-radius:34px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}
+.statusbar{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-family:var(--mono);font-size:11px;color:var(--text)}
+.scr-body{flex:1;overflow:hidden;padding:6px 18px 0;display:flex;flex-direction:column}
+.scr-head{display:flex;align-items:center;justify-content:space-between;padding:8px 0 14px;border-bottom:1px solid var(--hair);flex:none}
+.scr-back{width:34px;height:34px;border-radius:11px;background:var(--card2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--text);font-size:14px}
+.scr-crumb{font-family:var(--mono);font-size:7.5px;color:var(--muted);letter-spacing:1.6px;text-transform:uppercase}
+.scr-title{font-family:var(--sans);font-weight:600;font-size:19px;letter-spacing:-0.4px;margin-top:3px}
+.scr-brand{font-family:var(--mono);font-size:7px;color:var(--muted);letter-spacing:1.4px}
+.tabbar{flex:none;height:62px;background:var(--bgRaised);border-top:1px solid var(--border);display:flex;padding:6px 6px 10px;gap:2px}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border-radius:10px}
+.tab .ti{font-size:15px;color:var(--muted)}
+.tab .tl{font-family:var(--mono);font-size:7px;letter-spacing:0.8px;color:var(--muted);text-transform:uppercase}
+.tab.on{background:var(--steelSoft)}
+.tab.on .ti,.tab.on .tl{color:var(--steel)}
+
+/* miolo das telas */
+.eyebrow{font-family:var(--mono);font-size:8.5px;letter-spacing:1.8px;color:var(--steel);text-transform:uppercase}
+.eyebrow-mut{font-family:var(--mono);font-size:8.5px;letter-spacing:1.8px;color:var(--muted);text-transform:uppercase}
+.hairline{height:1px;background:var(--hair);flex:none}
+.btn-primary{
+  height:52px;border-radius:12px;background:var(--steel);color:var(--steelText);
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:1.6px;text-transform:uppercase;
+}
+.btn-primary .pts{background:rgba(8,16,15,0.14);border-radius:6px;padding:3px 8px;font-size:10.5px;letter-spacing:0.6px}
+.btn-ghost{
+  height:44px;border-radius:12px;border:1px solid var(--border);color:var(--muted);
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  font-family:var(--mono);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;
+}
+
+/* legenda ao lado do mockup */
+.side{flex:1;min-width:300px;max-width:520px}
+.side h3{font-family:var(--sans);font-weight:600;font-size:20px;letter-spacing:-0.4px;margin-bottom:8px}
+.side .delta{margin-top:14px;border-left:1px solid var(--steel);padding:10px 14px;font-size:13px;color:var(--muted);background:linear-gradient(90deg,var(--steelSoft),transparent 70%)}
+.side .delta b{color:var(--text);font-weight:600}
+
+/* antes/depois */
+.ad{display:flex;flex-wrap:wrap;gap:32px;margin-top:10px}
+.ad-col{flex:1;min-width:300px}
+.ad-tag{font-family:var(--mono);font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px}
+.ad-tag.antes{color:var(--muted)}
+.ad-tag.depois{color:var(--steel)}
+.ad-frame{border:1px solid var(--border);border-radius:18px;background:var(--bgRaised);padding:20px;min-height:280px}
+
+/* tabelas do sistema */
+table.tk{width:100%;border-collapse:collapse;margin-top:14px}
+table.tk td,table.tk th{padding:10px 12px;border-bottom:1px solid var(--hair);font-size:13px;vertical-align:top;text-align:left}
+table.tk th{font-family:var(--mono);font-size:9px;letter-spacing:1.8px;color:var(--steel);text-transform:uppercase;border-bottom:1px solid var(--border)}
+table.tk td.why{color:var(--muted);font-size:12.5px;line-height:1.55}
+.sw{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:8px;border:1px solid rgba(255,255,255,0.12)}
+.f{font-family:var(--mono);font-size:11.5px;color:var(--text)}
+
+/* componentes renderizados */
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:22px;margin-top:18px}
+.comp{border:1px solid var(--border);border-radius:16px;background:var(--bgRaised);padding:18px}
+.comp h5{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--steel);text-transform:uppercase;margin-bottom:4px}
+.comp .c-note{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.6}
+.comp .c-note b{color:var(--text);font-weight:600}
+.comp-stage{margin-top:14px;background:var(--bg);border:1px solid var(--hair);border-radius:12px;padding:14px}
+
+/* herança */
+.heranca{border:1px solid var(--border);border-radius:16px;background:var(--bgRaised);padding:26px 28px;max-width:820px}
+.heranca p{font-size:14px;color:var(--muted);line-height:1.7;padding:7px 0;border-bottom:1px solid var(--hair)}
+.heranca p:last-child{border-bottom:0}
+.heranca p b{color:var(--text);font-weight:600}
+.heranca .keep{color:var(--steel)} .heranca .drop{color:var(--danger)}
+
+/* espécime */
+.spec{border:1px solid var(--border);border-radius:18px;background:var(--bgRaised);padding:8px 0;margin-top:20px}
+.spec-row{display:flex;align-items:baseline;gap:26px;padding:20px 28px;border-bottom:1px solid var(--hair)}
+.spec-row:last-child{border-bottom:0}
+.spec-tag{width:150px;flex:none;font-family:var(--mono);font-size:9px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase;line-height:1.6}
+.spec-tag .v{display:block;color:var(--steel);margin-top:3px;letter-spacing:0.5px}
+.spec-grow{flex:1;min-width:0}
+.num-hero{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:72px;line-height:1;font-weight:500;letter-spacing:-2px}
+.num-weights{display:flex;gap:34px;align-items:baseline;flex-wrap:wrap}
+.num-weights .w{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:40px;line-height:1}
+.num-weights .wl{font-family:var(--mono);font-size:8.5px;color:var(--muted);letter-spacing:1.4px;margin-top:8px}
+.tab-demo{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:26px;line-height:1.35}
+.tab-demo .off{color:var(--muted)}
+@media (max-width:900px){.spec-row{flex-direction:column;gap:10px}.spec-tag{width:auto}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ================= CAPA ================= -->
+<div class="doc-eyebrow">direção d2 · instrumento · escritório / aeternum</div>
+<h1 class="doc-title">O app como <em>painel de precisão</em>:<br>tudo é fio, tick e algarismo.</h1>
+<p class="doc-lede">
+  <b>D2 — “Instrumento”.</b> A energia do jogo vem de <b>medição</b>, não de saturação: escalas com
+  traços, agulhas de 1px, réguas, leituras em mono tabular. O accent quente (bronze) recua e vira
+  <b>detalhe raro</b>; quem conduz é um aço-petróleo frio e discreto. Nada preenche área grande —
+  se algo chama atenção, é porque é o <b>único traço brilhante</b> da tela. O placar é um mostrador;
+  o streak, uma fita de registro contínuo onde a quebra aparece como <b>vazio no traço</b> —
+  visível, factual, sem punição.
+</p>
+
+<hr class="rule">
+
+<!-- ================= PRINCÍPIOS ================= -->
+<div class="sec-eyebrow">01 · princípios desta direção</div>
+<h2 class="sec">Medir, não decorar.</h2>
+<p class="sec-note">Os seis princípios do briefing original continuam valendo. Estes são os que a D2 adiciona — cada um amarrado ao detalhista que procrastina.</p>
+<div class="principles">
+  <div class="pr"><div class="n">P·01</div><h4>A precisão é a recompensa</h4><p>A dopamina não vem de confete: vem de ver o número certo, no lugar certo, mudar no instante do toque. Para o detalhista, um algarismo tabular que não dança vale mais que uma animação chamativa.</p></div>
+  <div class="pr"><div class="n">P·02</div><h4>Um fio por tela</h4><p>Nada preenche área grande. Cor sólida só existe em UM elemento por tela — o botão primário. Todo o resto é fio de 1px, tick e leitura. Se dois elementos gritam, a tela está errada.</p></div>
+  <div class="pr"><div class="n">P·03</div><h4>Toda ação tem leitura</h4><p>Cada tarefa declara o que vale; cada conclusão move o saldo na hora. O procrastinador não “acredita” que valeu a pena — ele lê que valeu: <span class="mono-inline">+10 → 1.294</span>.</p></div>
+  <div class="pr"><div class="n">P·04</div><h4>A fita não julga</h4><p>O streak é um strip chart: o traço é contínuo, o dia sem registro é um vazio visível na fita — e a fita continua. Pontos nunca descem; a quebra é informação, não falha. (Lei do código: o placar informa, não julga.)</p></div>
+  <div class="pr"><div class="n">P·05</div><h4>Zero serifa, zero enfeite</h4><p>Fraunces sai. Números em mono de verdade com figuras tabulares; texto em sans neutra e apertada. O rigor tipográfico é o que separa “painel de instrumento” de “dashboard genérico”.</p></div>
+  <div class="pr"><div class="n">P·06</div><h4>Escrever nunca é portão</h4><p>Como no código atual: o despejo do fechamento é opcional e vale bônus, mas o botão de fechar está sempre habilitado. O caminho mais fácil é o caminho certo — e ele tem exatamente um botão dominante.</p></div>
+</div>
+
+<hr class="rule">
+
+<!-- ================= ESPÉCIME ================= -->
+<div class="sec-eyebrow">02 · espécime tipográfico</div>
+<h2 class="sec">Martian Mono nos números, Inter Tight no texto. Fraunces se aposenta.</h2>
+<p class="sec-note">
+  Ele reclamou da tipografia nas duas versões anteriores — então ela é entregável de primeira classe aqui.
+  <b style="color:var(--text)">Martian Mono</b> é mono de verdade: figuras tabulares por construção (o número do placar
+  nunca dança ao atualizar), desenho técnico de instrumento, sete pesos. <b style="color:var(--text)">Inter Tight</b>
+  substitui Space Grotesk: mesma neutralidade, terminais mais apertados, melhor em tamanhos de display e
+  menos “startup”. As duas existem no Google Fonts e têm pacote <span class="mono-inline">@expo-google-fonts/martian-mono</span>
+  e <span class="mono-inline">@expo-google-fonts/inter-tight</span> — instalação direta no stack atual.
+</p>
+<div class="spec">
+  <div class="spec-row">
+    <div class="spec-tag">eyebrow / leitura<span class="v">Martian Mono 500 · 9.5px · caps · +1.8</span></div>
+    <div class="spec-grow eyebrow" style="font-size:9.5px">leitura · painel 02 · sessão de fechamento</div>
+  </div>
+  <div class="spec-row">
+    <div class="spec-tag">título de tela<span class="v">Inter Tight 600 · 24px · −0.5</span></div>
+    <div class="spec-grow" style="font-family:var(--sans);font-weight:600;font-size:24px;letter-spacing:-0.5px">Fechar o dia</div>
+  </div>
+  <div class="spec-row">
+    <div class="spec-tag">corpo / tarefa<span class="v">Inter Tight 500 · 14.5px</span></div>
+    <div class="spec-grow" style="font-family:var(--sans);font-weight:500;font-size:14.5px">Revisar proposta do contrato com a Marina</div>
+  </div>
+  <div class="spec-row">
+    <div class="spec-tag">valor por linha<span class="v">Martian Mono 500 · 12px · tabular</span></div>
+    <div class="spec-grow" style="font-family:var(--mono);font-size:12px;color:var(--steel)">+10&nbsp;&nbsp;<span style="color:var(--muted)">+15</span>&nbsp;&nbsp;<span style="color:var(--muted)">+40</span>&nbsp;&nbsp;<span style="color:var(--muted)">+5</span></div>
+  </div>
+  <div class="spec-row">
+    <div class="spec-tag">algarismo de placar<span class="v">Martian Mono 500 · 72px</span></div>
+    <div class="spec-grow num-hero">1.284</div>
+  </div>
+  <div class="spec-row">
+    <div class="spec-tag">prova de pesos<span class="v">300 · 500 · 700 — o mesmo número</span></div>
+    <div class="spec-grow">
+      <div class="num-weights">
+        <div><div class="w" style="font-weight:300">1.284</div><div class="wl">300 · light — leituras secundárias</div></div>
+        <div><div class="w" style="font-weight:500;color:var(--steel)">1.284</div><div class="wl">500 · medium — saldo (escolhido)</div></div>
+        <div><div class="w" style="font-weight:700">1.284</div><div class="wl">700 · bold — rejeitado: grita</div></div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:14px;max-width:560px">
+        O peso médio vence: o número grande já tem escala; peso pesado por cima vira o “grito” que o Leo rejeitou na C.
+        O 300 existe para leituras de apoio (deltas, metas) — hierarquia por peso, não por cor.
+      </p>
+    </div>
+  </div>
+  <div class="spec-row">
+    <div class="spec-tag">prova tabular<span class="v">algarismos não dançam ao atualizar</span></div>
+    <div class="spec-grow tab-demo">1.111 pts<br>8.888 pts<br><span class="off">0.004 pts</span></div>
+  </div>
+</div>
+
+<hr class="rule">
+
+<!-- ================= MOCKUPS ================= -->
+<div class="sec-eyebrow">03 · mockups — as cinco telas que importam</div>
+<h2 class="sec">Telas.</h2>
+<p class="sec-note">Molduras 390×844, UI renderizada de verdade com os tokens da direção. Dados e rótulos vêm do código que existe hoje (<span class="mono-inline">Fechar.tsx</span>, <span class="mono-inline">Tasks.tsx</span>, <span class="mono-inline">Revisao.tsx</span>, <span class="mono-inline">Home.tsx</span>).</p>
+
+<!-- ====== FECHAR — RITO ====== -->
+<div class="frames" style="margin-top:36px">
+  <div class="frame-col">
+    <div class="phone">
+      <div class="scr">
+        <div class="statusbar"><span>23:41</span><span style="color:var(--muted)">◦◦◦</span></div>
+        <div class="scr-body">
+          <div class="scr-head">
+            <div class="scr-back">‹</div>
+            <div style="text-align:center"><div class="scr-crumb">rito · noite</div><div class="scr-title">Fechar o dia</div></div>
+            <div class="scr-brand">AETERNUM</div>
+          </div>
+
+          <!-- leitura de contexto: que dia é -->
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:12px 2px 10px">
+            <span class="eyebrow-mut">registro de hoje</span>
+            <span class="mono" style="font-size:10px;color:var(--muted)">dia corrida · ter 05 ago</span>
+          </div>
+          <div class="hairline"></div>
+
+          <!-- rotinas como linhas de medição -->
+          <div style="padding-top:6px">
+            <div class="eyebrow-mut" style="padding:10px 2px 6px">manhã · 3/3 · +45</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--hair)">
+              <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:15px">✓</div>
+              <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(154,155,163,0.5)">Yoga 20 min</div></div>
+              <span class="mono" style="font-size:11px;color:var(--muted)">+15</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--hair)">
+              <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:15px">✓</div>
+              <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(154,155,163,0.5)">Leitura 30 min</div></div>
+              <span class="mono" style="font-size:11px;color:var(--muted)">+15</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--hair)">
+              <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:15px">✓</div>
+              <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(154,155,163,0.5)">Planejar o dia</div></div>
+              <span class="mono" style="font-size:11px;color:var(--muted)">+15</span>
+            </div>
+
+            <div class="eyebrow-mut" style="padding:14px 2px 6px">noite · 1/2 · +10</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--hair)">
+              <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:15px">✓</div>
+              <div style="flex:1"><div style="font-weight:500;font-size:14px;color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(154,155,163,0.5)">Desligar telas 23h</div></div>
+              <span class="mono" style="font-size:11px;color:var(--muted)">+10</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--hair)">
+              <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:10px;border-radius:5px;background:rgba(235,222,202,0.14)"></div></div>
+              <div style="flex:1">
+                <div style="font-weight:500;font-size:14px">Alongar antes de dormir</div>
+                <div class="mono" style="font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:0.4px">1. pescoço · 2. ombros · 3. quadril</div>
+              </div>
+              <span class="mono" style="font-size:11px;color:var(--steel)">+10</span>
+            </div>
+          </div>
+
+          <div style="flex:1"></div>
+
+          <!-- despejo: opcional, depois do check -->
+          <div style="border:1px dashed var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <span class="eyebrow-mut">como foi o dia? · opcional · bônus +40</span>
+              <span style="color:var(--muted);font-size:13px">✎</span>
+            </div>
+          </div>
+
+          <!-- UM botão primário -->
+          <div class="btn-primary" style="margin-bottom:8px">Fechar o dia <span class="pts">garante +65</span></div>
+          <div class="mono" style="text-align:center;font-size:8.5px;color:var(--muted);letter-spacing:1px;padding-bottom:8px">4/5 ritmos · fecha sem escrever, se quiser</div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ti">◔</span><span class="tl">Hoje</span></div>
+          <div class="tab"><span class="ti">✎</span><span class="tl">Capturar</span></div>
+          <div class="tab"><span class="ti">☑</span><span class="tl">Tarefas</span></div>
+          <div class="tab"><span class="ti">◌</span><span class="tl">Mentor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="sec-eyebrow">tela 1 de 6</div>
+    <h3>Fechar o dia — o rito vira um toque</h3>
+    <ul class="list">
+      <li><b>Hoje são dois links de texto</b> (“estruturar com o Hermes →”, “fechar sem escrever”) e checks desenhados com o glifo <span class="mono-inline">☑</span> num <span class="mono-inline">&lt;Text&gt;</span> — sem alvo de toque real. Aqui, cada rotina é uma linha de medição com alvo de 38px e o <b>valor em pontos à direita</b>, em mono.</li>
+      <li><b>O que já estava marcado de manhã aparece marcado</b> — o código já traz <span class="mono-inline">feito</span> do BFF por bloco; o visual finalmente mostra (riscado + tick, ponto creditado).</li>
+      <li><b>Placar parcial por bloco</b> (“manhã · 3/3 · +45”): o detalhista vê de onde vem cada ponto. Nada é caixa-preta.</li>
+      <li><b>O despejo recuou para um campo tracejado opcional</b> com bônus declarado (+40). Escrever é side quest, nunca portão — a regra que já existe no código vira geometria.</li>
+      <li><b>Um botão primário, sempre habilitado</b>: “Fechar o dia · garante +65”. É o único preenchimento sólido da tela — a exceção que prova o fio de 1px.</li>
+    </ul>
+    <div class="delta">a soma do botão é otimista e honesta: <b>+65 = pontos já marcados (55) + o rito de fechar (10)</b>. Se ele desmarcar algo, o número do botão muda junto.</div>
+  </div>
+</div>
+
+<!-- ====== FECHAR — RECOMPENSA + STREAK ====== -->
+<div class="frames" style="margin-top:56px">
+  <div class="frame-col">
+    <div class="phone">
+      <div class="scr">
+        <div class="statusbar"><span>23:43</span><span style="color:var(--muted)">◦◦◦</span></div>
+        <div class="scr-body" style="align-items:stretch">
+          <div style="text-align:center;padding-top:26px">
+            <div class="eyebrow">registro gravado · ter 05 ago · 23:43</div>
+          </div>
+
+          <!-- o número é o protagonista -->
+          <div style="text-align:center;margin-top:22px">
+            <div class="num-hero" style="color:var(--steel);font-size:64px;letter-spacing:-3px">+65</div>
+            <div class="mono" style="font-size:10px;color:var(--muted);letter-spacing:1.6px;margin-top:10px">SALDO&nbsp;&nbsp;1.219 → <span style="color:var(--text)">1.284</span> PTS</div>
+          </div>
+
+          <!-- régua do ciclo com agulha -->
+          <div style="margin-top:26px;padding:0 6px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+              <span class="eyebrow-mut">ciclo 3 · semana 7/12</span>
+              <span class="mono" style="font-size:10px;color:var(--muted)">1.284 / 2.000</span>
+            </div>
+            <svg width="100%" height="46" viewBox="0 0 340 46" preserveAspectRatio="none" style="display:block">
+              <!-- ticks da régua -->
+              <g stroke="rgba(235,222,202,0.16)" stroke-width="1">
+                <line x1="2" y1="18" x2="2" y2="30"/><line x1="19" y1="22" x2="19" y2="30"/><line x1="36" y1="22" x2="36" y2="30"/><line x1="53" y1="22" x2="53" y2="30"/><line x1="70" y1="18" x2="70" y2="30"/><line x1="87" y1="22" x2="87" y2="30"/><line x1="104" y1="22" x2="104" y2="30"/><line x1="121" y1="22" x2="121" y2="30"/><line x1="138" y1="18" x2="138" y2="30"/><line x1="155" y1="22" x2="155" y2="30"/><line x1="172" y1="22" x2="172" y2="30"/><line x1="189" y1="22" x2="189" y2="30"/><line x1="206" y1="18" x2="206" y2="30"/><line x1="223" y1="22" x2="223" y2="30"/><line x1="240" y1="22" x2="240" y2="30"/><line x1="257" y1="22" x2="257" y2="30"/><line x1="274" y1="18" x2="274" y2="30"/><line x1="291" y1="22" x2="291" y2="30"/><line x1="308" y1="22" x2="308" y2="30"/><line x1="325" y1="22" x2="325" y2="30"/><line x1="338" y1="18" x2="338" y2="30"/>
+              </g>
+              <line x1="0" y1="30" x2="340" y2="30" stroke="rgba(235,222,202,0.22)" stroke-width="1"/>
+              <!-- progresso: fio steel até a agulha -->
+              <line x1="0" y1="30" x2="218" y2="30" stroke="#8FB6C4" stroke-width="1.5"/>
+              <!-- agulha -->
+              <line x1="218" y1="8" x2="218" y2="38" stroke="#8FB6C4" stroke-width="1.5"/>
+              <circle cx="218" cy="8" r="2" fill="#8FB6C4"/>
+              <text x="218" y="45" text-anchor="middle" fill="#9A9BA3" font-size="8" font-family="Martian Mono,monospace">64%</text>
+            </svg>
+            <div class="mono" style="font-size:9px;color:var(--muted);letter-spacing:0.6px;margin-top:2px">nível 2 · vitalício — não regride · N3 em 716 pts</div>
+          </div>
+
+          <!-- fita de streak -->
+          <div style="margin-top:24px;padding:0 6px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+              <span class="eyebrow-mut">fita de fechamento · 28 dias</span>
+              <span class="mono" style="font-size:10px;color:var(--text)">9 dias seguidos</span>
+            </div>
+            <svg width="100%" height="58" viewBox="0 0 340 58" preserveAspectRatio="none" style="display:block">
+              <!-- baseline contínua do registrador -->
+              <line x1="0" y1="44" x2="340" y2="44" stroke="rgba(235,222,202,0.2)" stroke-width="1"/>
+              <!-- traço do sismógrafo: dias fechados = pulsos; o vazio fica visível -->
+              <polyline fill="none" stroke="#8FB6C4" stroke-width="1.4" stroke-linejoin="round"
+                points="0,44 12,44 12,18 24,18 24,44 36,44 36,18 48,18 48,44 60,44 84,44 84,18 96,18 96,44 108,44 108,18 120,18 120,44 132,44 132,18 144,18 144,44 156,44 156,18 168,18 168,44 180,44 180,18 192,18 192,44 204,44 204,18 216,18 216,44 228,44 252,44 252,18 264,18 264,44 276,44 276,18 288,18 288,44 300,44 300,18 312,18 312,44 324,44 324,18 336,18 336,44 340,44"/>
+              <!-- vazio da quebra: régua pontilhada, factual -->
+              <line x1="60" y1="44" x2="84" y2="44" stroke="rgba(215,121,105,0.55)" stroke-width="1" stroke-dasharray="2 3"/>
+              <line x1="228" y1="44" x2="252" y2="44" stroke="rgba(215,121,105,0.55)" stroke-width="1" stroke-dasharray="2 3"/>
+              <!-- dia atual: a única marca bronze da tela -->
+              <line x1="336" y1="14" x2="336" y2="48" stroke="#DEB878" stroke-width="1.4"/>
+              <text x="330" y="10" text-anchor="end" fill="#DEB878" font-size="8" font-family="Martian Mono,monospace">hoje</text>
+            </svg>
+            <div class="mono" style="font-size:9px;color:var(--muted);letter-spacing:0.5px;margin-top:4px">2 dias sem registro na janela · a fita continua · pontos nunca descem</div>
+          </div>
+
+          <div style="flex:1"></div>
+          <div class="btn-ghost" style="margin-bottom:6px">ver placar completo →</div>
+          <div class="mono" style="text-align:center;font-size:8.5px;color:var(--muted);letter-spacing:1px;padding-bottom:10px">amanhã a fita ganha mais um pulso</div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ti">◔</span><span class="tl">Hoje</span></div>
+          <div class="tab"><span class="ti">✎</span><span class="tl">Capturar</span></div>
+          <div class="tab"><span class="ti">☑</span><span class="tl">Tarefas</span></div>
+          <div class="tab"><span class="ti">◌</span><span class="tl">Mentor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="sec-eyebrow">tela 2 de 6</div>
+    <h3>A recompensa: um mostrador, uma régua, uma fita</h3>
+    <ul class="list">
+      <li><b>Hoje o fim do rito é uma linha cinza de 13px</b> (“✓ dia fechado · 4 de 7 ritmos hoje · 1.380 pts”). Os dados já chegam — <span class="mono-inline">getPontos()</span> é chamado no <span class="mono-inline">aprovar()</span> — e são jogados fora. Aqui o <b>+65 é o maior número do app</b>, em Martian Mono tabular.</li>
+      <li><b>A régua do ciclo substitui a barra de progresso cheia:</b> fio de 1px com ticks e uma agulha fina na posição exata (64%). Mesma informação de <span class="mono-inline">ciclo.pontos/meta</span>, zero preenchimento de área.</li>
+      <li><b>A fita de streak é um strip chart:</b> cada dia fechado é um pulso; o dia sem registro é um <b>vazio visível</b> com a régua pontilhada — factual, sem texto punitivo, sem vermelho em área. O traço continua depois do vazio: <b>ninguém “perdeu” nada, a fita só registra</b>. “9 dias seguidos” conta a sequência corrente; a legenda informa os furos da janela sem julgar.</li>
+      <li><b>O bronze aparece uma única vez:</b> a marca “hoje” na fita. Detalhe raro = valor, não ruído.</li>
+      <li><b>Animação barata e garantida:</b> contagem do +65 e avanço da agulha com <span class="mono-inline">Animated.timing</span> puro (600ms). Sem reanimated — não está instalado.</li>
+    </ul>
+    <div class="delta">a quebra de sequência é resolvida pela <b>forma</b>, não por texto motivacional: o vazio está ali, é impossível não ver — e a fita já está a caminho do próximo pulso.</div>
+  </div>
+</div>
+
+<!-- ====== TAREFAS ====== -->
+<div class="frames" style="margin-top:56px">
+  <div class="frame-col">
+    <div class="phone">
+      <div class="scr">
+        <div class="statusbar"><span>14:02</span><span style="color:var(--muted)">◦◦◦</span></div>
+        <div class="scr-body">
+          <div class="scr-head">
+            <div>
+              <div class="scr-crumb">central de execução</div>
+              <div class="scr-title">Tarefas</div>
+            </div>
+            <!-- leitura do dia: pontos acumulados hoje -->
+            <div style="text-align:right">
+              <div class="mono" style="font-size:8px;letter-spacing:1.6px;color:var(--muted)">HOJE</div>
+              <div class="mono" style="font-size:17px;color:var(--steel);margin-top:2px">+85</div>
+            </div>
+          </div>
+
+          <!-- sinais: atrasadas / 7 dias / programadas -->
+          <div style="display:flex;gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:10px;overflow:hidden;margin:12px 0 4px">
+            <div style="flex:1;background:var(--bg);padding:10px 12px"><div class="mono" style="font-size:16px;color:var(--danger)">2</div><div class="mono" style="font-size:7.5px;letter-spacing:1.2px;color:var(--muted);margin-top:3px">ATRASADAS</div></div>
+            <div style="flex:1;background:var(--bg);padding:10px 12px"><div class="mono" style="font-size:16px">4</div><div class="mono" style="font-size:7.5px;letter-spacing:1.2px;color:var(--muted);margin-top:3px">EM 7 DIAS</div></div>
+            <div style="flex:1;background:var(--bg);padding:10px 12px"><div class="mono" style="font-size:16px">9</div><div class="mono" style="font-size:7.5px;letter-spacing:1.2px;color:var(--muted);margin-top:3px">PROGRAMADAS</div></div>
+          </div>
+
+          <div class="eyebrow" style="padding:14px 2px 8px">execução · agora</div>
+
+          <!-- linha normal -->
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid rgba(215,121,105,0.65);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:10px;border-radius:5px;background:rgba(215,121,105,0.16)"></div></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:8px;letter-spacing:1.2px;color:var(--danger);text-transform:uppercase">Trabalho</span><span class="mono" style="font-size:8.5px;color:var(--muted)">hoje</span></div>
+              <div style="font-weight:500;font-size:14px;margin-top:3px">Enviar revisão do contrato p/ Marina</div>
+            </div>
+            <span class="mono" style="font-size:11.5px;color:var(--steel)">+15</span>
+          </div>
+
+          <!-- linha em confirmação: o número sai da linha e vai para o saldo -->
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 10px;margin:2px -8px;border:1px solid rgba(113,180,154,0.4);border-radius:12px;background:rgba(113,180,154,0.06)">
+            <div style="flex:1;min-width:0">
+              <div class="mono" style="font-size:8px;letter-spacing:1.4px;color:var(--success)">CONCLUIR? +10 → HOJE +95</div>
+              <div style="font-weight:500;font-size:14px;margin-top:4px">Pagar fatura do cartão</div>
+            </div>
+            <span class="mono" style="font-size:10.5px;color:var(--muted)">cancelar</span>
+            <div style="width:36px;height:36px;border-radius:18px;background:var(--success);display:flex;align-items:center;justify-content:center;color:var(--steelText);font-size:14px">✓</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid rgba(126,154,201,0.6);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:10px;border-radius:5px;background:rgba(126,154,201,0.14)"></div></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:8px;letter-spacing:1.2px;color:#7E9AC9;text-transform:uppercase">Carreira</span><span class="mono" style="font-size:8.5px;color:var(--muted)">qui</span></div>
+              <div style="font-weight:500;font-size:14px;margin-top:3px">Escrever retro do trimestre</div>
+            </div>
+            <span class="mono" style="font-size:11.5px;color:var(--steel)">+10</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid rgba(201,188,126,0.6);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:10px;border-radius:5px;background:rgba(201,188,126,0.14)"></div></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:8px;letter-spacing:1.2px;color:#C9BC7E;text-transform:uppercase">Estudo</span><span class="mono" style="font-size:8.5px;color:var(--muted)">sex</span></div>
+              <div style="font-weight:500;font-size:14px;margin-top:3px">Cap. 4 do livro de categorias</div>
+            </div>
+            <span class="mono" style="font-size:11.5px;color:var(--steel)">+10</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid rgba(154,155,163,0.55);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:10px;border-radius:5px;background:rgba(235,222,202,0.1)"></div></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:8px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase">Finance</span><span class="mono" style="font-size:8.5px;color:var(--muted)">12 ago</span></div>
+              <div style="font-weight:500;font-size:14px;margin-top:3px">Conferir extrato do mês</div>
+            </div>
+            <span class="mono" style="font-size:11.5px;color:var(--steel)">+5</span>
+          </div>
+
+          <div class="eyebrow-mut" style="padding:16px 2px 8px">radar · próximos 30 dias</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <div style="width:38px;height:38px;border-radius:19px;border:1.5px solid rgba(154,155,163,0.55);display:flex;align-items:center;justify-content:center"><div style="width:10px;height:10px;border-radius:5px;background:rgba(235,222,202,0.1)"></div></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mono" style="font-size:8px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase">Corpo</span><span class="mono" style="font-size:8.5px;color:var(--muted)">20 ago</span></div>
+              <div style="font-weight:500;font-size:14px;margin-top:3px">Agendar exame de sangue</div>
+            </div>
+            <span class="mono" style="font-size:11.5px;color:var(--steel)">+5</span>
+          </div>
+
+          <div style="flex:1"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 2px 12px">
+            <span class="mono" style="font-size:9px;color:var(--muted);letter-spacing:1px">12 ABERTAS · 2 ATRASADAS</span>
+            <div style="width:42px;height:42px;border-radius:14px;background:var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steelText);font-size:19px;font-weight:600">+</div>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ti">◔</span><span class="tl">Hoje</span></div>
+          <div class="tab"><span class="ti">✎</span><span class="tl">Capturar</span></div>
+          <div class="tab on"><span class="ti">☑</span><span class="tl">Tarefas</span></div>
+          <div class="tab"><span class="ti">◌</span><span class="tl">Mentor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="sec-eyebrow">tela 3 de 6</div>
+    <h3>Tarefas — cada linha declara o que vale</h3>
+    <ul class="list">
+      <li><b>O valor mora à direita da linha, em mono pequeno e frio.</b> Numa lista de 12 tarefas ele não vira ruído porque é sempre a mesma coluna, o mesmo tamanho, a mesma cor — o olho aprende a régua em um dia. O que muda de cor é a área (as 10 <span class="mono-inline">AREA_COLORS</span> ficam intocadas).</li>
+      <li><b>O gesto de concluir já existe no código</b> (confirmação nasce dentro da linha, <span class="mono-inline">TaskRow confirmando</span>). A D2 só adiciona a leitura: <span class="mono-inline">CONCLUIR? +10 → HOJE +95</span> — antes mesmo de confirmar, ele vê para onde o número vai.</li>
+      <li><b>No toque, o número sai da linha e vai para o saldo:</b> o “+10” faz crossfade para o contador “HOJE” do cabeçalho (<span class="mono-inline">Animated.timing</span> de opacidade + deslocamento de 12px, ~300ms). Sem partícula, sem confete — só a contagem mudando.</li>
+      <li><b>O total do dia se forma no cabeçalho</b> (“HOJE +85”), sempre visível, e zera à meia-noite — o saldo de verdade continua no placar.</li>
+      <li><b>Valores vêm de uma tabela local em <span class="mono-inline">theme.ts</span></b> (pontos por tipo de ação) até o BFF expor — custo declarado no plano de ondas, não mágica.</li>
+    </ul>
+    <div class="delta">a pontuação não compete com a severidade: atrasada continua danger na borda do check; <b>pontos são sempre steel</b> — uma cor, um significado.</div>
+  </div>
+</div>
+
+<!-- ====== PLACAR (REVISÃO) ====== -->
+<div class="frames" style="margin-top:56px">
+  <div class="frame-col">
+    <div class="phone">
+      <div class="scr">
+        <div class="statusbar"><span>21:17</span><span style="color:var(--muted)">◦◦◦</span></div>
+        <div class="scr-body">
+          <div class="scr-head">
+            <div class="scr-back">‹</div>
+            <div style="text-align:center"><div class="scr-crumb">revisão · painel</div><div class="scr-title">Placar</div></div>
+            <div class="scr-brand">AETERNUM</div>
+          </div>
+
+          <!-- mostrador principal -->
+          <div style="text-align:center;padding-top:20px">
+            <div class="eyebrow-mut">pontos acumulados</div>
+            <div class="num-hero" style="font-size:60px;margin-top:8px;letter-spacing:-3px">1.284</div>
+            <div class="mono" style="font-size:9.5px;color:var(--muted);letter-spacing:1.2px;margin-top:8px">
+              NÍVEL 2 <span style="color:var(--bronze)">◆</span> VITALÍCIO · N3 EM 716
+            </div>
+          </div>
+
+          <!-- régua do ciclo -->
+          <div style="margin-top:20px;padding:0 4px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+              <span class="eyebrow-mut">ciclo 3 · semana 7/12</span>
+              <span class="mono" style="font-size:9.5px;color:var(--muted)">1.284 / 2.000</span>
+            </div>
+            <svg width="100%" height="34" viewBox="0 0 340 34" preserveAspectRatio="none" style="display:block">
+              <g stroke="rgba(235,222,202,0.15)" stroke-width="1">
+                <line x1="2" y1="12" x2="2" y2="24"/><line x1="24" y1="16" x2="24" y2="24"/><line x1="46" y1="16" x2="46" y2="24"/><line x1="68" y1="12" x2="68" y2="24"/><line x1="90" y1="16" x2="90" y2="24"/><line x1="112" y1="16" x2="112" y2="24"/><line x1="134" y1="12" x2="134" y2="24"/><line x1="156" y1="16" x2="156" y2="24"/><line x1="178" y1="16" x2="178" y2="24"/><line x1="200" y1="12" x2="200" y2="24"/><line x1="222" y1="16" x2="222" y2="24"/><line x1="244" y1="16" x2="244" y2="24"/><line x1="266" y1="12" x2="266" y2="24"/><line x1="288" y1="16" x2="288" y2="24"/><line x1="310" y1="16" x2="310" y2="24"/><line x1="336" y1="12" x2="336" y2="24"/>
+              </g>
+              <line x1="0" y1="24" x2="340" y2="24" stroke="rgba(235,222,202,0.22)" stroke-width="1"/>
+              <line x1="0" y1="24" x2="218" y2="24" stroke="#8FB6C4" stroke-width="1.5"/>
+              <line x1="218" y1="4" x2="218" y2="30" stroke="#8FB6C4" stroke-width="1.5"/>
+              <circle cx="218" cy="4" r="2" fill="#8FB6C4"/>
+            </svg>
+          </div>
+
+          <!-- fita de streak no placar -->
+          <div style="margin-top:16px;padding:0 4px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+              <span class="eyebrow-mut">fita de fechamento · 28 dias</span>
+              <span class="mono" style="font-size:9.5px;color:var(--text)">9 seguidos</span>
+            </div>
+            <svg width="100%" height="40" viewBox="0 0 340 40" preserveAspectRatio="none" style="display:block">
+              <line x1="0" y1="30" x2="340" y2="30" stroke="rgba(235,222,202,0.2)" stroke-width="1"/>
+              <polyline fill="none" stroke="#8FB6C4" stroke-width="1.3" stroke-linejoin="round"
+                points="0,30 12,30 12,8 24,8 24,30 36,30 36,8 48,8 48,30 60,30 84,30 84,8 96,8 96,30 108,30 108,8 120,8 120,30 132,30 132,8 144,8 144,30 156,30 156,8 168,8 168,30 180,30 180,8 192,8 192,30 204,30 204,8 216,8 216,30 228,30 252,30 252,8 264,8 264,30 276,30 276,8 288,8 288,30 300,30 300,8 312,8 312,30 324,30 324,8 336,8 336,30 340,30"/>
+              <line x1="60" y1="30" x2="84" y2="30" stroke="rgba(215,121,105,0.5)" stroke-width="1" stroke-dasharray="2 3"/>
+              <line x1="228" y1="30" x2="252" y2="30" stroke="rgba(215,121,105,0.5)" stroke-width="1" stroke-dasharray="2 3"/>
+              <line x1="336" y1="5" x2="336" y2="34" stroke="#DEB878" stroke-width="1.3"/>
+            </svg>
+          </div>
+
+          <!-- semana: ganho / desconto -->
+          <div style="display:flex;gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:10px;overflow:hidden;margin-top:16px">
+            <div style="flex:1;background:var(--bg);padding:10px 12px">
+              <div class="mono" style="font-size:8px;letter-spacing:1.4px;color:var(--muted)">SEMANA · GANHO</div>
+              <div class="mono" style="font-size:19px;color:var(--success);margin-top:4px">+240</div>
+            </div>
+            <div style="flex:1;background:var(--bg);padding:10px 12px">
+              <div class="mono" style="font-size:8px;letter-spacing:1.4px;color:var(--muted)">SEMANA · DESCONTO</div>
+              <div class="mono" style="font-size:19px;color:var(--muted);margin-top:4px">−30</div>
+            </div>
+            <div style="flex:1;background:var(--bg);padding:10px 12px">
+              <div class="mono" style="font-size:8px;letter-spacing:1.4px;color:var(--muted)">SCORECARD</div>
+              <div class="mono" style="font-size:19px;margin-top:4px">78%</div>
+            </div>
+          </div>
+
+          <!-- padrões: fatos, sem julgamento -->
+          <div style="margin-top:14px;border-top:1px solid var(--hair);padding-top:10px">
+            <div class="mono" style="font-size:9.5px;color:var(--muted);letter-spacing:0.5px">alongar · 2 furos em 7d · −20</div>
+            <div class="mono" style="font-size:9.5px;color:var(--muted);letter-spacing:0.5px;margin-top:5px">leitura · 1 furo em 7d · −10</div>
+          </div>
+
+          <!-- métricas da semana -->
+          <div style="display:flex;gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:10px;overflow:hidden;margin-top:14px">
+            <div style="flex:1;background:var(--bg);padding:9px 10px"><div class="mono" style="font-size:14px">5</div><div class="mono" style="font-size:7px;letter-spacing:1px;color:var(--muted);margin-top:3px">FECHAMENTOS</div></div>
+            <div style="flex:1;background:var(--bg);padding:9px 10px"><div class="mono" style="font-size:14px">23</div><div class="mono" style="font-size:7px;letter-spacing:1px;color:var(--muted);margin-top:3px">CAPTURAS</div></div>
+            <div style="flex:1;background:var(--bg);padding:9px 10px"><div class="mono" style="font-size:14px">210m</div><div class="mono" style="font-size:7px;letter-spacing:1px;color:var(--muted);margin-top:3px">LEITURA</div></div>
+            <div style="flex:1;background:var(--bg);padding:9px 10px"><div class="mono" style="font-size:14px">4</div><div class="mono" style="font-size:7px;letter-spacing:1px;color:var(--muted);margin-top:3px">STAGING</div></div>
+          </div>
+
+          <div style="flex:1"></div>
+          <div class="btn-ghost" style="margin-bottom:12px">fechar a semana no vault</div>
+        </div>
+        <div class="tabbar">
+          <div class="tab"><span class="ti">◔</span><span class="tl">Hoje</span></div>
+          <div class="tab"><span class="ti">✎</span><span class="tl">Capturar</span></div>
+          <div class="tab"><span class="ti">☑</span><span class="tl">Tarefas</span></div>
+          <div class="tab"><span class="ti">◌</span><span class="tl">Mentor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="sec-eyebrow">tela 4 de 6 · o herói desta rodada</div>
+    <h3>Placar — um mostrador, não um cartão</h3>
+    <ul class="list">
+      <li><b>Todos estes dados já existem</b> em <span class="mono-inline">Revisao.tsx</span>: <span class="mono-inline">saldo_total</span>, <span class="mono-inline">nivel</span>, <span class="mono-inline">ciclo.pontos/meta</span>, <span class="mono-inline">semana.ganho/desconto</span>, <span class="mono-inline">padroes</span>, <span class="mono-inline">scorecard.pct</span>, <span class="mono-inline">dailies/capturas/sessões</span>. Nenhum endpoint novo — exceto a fita de streak (ver ondas).</li>
+      <li><b>Ambição da C, acabamento da D2:</b> o saldo é o maior número do app (60px, tabular), mas em vez do HUD saturado ele é um mostrador — régua de 1px com agulha fina, leituras em células separadas por hairlines.</li>
+      <li><b>Lei nº 4 mantida na geometria:</b> ganho em success, <b>desconto em muted</b> (nunca danger — desconto não é erro, é fato), padrões em mono mudo. Se não houve padrão, a seção some — como já acontece no código.</li>
+      <li><b>A fita de streak vive aqui também</b> — o mesmo componente da tela de recompensa, para o detalhista conferir a janela inteira quando quiser.</li>
+      <li><b>Diamantes do nível viram um ◆ bronze único</b> ao lado de “NÍVEL 2 · VITALÍCIO” — a segunda (e última) aparição do bronze no sistema.</li>
+    </ul>
+    <div class="delta">hierarquia do mostrador: <b>saldo → régua do ciclo → fita → semana → padrões → métricas</b>. Cada camada é menos luminosa que a anterior — como num instrumento de bancada.</div>
+  </div>
+</div>
+
+<!-- ====== HOME ====== -->
+<div class="frames" style="margin-top:56px">
+  <div class="frame-col">
+    <div class="phone">
+      <div class="scr">
+        <div class="statusbar"><span>07:58</span><span style="color:var(--muted)">◦◦◦</span></div>
+        <div class="scr-body">
+          <!-- linha de leitura: data + saldo -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;padding:10px 2px 14px;border-bottom:1px solid var(--hair)">
+            <div>
+              <div class="eyebrow-mut">terça-feira · 05 ago</div>
+              <div style="font-family:var(--sans);font-weight:600;font-size:26px;letter-spacing:-0.6px;margin-top:5px">Bom dia, Leo.</div>
+            </div>
+            <div style="text-align:right">
+              <div class="mono" style="font-size:8px;letter-spacing:1.6px;color:var(--muted)">SALDO</div>
+              <div class="mono" style="font-size:19px;color:var(--steel);margin-top:3px">1.284</div>
+            </div>
+          </div>
+
+          <!-- hero: a ação que precisa dele agora -->
+          <div style="border:1px solid var(--border);border-radius:16px;padding:16px;margin-top:14px;background:linear-gradient(135deg,#141A1F 0%,#0E1116 60%)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="eyebrow">agora · 08:00</span>
+              <span class="mono" style="font-size:9px;color:var(--muted);letter-spacing:1px">VALE +15</span>
+            </div>
+            <div style="font-family:var(--sans);font-weight:600;font-size:21px;letter-spacing:-0.4px;margin-top:12px">Abertura do dia</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5">3 ritmos da manhã esperando marcação.</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+              <span class="mono" style="font-size:9px;letter-spacing:1.4px;color:var(--steel)">ABRIR AGORA</span>
+              <div style="width:32px;height:32px;border-radius:16px;border:1px solid var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:14px">↗</div>
+            </div>
+          </div>
+
+          <!-- leituras do dia -->
+          <div style="display:flex;gap:1px;background:var(--hair);border:1px solid var(--hair);border-radius:10px;overflow:hidden;margin-top:12px">
+            <div style="flex:1;background:var(--bg);padding:10px 12px">
+              <div class="mono" style="font-size:8px;letter-spacing:1.2px;color:var(--muted)">RITMOS</div>
+              <div class="mono" style="font-size:16px;margin-top:5px">2<span style="color:var(--muted);font-size:11px">/3</span></div>
+              <svg width="100%" height="10" viewBox="0 0 90 10" preserveAspectRatio="none" style="display:block;margin-top:6px"><line x1="0" y1="7" x2="90" y2="7" stroke="rgba(235,222,202,0.18)" stroke-width="1"/><line x1="0" y1="7" x2="60" y2="7" stroke="#71B49A" stroke-width="1.4"/><line x1="60" y1="2" x2="60" y2="9" stroke="#71B49A" stroke-width="1.4"/></svg>
+            </div>
+            <div style="flex:1;background:var(--bg);padding:10px 12px">
+              <div class="mono" style="font-size:8px;letter-spacing:1.2px;color:var(--muted)">CICLO</div>
+              <div class="mono" style="font-size:16px;margin-top:5px">S7<span style="color:var(--muted);font-size:11px">/12</span></div>
+              <svg width="100%" height="10" viewBox="0 0 90 10" preserveAspectRatio="none" style="display:block;margin-top:6px"><line x1="0" y1="7" x2="90" y2="7" stroke="rgba(235,222,202,0.18)" stroke-width="1"/><line x1="0" y1="7" x2="57" y2="7" stroke="#8FB6C4" stroke-width="1.4"/><line x1="57" y1="2" x2="57" y2="9" stroke="#8FB6C4" stroke-width="1.4"/></svg>
+            </div>
+            <div style="flex:1;background:var(--bg);padding:10px 12px">
+              <div class="mono" style="font-size:8px;letter-spacing:1.2px;color:var(--muted)">COBRANÇAS</div>
+              <div class="mono" style="font-size:16px;margin-top:5px">3</div>
+              <div class="mono" style="font-size:7.5px;color:var(--muted);margin-top:9px">NO RADAR</div>
+            </div>
+          </div>
+
+          <!-- foco de hoje com pontos -->
+          <div class="eyebrow" style="padding:18px 2px 4px">direção · foco de hoje</div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:16px">01</span>
+            <div style="width:1px;height:26px;background:#C9A97E"></div>
+            <div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13.5px">Enviar revisão do contrato p/ Marina</div><div class="mono" style="font-size:8px;color:var(--muted);margin-top:3px;letter-spacing:0.6px">TRABALHO · HOJE</div></div>
+            <span class="mono" style="font-size:10.5px;color:var(--steel)">+15</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:16px">02</span>
+            <div style="width:1px;height:26px;background:#6BA8A0"></div>
+            <div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13.5px">Pagar fatura do cartão</div><div class="mono" style="font-size:8px;color:var(--muted);margin-top:3px;letter-spacing:0.6px">FINANCE · HOJE</div></div>
+            <span class="mono" style="font-size:10.5px;color:var(--steel)">+10</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:16px">03</span>
+            <div style="width:1px;height:26px;background:#C9BC7E"></div>
+            <div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13.5px">Cap. 4 do livro de categorias</div><div class="mono" style="font-size:8px;color:var(--muted);margin-top:3px;letter-spacing:0.6px">ESTUDO · SEX</div></div>
+            <span class="mono" style="font-size:10.5px;color:var(--steel)">+10</span>
+          </div>
+
+          <!-- agenda curta -->
+          <div class="eyebrow-mut" style="padding:16px 2px 4px">tempo · agenda curta</div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:10px;color:var(--steel);width:34px">09:30</span>
+            <div style="width:1px;height:22px;background:var(--border)"></div>
+            <div style="flex:1"><div style="font-weight:500;font-size:12.5px">Daily do time</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:11px;padding:9px 2px">
+            <span class="mono" style="font-size:10px;color:var(--steel);width:34px">18:00</span>
+            <div style="width:1px;height:22px;background:var(--border)"></div>
+            <div style="flex:1"><div style="font-weight:500;font-size:12.5px">Corrida leve 5k</div></div>
+          </div>
+          <div style="height:8px"></div>
+        </div>
+        <div class="tabbar">
+          <div class="tab on"><span class="ti">◔</span><span class="tl">Hoje</span></div>
+          <div class="tab"><span class="ti">✎</span><span class="tl">Capturar</span></div>
+          <div class="tab"><span class="ti">☑</span><span class="tl">Tarefas</span></div>
+          <div class="tab"><span class="ti">◌</span><span class="tl">Mentor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="sec-eyebrow">tela 5 de 6</div>
+    <h3>Home — o jogo presente, sem virar cassino</h3>
+    <ul class="list">
+      <li><b>O saldo abre a tela, pequeno e frio</b> — leitura de instrumento, não banner. O selo circular de nível vira uma leitura mono no canto; o “glow” quente do topo sai (era o único preenchimento difuso do app).</li>
+      <li><b>O hero declara o que vale:</b> “ABERTURA DO DIA · VALE +15”. A ação que precisa dele agora continua sendo uma decisão do <span class="mono-inline">actionForAt</span> — o visual só adiciona a recompensa ao convite.</li>
+      <li><b>As três métricas viram leituras com mini-réguas de 1px</b> (ritmos, ciclo, cobranças) — mesmas fontes de dados de hoje (<span class="mono-inline">abertura</span>, <span class="mono-inline">points</span>, <span class="mono-inline">digest</span>).</li>
+      <li><b>O foco de hoje mostra os pontos por linha</b>, na mesma coluna mono da tela de Tarefas — a régua se repete, o olho não reaprende.</li>
+      <li><b>Nada aqui pisca, conta ou pulsa.</b> A excitação fica para dois momentos: concluir uma tarefa e fechar o dia. O resto é painel.</li>
+    </ul>
+    <div class="delta">regra da direção aplicada à Home: <b>números por todos os lados, brilho em nenhum</b> — o único steel em cheio é a leitura do saldo e o fio das réguas.</div>
+  </div>
+</div>
+
+<!-- ====== NAVEGAÇÃO (SUBSTITUTO DE FERRAMENTAS) ====== -->
+<div class="frames" style="margin-top:56px">
+  <div class="frame-col">
+    <div class="phone">
+      <div class="scr">
+        <div class="statusbar"><span>07:59</span><span style="color:var(--muted)">◦◦◦</span></div>
+        <div class="scr-body">
+          <div style="padding:12px 2px 10px;border-bottom:1px solid var(--hair)">
+            <div class="eyebrow-mut">sistema</div>
+            <div style="font-family:var(--sans);font-weight:600;font-size:22px;letter-spacing:-0.4px;margin-top:5px">Painel</div>
+          </div>
+
+          <div class="eyebrow" style="padding:14px 2px 6px">esperando você · 3</div>
+          <!-- com sinal -->
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">01</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Triagem</div><div class="mono" style="font-size:8px;color:var(--muted);margin-top:2px;letter-spacing:0.6px">STAGING ACUMULANDO</div></div>
+            <span class="mono" style="font-size:11px;color:var(--steel)">4</span>
+            <span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">02</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Revisão</div><div class="mono" style="font-size:8px;color:var(--muted);margin-top:2px;letter-spacing:0.6px">2 CARDS ANKI SUGERIDOS</div></div>
+            <span class="mono" style="font-size:11px;color:var(--steel)">2</span>
+            <span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">03</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Leituras pendentes</div><div class="mono" style="font-size:8px;color:var(--muted);margin-top:2px;letter-spacing:0.6px">SESSÃO POR COMPILAR</div></div>
+            <span class="mono" style="font-size:11px;color:var(--steel)">1</span>
+            <span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+
+          <div class="eyebrow-mut" style="padding:16px 2px 6px">ritos</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">04</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Abertura</div></div>
+            <span class="mono" style="font-size:8.5px;color:var(--success);letter-spacing:1px">FEITO 07:12</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">05</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Shutdown</div></div>
+            <span class="mono" style="font-size:8.5px;color:var(--muted);letter-spacing:1px">A PARTIR DE 18H</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">06</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Fechar o dia</div></div>
+            <span class="mono" style="font-size:8.5px;color:var(--muted);letter-spacing:1px">A PARTIR DE 21H</span>
+          </div>
+
+          <div class="eyebrow-mut" style="padding:16px 2px 6px">referência</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">07</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Agenda</div></div><span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">08</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Ritmos</div></div><span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">09</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Reduzir</div></div><span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--hair)">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">10</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Edificação</div></div><span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 2px">
+            <span class="mono" style="font-size:9px;color:var(--muted);width:18px">11</span>
+            <div style="flex:1"><div style="font-weight:500;font-size:14px">Ajustes</div></div><span style="color:var(--muted);font-size:12px">›</span>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="tab on"><span class="ti">◔</span><span class="tl">Hoje</span></div>
+          <div class="tab"><span class="ti">✎</span><span class="tl">Capturar</span></div>
+          <div class="tab"><span class="ti">☑</span><span class="tl">Tarefas</span></div>
+          <div class="tab"><span class="ti">◌</span><span class="tl">Mentor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="side">
+    <div class="sec-eyebrow">tela 6 de 6</div>
+    <h3>Painel — o substituto de “Ferramentas”</h3>
+    <ul class="list">
+      <li><b>De gaveta a índice de instrumento:</b> uma lista numerada em mono, separada por hairlines, agrupada por <b>estado</b> e não por ordem fixa — “esperando você”, “ritos”, “referência”.</li>
+      <li><b>Cada linha que precisa dele diz quanto:</b> Triagem 4, Revisão 2, Leituras 1 — os mesmos sinais que a Home já calcula (<span class="mono-inline">signals.staging/anki/reading</span>). O número à direita é a leitura; sem número, a linha está quieta.</li>
+      <li><b>Os ritos mostram o estado do dia</b> (“FEITO 07:12”, “A PARTIR DE 21H”) — informação que hoje não existe em lugar nenhum e que o detalhista iria conferir abrindo tela por tela.</li>
+      <li><b>As 10 entradas somem da Home</b> e viram esta lista: menos peso visual, mais sinal. Na Home fica só um link “painel completo →” no fim da seção Em espera.</li>
+    </ul>
+    <div class="delta">o que estava pendente agora <b>grita em mono de 11px</b> — e é o suficiente, porque é o único número da linha.</div>
+  </div>
+</div>
+
+<hr class="rule">
+
+<!-- ================= ANTES → DEPOIS ================= -->
+<div class="sec-eyebrow">04 · antes → depois</div>
+<h2 class="sec">Os dois pontos que mais doem.</h2>
+<p class="sec-note">O “antes” é uma leitura honesta do código — não um espantalho.</p>
+
+<div class="ad">
+  <div class="ad-col">
+    <div class="ad-tag antes">antes · fechar o dia (Fechar.tsx, como está)</div>
+    <div class="ad-frame">
+      <div class="mono" style="font-size:10px;color:var(--muted)">dia corrida</div>
+      <div style="color:var(--muted);font-size:13px;margin-top:16px">rotinas de hoje</div>
+      <div style="color:var(--text);font-size:13.5px;margin-top:12px">☑ <span style="color:var(--bronze)">Yoga 20 min</span></div>
+      <div style="color:var(--muted);font-size:13.5px;margin-top:8px">☐ Alongar antes de dormir</div>
+      <div style="color:var(--muted);font-size:11.5px;margin:4px 0 0 22px">1. pescoço · 2. ombros · 3. quadril</div>
+      <div style="color:var(--muted);font-size:13px;margin-top:20px">como foi o dia?</div>
+      <div style="border:1px solid var(--border);border-radius:8px;background:var(--card);padding:12px;margin-top:8px;color:var(--muted);font-size:12.5px">despeja aqui — 1 linha já vale</div>
+      <div style="color:var(--bronze);font-size:13.5px;margin-top:14px">estruturar com o Hermes →</div>
+      <div style="color:var(--muted);font-size:13.5px;margin-top:10px">fechar sem escrever</div>
+      <div style="border-top:1px solid var(--hair);margin-top:18px;padding-top:12px;color:var(--muted);font-size:12px">…e depois de gravar: <span style="color:var(--text)">“✓ dia fechado”</span> — uma linha de 13px e nada mais.</div>
+    </div>
+    <p class="body" style="margin-top:12px">Dois links de texto com hierarquia invertida (o caminho longo em destaque, o mínimo em cinza), checks como glifo de texto sem alvo real, e a recompensa mais importante do dia reduzida a uma linha.</p>
+  </div>
+  <div class="ad-col">
+    <div class="ad-tag depois">depois · a mesma tela, na D2</div>
+    <div class="ad-frame" style="background:var(--bg)">
+      <div class="eyebrow-mut">noite · 1/2 · +10</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--hair);margin-top:8px">
+        <div style="width:34px;height:34px;border-radius:17px;border:1.5px solid var(--steel);display:flex;align-items:center;justify-content:center;color:var(--steel);font-size:13px">✓</div>
+        <div style="flex:1;font-weight:500;font-size:13.5px;color:var(--muted);text-decoration:line-through">Yoga 20 min</div>
+        <span class="mono" style="font-size:10.5px;color:var(--muted)">+15</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--hair)">
+        <div style="width:34px;height:34px;border-radius:17px;border:1.5px solid var(--border)"></div>
+        <div style="flex:1;font-weight:500;font-size:13.5px">Alongar antes de dormir</div>
+        <span class="mono" style="font-size:10.5px;color:var(--steel)">+10</span>
+      </div>
+      <div style="border:1px dashed var(--border);border-radius:10px;padding:11px 13px;margin-top:14px">
+        <span class="eyebrow-mut">despejo · opcional · +40</span>
+      </div>
+      <div class="btn-primary" style="margin-top:12px;height:48px">Fechar o dia <span class="pts">garante +35</span></div>
+      <div class="mono" style="text-align:center;font-size:8.5px;color:var(--muted);letter-spacing:1px;margin-top:8px">…e ao gravar: +35 em 64px, régua do ciclo avançando e a fita ganhando um pulso.</div>
+    </div>
+    <p class="body" style="margin-top:12px">Um toque resolve; escrever virou bônus declarado; e o fim do rito devolve número, régua e fita — os dados que o <span class="mono-inline">getPontos()</span> já entrega hoje.</p>
+  </div>
+</div>
+
+<div class="ad" style="margin-top:40px">
+  <div class="ad-col">
+    <div class="ad-tag antes">antes · “ferramentas” (Home.tsx, grade de 10)</div>
+    <div class="ad-frame">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Agenda</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Abertura</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Triagem</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Ritmos</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Reduzir</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Revisão</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Edificação</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Shutdown</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Fechar dia</div>
+        <div style="border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:12px;font-size:12px">◌ Ajustes</div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:14px">Dez botões idênticos, sem hierarquia, sem sinal. A Triagem pode estar explodindo — a grade não diz.</p>
+    </div>
+  </div>
+  <div class="ad-col">
+    <div class="ad-tag depois">depois · painel com sinal</div>
+    <div class="ad-frame" style="background:var(--bg)">
+      <div class="eyebrow" style="margin-bottom:6px">esperando você · 3</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--hair)">
+        <span class="mono" style="font-size:8.5px;color:var(--muted);width:16px">01</span>
+        <div style="flex:1;font-weight:500;font-size:13px">Triagem</div>
+        <span class="mono" style="font-size:10.5px;color:var(--steel)">4</span><span style="color:var(--muted);font-size:11px">›</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--hair)">
+        <span class="mono" style="font-size:8.5px;color:var(--muted);width:16px">02</span>
+        <div style="flex:1;font-weight:500;font-size:13px">Revisão</div>
+        <span class="mono" style="font-size:10.5px;color:var(--steel)">2</span><span style="color:var(--muted);font-size:11px">›</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--hair)">
+        <span class="mono" style="font-size:8.5px;color:var(--muted);width:16px">03</span>
+        <div style="flex:1;font-weight:500;font-size:13px">Leituras pendentes</div>
+        <span class="mono" style="font-size:10.5px;color:var(--steel)">1</span><span style="color:var(--muted);font-size:11px">›</span>
+      </div>
+      <div class="eyebrow-mut" style="margin:14px 0 4px">ritos</div>
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--hair)">
+        <span class="mono" style="font-size:8.5px;color:var(--muted);width:16px">04</span>
+        <div style="flex:1;font-weight:500;font-size:13px">Abertura</div>
+        <span class="mono" style="font-size:8px;color:var(--success);letter-spacing:1px">FEITO 07:12</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 0">
+        <span class="mono" style="font-size:8.5px;color:var(--muted);width:16px">05</span>
+        <div style="flex:1;font-weight:500;font-size:13px">Fechar o dia</div>
+        <span class="mono" style="font-size:8px;color:var(--muted);letter-spacing:1px">A PARTIR DE 21H</span>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:14px">A mesma navegação, agora respondendo à pergunta certa: “o que precisa de mim agora?”</p>
+    </div>
+  </div>
+</div>
+
+<hr class="rule">
+
+<!-- ================= SISTEMA ================= -->
+<div class="sec-eyebrow">05 · sistema</div>
+<h2 class="sec">Tokens e componentes.</h2>
+
+<h3 class="sub">Tokens — o que muda e o que fica</h3>
+<table class="tk">
+  <tr><th>token</th><th>valor</th><th>por quê</th></tr>
+  <tr><td class="f">bg / bgRaised / surface / card / card2</td><td class="mono">inalterados</td><td class="why">A base escura do midnight desk fica — mandato comum às três direções.</td></tr>
+  <tr><td class="f">text / textMuted / border</td><td class="mono">inalterados</td><td class="why">Idem. Borda segue <span class="mono-inline">rgba(235,222,202,0.11)</span> — quente só no fio, nunca em área.</td></tr>
+  <tr><td class="f">primary → steel</td><td><span class="sw" style="background:#8FB6C4"></span><span class="mono">#8FB6C4</span></td><td class="why"><b>A troca central da D2.</b> Aço-petróleo dessaturado: frio, discreto, legível sobre <span class="mono-inline">#080A0D</span> (contraste ≈ 8:1). Substitui o bronze como accent de ação e leitura. <span class="mono-inline">primaryText</span> vira <span class="mono-inline">#08100F</span>.</td></tr>
+  <tr><td class="f">bronze (ex-primary)</td><td><span class="sw" style="background:#DEB878"></span><span class="mono">#DEB878</span></td><td class="why">Não some: <b>rebaixado a detalhe raro</b> — a marca “hoje” na fita de streak e o ◆ de nível. Duas aparições no sistema inteiro. Raridade devolve o valor que a saturação tirava.</td></tr>
+  <tr><td class="f">success / info / lilac</td><td class="mono">inalterados</td><td class="why">Ganho segue success; desconto é <b>muted</b> (lei nº 4). Danger só em severidade de tarefa, nunca no placar.</td></tr>
+  <tr><td class="f">AREA_COLORS (10)</td><td class="mono">inalteradas</td><td class="why">A cor da área vive só no fio de 1px à esquerda da linha e na borda do check — nunca em preenchimento.</td></tr>
+  <tr><td class="f">fonts.num</td><td class="mono">Martian Mono 300/500</td><td class="why">Números, eyebrows, leituras. Tabular por construção. Pacote <span class="mono-inline">@expo-google-fonts/martian-mono</span>.</td></tr>
+  <tr><td class="f">fonts.ui</td><td class="mono">Inter Tight 400/500/600</td><td class="why">Texto e títulos. <span class="mono-inline">@expo-google-fonts/inter-tight</span>. Fraunces sai — zero serifa nesta direção.</td></tr>
+  <tr><td class="f">POINTS (novo)</td><td class="mono">tabela local em theme.ts</td><td class="why">Pontos por tipo de ação (tarefa 5–15, rotina 10–15, fechamento 10, captura 5, despejo +40). Local e declarada até o BFF expor — ver ondas.</td></tr>
+</table>
+
+<h3 class="sub">Componentes — renderizados, não descritos</h3>
+<div class="comp-grid">
+
+  <div class="comp">
+    <h5>MeasureRow · linha de tarefa com leitura</h5>
+    <div class="comp-stage">
+      <div style="display:flex;align-items:center;gap:11px">
+        <div style="width:36px;height:36px;border-radius:18px;border:1.5px solid rgba(126,154,201,0.6)"></div>
+        <div style="flex:1"><div class="mono" style="font-size:7.5px;letter-spacing:1.2px;color:#7E9AC9">CARREIRA · QUI</div><div style="font-weight:500;font-size:13px;margin-top:3px">Escrever retro do trimestre</div></div>
+        <span class="mono" style="font-size:11px;color:var(--steel)">+10</span>
+      </div>
+    </div>
+    <p class="c-note">Substitui o <b>TaskRow</b>. Check de 36–40px (alvo real de polegar), área em mono na cor da área, valor em steel sempre na mesma coluna. Novo no <span class="mono-inline">ui.tsx</span>; reutilizado em Tarefas, Home (foco) e ritos.</p>
+  </div>
+
+  <div class="comp">
+    <h5>BigAction · o único preenchido</h5>
+    <div class="comp-stage">
+      <div class="btn-primary" style="height:48px">Fechar o dia <span class="pts">garante +35</span></div>
+    </div>
+    <p class="c-note">Botão primário de rito: 52px, mono caps, <b>soma otimista no próprio rótulo</b>. Sempre habilitado (escrever é bônus, nunca portão). É a exceção controlada à regra do fio: um preenchimento por tela, e é este.</p>
+  </div>
+
+  <div class="comp">
+    <h5>TickRuler · régua de progresso com agulha</h5>
+    <div class="comp-stage">
+      <svg width="100%" height="36" viewBox="0 0 300 36" preserveAspectRatio="none" style="display:block">
+        <g stroke="rgba(235,222,202,0.15)"><line x1="4" y1="14" x2="4" y2="26"/><line x1="28" y1="18" x2="28" y2="26"/><line x1="52" y1="18" x2="52" y2="26"/><line x1="76" y1="14" x2="76" y2="26"/><line x1="100" y1="18" x2="100" y2="26"/><line x1="124" y1="18" x2="124" y2="26"/><line x1="148" y1="14" x2="148" y2="26"/><line x1="172" y1="18" x2="172" y2="26"/><line x1="196" y1="18" x2="196" y2="26"/><line x1="220" y1="14" x2="220" y2="26"/><line x1="244" y1="18" x2="244" y2="26"/><line x1="268" y1="18" x2="268" y2="26"/><line x1="294" y1="14" x2="294" y2="26"/></g>
+        <line x1="0" y1="26" x2="300" y2="26" stroke="rgba(235,222,202,0.22)"/>
+        <line x1="0" y1="26" x2="192" y2="26" stroke="#8FB6C4" stroke-width="1.5"/>
+        <line x1="192" y1="6" x2="192" y2="32" stroke="#8FB6C4" stroke-width="1.5"/>
+        <circle cx="192" cy="6" r="2" fill="#8FB6C4"/>
+      </svg>
+    </div>
+    <p class="c-note">Substitui a <b>ProgressBar</b> onde o número importa (ciclo, ritmos). Ticks a cada 10%, tick longo a cada 25%, agulha de 1.5px na posição exata. Em RN: <span class="mono-inline">View</span>s de 1px — sem SVG, sem lib nova.</p>
+  </div>
+
+  <div class="comp">
+    <h5>StreakTape · a fita de registro</h5>
+    <div class="comp-stage">
+      <svg width="100%" height="44" viewBox="0 0 300 44" preserveAspectRatio="none" style="display:block">
+        <line x1="0" y1="34" x2="300" y2="34" stroke="rgba(235,222,202,0.2)"/>
+        <polyline fill="none" stroke="#8FB6C4" stroke-width="1.3" points="0,34 10,34 10,12 20,12 20,34 30,34 30,12 40,12 40,34 50,34 70,34 70,12 80,12 80,34 90,34 90,12 100,12 100,34 110,34 110,12 120,12 120,34 130,34 130,12 140,12 140,34 150,34 150,12 160,12 160,34 170,34 190,34 190,12 200,12 200,34 210,34 210,12 220,12 220,34 230,34 230,12 240,12 240,34 250,34 250,12 260,12 260,34 270,34 270,12 280,12 280,34 300,34"/>
+        <line x1="50" y1="34" x2="70" y2="34" stroke="rgba(215,121,105,0.55)" stroke-dasharray="2 3"/>
+        <line x1="170" y1="34" x2="190" y2="34" stroke="rgba(215,121,105,0.55)" stroke-dasharray="2 3"/>
+        <line x1="280" y1="9" x2="280" y2="38" stroke="#DEB878" stroke-width="1.3"/>
+      </svg>
+      <div class="mono" style="font-size:8.5px;color:var(--muted);margin-top:8px;letter-spacing:0.5px">9 seguidos · 2 vazios na janela de 28d · a fita continua</div>
+    </div>
+    <p class="c-note">O coração da D2. Dia fechado = pulso; dia sem registro = <b>vazio com régua pontilhada</b> (danger a 55% de opacidade — informa, não acusa); “hoje” = o fio bronze raro. A quebra é resolvida pela forma: visível, factual, e o traço já continua. Em RN: <span class="mono-inline">View</span>s de 1px por dia, nenhuma lib.</p>
+  </div>
+
+  <div class="comp">
+    <h5>ReadoutCell · leitura em célula</h5>
+    <div class="comp-stage" style="padding:0">
+      <div style="display:flex;gap:1px;background:var(--hair)">
+        <div style="flex:1;background:var(--bg);padding:10px 12px"><div class="mono" style="font-size:7.5px;letter-spacing:1.2px;color:var(--muted)">GANHO</div><div class="mono" style="font-size:16px;color:var(--success);margin-top:4px">+240</div></div>
+        <div style="flex:1;background:var(--bg);padding:10px 12px"><div class="mono" style="font-size:7.5px;letter-spacing:1.2px;color:var(--muted)">DESCONTO</div><div class="mono" style="font-size:16px;color:var(--muted);margin-top:4px">−30</div></div>
+      </div>
+    </div>
+    <p class="c-note">Substitui as <b>Metrica</b> empilhadas em cartões: células contíguas separadas por hairline de 1px, label mono em cima, número tabular embaixo. Desconto sempre muted.</p>
+  </div>
+
+  <div class="comp">
+    <h5>AchievementToast · recibo de pontos</h5>
+    <div class="comp-stage">
+      <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:12px;padding:11px 13px;background:var(--card)">
+        <div style="width:8px;height:8px;border-radius:4px;background:var(--steel)"></div>
+        <div style="flex:1"><div style="font-weight:500;font-size:12.5px">Tarefa concluída.</div><div class="mono" style="font-size:9px;color:var(--muted);letter-spacing:0.8px;margin-top:2px">+10 · HOJE +95 · SALDO 1.294</div></div>
+      </div>
+    </div>
+    <p class="c-note">Toda ação fecha o loop: concluir tarefa, marcar ritmo, capturar. Some em 2.4s com <span class="mono-inline">Animated.timing</span>. Sem emoji, sem exclamação — o recibo é a recompensa.</p>
+  </div>
+
+</div>
+
+<hr class="rule">
+
+<!-- ================= HERANÇA ================= -->
+<div class="sec-eyebrow">06 · herança e rejeição</div>
+<h2 class="sec">O que herdei de A e de C, e o que rejeitei.</h2>
+<div class="heranca" style="margin-top:18px">
+  <p><span class="keep mono">DE A&nbsp;</span> herdei o corpo: a base escura, as hairlines quentes, a disciplina de “um primário por tela” e o respeito à lei nº 4 (desconto em muted, nunca danger). <b>Era a base certa.</b></p>
+  <p><span class="keep mono">DE C&nbsp;</span> herdei a ambição do placar — saldo como protagonista, pontos por linha, recibo em toda ação, streak no fechamento — e a constatação de que <b>os dados já chegam e eram jogados fora</b>.</p>
+  <p><span class="drop mono">REJEITEI&nbsp;</span> da C o verde-elétrico, o display em caixa alta pesada, o “boss fight” e qualquer preenchimento saturado de área: a energia aqui vem de precisão, não de voltagem.</p>
+  <p><span class="drop mono">REJEITEI&nbsp;</span> da A a Fraunces como voz de título (bonita, mas é o que fazia o app parecer “revista” em vez de instrumento) e o bronze como accent de trabalho — virou detalhe raro, e ficou mais valioso por isso.</p>
+  <p><b>Aposta própria da D2:</b> a fita de streak como strip chart contínuo — a única solução entre as três direções em que a quebra é um fato geométrico na régua, e não um evento a ser perdoado.</p>
+</div>
+
+<hr class="rule">
+
+<!-- ================= ONDAS ================= -->
+<div class="sec-eyebrow">07 · plano de implementação em ondas</div>
+<h2 class="sec">O que fazer primeiro, com nome de arquivo.</h2>
+<p class="sec-note">Ordenado por maior ganho com menor custo. Ondas 1–3 não tocam o BFF.</p>
+<table class="tk">
+  <tr><th>onda</th><th>arquivo</th><th>o que muda</th></tr>
+  <tr>
+    <td class="mono" style="color:var(--steel)">1<br><span style="color:var(--muted);font-size:9px">o rito</span></td>
+    <td class="f">app/src/ui.tsx<br>app/src/screens/Fechar.tsx</td>
+    <td class="why"><b>Onda 1 — o maior ganho do app.</b> Criar <span class="mono-inline">MeasureRow</span>, <span class="mono-inline">BigAction</span>, <span class="mono-inline">TickRuler</span>, <span class="mono-inline">StreakTape</span> (todos com <span class="mono-inline">View</span>s de 1px, sem lib nova). No Fechar: rotinas viram MeasureRows com pontos; os dois links viram BigAction sempre habilitado + despejo opcional colapsado; o estado <span class="mono-inline">done</span> vira o mostrador de recompensa com os dados do <span class="mono-inline">getPontos()</span> que o <span class="mono-inline">aprovar()</span> já chama. Nenhuma chamada de API nova.</td>
+  </tr>
+  <tr>
+    <td class="mono" style="color:var(--steel)">2<br><span style="color:var(--muted);font-size:9px">o valor</span></td>
+    <td class="f">app/src/theme.ts<br>app/src/screens/Tasks.tsx</td>
+    <td class="why"><b>Onda 2 — pontos por linha.</b> Tabela <span class="mono-inline">POINTS</span> local em <span class="mono-inline">theme.ts</span> (declarada, com comentário “provisória até o BFF expor”). TaskRow mostra o valor; a confirmação inline ganha a leitura <span class="mono-inline">+N → HOJE</span>; cabeçalho com o acumulado do dia; <span class="mono-inline">AchievementToast</span> no retorno do <span class="mono-inline">completeTask</span>. Sem reanimated: crossfade + translateY de 12px com <span class="mono-inline">Animated</span> puro.</td>
+  </tr>
+  <tr>
+    <td class="mono" style="color:var(--steel)">3<br><span style="color:var(--muted);font-size:9px">o painel</span></td>
+    <td class="f">app/src/screens/Revisao.tsx<br>app/src/screens/Home.tsx<br>app/App.tsx</td>
+    <td class="why"><b>Onda 3 — placar e navegação.</b> Revisão: ConquistasCard vira o mostrador (saldo 60px tabular, TickRuler de ciclo, ReadoutCells de semana, StreakTape). Home: apaga a grade “Ferramentas”, ganha saldo no topo e réguas nas métricas; nova subscreen “Painel” (lista com sinais) registrada em <span class="mono-inline">SUBSCREENS</span> no App.tsx. Fontes: trocar o <span class="mono-inline">useFonts</span> do App.tsx para Martian Mono + Inter Tight e atualizar <span class="mono-inline">fonts</span> no theme.ts.</td>
+  </tr>
+  <tr>
+    <td class="mono" style="color:var(--steel)">4<br><span style="color:var(--muted);font-size:9px">o backend</span></td>
+    <td class="f">BFF (fora do app)</td>
+    <td class="why"><b>Onda 4 — custo explícito, nunca escondido.</b> (a) <b>Streak corrido:</b> campo novo (ex.: <span class="mono-inline">fechamentos: number[]</span> dos últimos 28 dias em <span class="mono-inline">/pontos</span>); a base é o <span class="mono-inline">semanal.dailies</span>, mas a janela de 28d precisa ser materializada no back — até lá, a fita renderiza só a semana corrente. (b) <b>Pontos por tipo de ação</b> expostos pelo BFF, aposentando a tabela local da onda 2. As ondas 1–3 <b>não dependem</b> desta: funcionam com a tabela local e a fita semanal.</td>
+  </tr>
+</table>
+
+<p class="body" style="margin-top:28px;max-width:760px">
+  <b>Risco honesto desta direção:</b> um painel de instrumento pede disciplina absoluta de execução — um tick desalinhado e o detalhista para de usar para “consertar”. A defesa é a mesma do código: tudo deriva de <span class="mono-inline">spacing</span> e de um único hairline de 1px, sem exceções locais. E o risco Goodhart da C permanece (farmar pontos fáceis); a mitigação também permanece: pontos nunca descem, não há ranking, e o placar informa — não julga.
+</p>
+
+</div>
+</body>
+</html>

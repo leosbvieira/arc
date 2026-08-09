@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aeternum — C2 · a variação C, sóbria</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ===== PALETA C2 — base escura do app, sem tocar nos degraus ===== */
+  --bg:#080A0D;
+  --bg-raised:#0C0F13;
+  --surface:#0E1116;
+  --card:#15191F;
+  --card2:#11151A;
+  --line:rgba(235,222,202,0.11);
+  --line-strong:rgba(235,222,202,0.20);
+  --text:#F4EFE7;
+  --muted:#9A9BA3;
+  --faint:#5F626B;          /* metadado: o +10 da lista vive aqui */
+  /* accent: no máximo dois tons. Bronze raro + sálvia de confirmação. */
+  --bronze:#DEB878;
+  --bronze-press:#B6935C;
+  --bronze-text:#1B1409;
+  --bronze-soft:rgba(222,184,120,0.12);
+  --sage:#71B49A;
+  --sage-soft:rgba(113,180,154,0.12);
+  /* semânticas herdadas do theme.ts, uso raro */
+  --danger:#D77969;
+  --info:#7D9FD0;
+  --lilac:#A99ACB;
+  /* áreas de vida — intactas */
+  --a-trabalho:#C9A97E; --a-staging:#8A8A93; --a-corpo:#7FA98E; --a-mente:#9B8EC4;
+  --a-resp:#A9A18C; --a-finance:#6BA8A0; --a-carreira:#7E9AC9; --a-estudo:#C9BC7E;
+  --a-relac:#C98E9B; --a-lazer:#D98A6E;
+
+  --font-display:"Syne","Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-ui:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:#05070A}
+body{
+  background:#05070A;color:var(--text);font-family:var(--font-ui);
+  font-size:15px;line-height:1.55;
+}
+.wrap{max-width:1240px;margin:0 auto;padding:56px 40px 96px}
+.mono{font-family:var(--font-mono)}
+a{color:var(--bronze)}
+
+/* ===== cabeçalho do documento ===== */
+.doc-head{border-bottom:1px solid var(--line);padding-bottom:34px;margin-bottom:44px}
+.doc-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:2.2px;color:var(--bronze);text-transform:uppercase}
+.doc-title{font-family:var(--font-display);font-size:42px;font-weight:700;letter-spacing:-.5px;line-height:1.08;margin-top:12px}
+.doc-title em{font-style:normal;color:var(--bronze)}
+.direction{
+  margin-top:22px;padding:18px 22px;border:1px solid var(--line-strong);border-radius:14px;
+  background:var(--card2);
+  border-left:3px solid var(--bronze);
+  font-size:17px;line-height:1.5;font-weight:500;max-width:980px;
+}
+.direction b{color:var(--bronze)}
+.doc-meta{margin-top:16px;font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.4px}
+
+/* ===== seções ===== */
+h2.sec{font-family:var(--font-display);font-size:23px;font-weight:600;letter-spacing:-.2px;margin:72px 0 8px}
+h2.sec .n{font-family:var(--font-mono);font-size:12px;color:var(--bronze);letter-spacing:1px;margin-right:12px;vertical-align:3px}
+.sec-sub{color:var(--muted);max-width:820px;margin-bottom:30px}
+h3.sub{font-family:var(--font-ui);font-size:15px;font-weight:600;letter-spacing:.2px;margin:30px 0 4px}
+
+/* mudanças em relação à C */
+.changes{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
+.change{border:1px solid var(--line);border-radius:14px;padding:18px 20px;background:var(--card2)}
+.change .c-n{font-family:var(--font-mono);font-size:10px;color:var(--bronze);letter-spacing:1.6px}
+.change h4{font-size:15px;font-weight:600;margin:7px 0 5px}
+.change p{color:var(--muted);font-size:13px}
+.change p s{color:#6E7078}
+.change p b{color:var(--text);font-weight:600}
+
+/* ===== espécime tipográfico ===== */
+.spec{border:1px solid var(--line);border-radius:16px;background:var(--card2);overflow:hidden;margin-top:16px}
+.spec .s-row{display:flex;gap:28px;align-items:baseline;padding:22px 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.spec .s-row:last-child{border-bottom:none}
+.spec .s-tag{font-family:var(--font-mono);font-size:9px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase;width:170px;flex:none}
+.spec .s-note{font-size:12px;color:var(--muted);margin-left:auto;max-width:300px}
+.spec .bad{opacity:.55}
+.lever{display:inline-block;font-family:var(--font-mono);font-size:9px;letter-spacing:1px;color:var(--danger);border:1px solid rgba(215,121,105,0.4);border-radius:6px;padding:2px 7px;margin-left:8px;vertical-align:4px}
+.lever.ok{color:var(--sage);border-color:rgba(113,180,154,0.4)}
+
+/* amostras de cor */
+.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:16px}
+.swcard{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card2)}
+.swcard .sw-fill{height:64px}
+.swcard .sw-body{padding:13px 16px}
+.swcard .sw-name{font-family:var(--font-mono);font-size:11px;letter-spacing:.5px}
+.swcard .sw-verdict{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.4px;text-transform:uppercase;margin-top:3px}
+.swcard .sw-verdict.no{color:var(--danger)}
+.swcard .sw-verdict.yes{color:var(--sage)}
+.swcard .sw-why{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.45}
+
+/* ===== moldura de celular ===== */
+.mockrow{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap;margin:44px 0}
+.phone{
+  width:390px;height:844px;flex:none;border-radius:52px;background:#000;
+  padding:11px;position:relative;
+  box-shadow:0 0 0 2px #23262C,0 30px 80px rgba(0,0,0,.75);
+}
+.phone .notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:112px;height:26px;background:#000;border-radius:0 0 16px 16px;z-index:5}
+.scr{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative;display:flex;flex-direction:column}
+.scr-scroll{flex:1;overflow:hidden;padding:0 16px;position:relative}
+.statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 26px 6px;font-family:var(--font-mono);font-size:11.5px;color:var(--text)}
+.statusbar .sicons{display:flex;gap:5px;align-items:center;color:var(--muted)}
+.notes{flex:1;min-width:340px;max-width:520px}
+.notes .tag{font-family:var(--font-mono);font-size:10px;letter-spacing:1.8px;color:var(--bronze);text-transform:uppercase}
+.notes h3{font-family:var(--font-display);font-size:20px;font-weight:600;letter-spacing:-.2px;margin:8px 0 12px}
+.notes ul{list-style:none;margin-top:6px}
+.notes li{padding:9px 0 9px 22px;position:relative;border-bottom:1px dashed rgba(235,222,202,0.08);color:#C9C3B8;font-size:13.5px}
+.notes li:last-child{border-bottom:none}
+.notes li::before{content:"—";position:absolute;left:0;color:var(--bronze);font-family:var(--font-mono);font-size:11px;top:10px}
+.notes li b{color:var(--text)}
+.notes .delta{margin-top:16px;font-family:var(--font-mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card2);line-height:1.6}
+.notes .delta b{color:var(--sage)}
+
+/* ===== dentro da tela ===== */
+.scr-head{padding:8px 2px 14px}
+.scr-title{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-.2px}
+.scr-crumb{font-family:var(--font-mono);font-size:9px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase;margin-bottom:5px}
+
+/* botão primário — um por tela, bronze cheio, sem parafernália */
+.bigact{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--bronze);color:var(--bronze-text);border-radius:14px;
+  border-bottom:2px solid var(--bronze-press);
+  padding:0 18px;min-height:60px;font-weight:600;font-size:15.5px;font-family:var(--font-ui);
+}
+.bigact .sub{font-family:var(--font-mono);font-weight:500;font-size:10.5px;letter-spacing:.4px;opacity:.72}
+.bigact.small{min-height:46px;font-size:13.5px;border-bottom-width:2px}
+.ghostact{
+  display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;
+  border:1px solid var(--line);border-radius:12px;color:var(--muted);
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.5px;
+}
+
+/* linha de rotina (rito) — pontos como metadado, não prêmio */
+.quest{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+.quest .box{width:36px;height:36px;flex:none;border-radius:10px;border:1.5px solid var(--line-strong);display:flex;align-items:center;justify-content:center;background:var(--card2)}
+.quest.done .box{background:var(--sage-soft);border-color:rgba(113,180,154,0.45)}
+.quest .q-name{flex:1;font-size:14px;font-weight:500;line-height:1.25;font-family:var(--font-ui)}
+.quest .q-steps{font-family:var(--font-mono);font-size:9px;color:var(--faint);margin-top:3px;letter-spacing:.3px}
+.quest .q-pts{font-family:var(--font-mono);font-size:10px;color:var(--faint);letter-spacing:.3px;min-width:30px;text-align:right}
+.quest.done .q-pts{color:var(--sage)}
+.quest.done .q-name{color:var(--muted)}
+.qgroup{font-family:var(--font-mono);font-size:9px;letter-spacing:1.8px;color:var(--muted);text-transform:uppercase;margin:14px 2px 8px;display:flex;justify-content:space-between}
+.qgroup .qcount{color:var(--faint)}
+
+/* ===== A COLUNA DE PONTOS — o teste dos 12 itens ===== */
+.trow{display:flex;align-items:center;gap:11px;padding:8px 2px;border-bottom:1px solid rgba(235,222,202,0.07)}
+.trow:last-child{border-bottom:none}
+.tchk{width:24px;height:24px;flex:none;border-radius:7px;border:1.5px solid;display:flex;align-items:center;justify-content:center}
+.trow .t-name{flex:1;font-size:13.5px;font-weight:500;font-family:var(--font-ui);line-height:1.25;min-width:0}
+.trow .t-due{font-family:var(--font-mono);font-size:8.5px;color:var(--faint);letter-spacing:.3px}
+.trow .t-pts{
+  font-family:var(--font-mono);font-size:10.5px;font-weight:400;
+  color:var(--faint);letter-spacing:.2px;
+  min-width:32px;text-align:right;flex:none;
+}
+.trow.flash .t-name{color:var(--faint)}
+.trow.flash .t-pts{color:var(--sage)}
+.trow.flash .tchk{background:var(--sage);border-color:var(--sage)}
+
+/* barra segmentada */
+.seg{display:flex;gap:3px}
+.seg i{flex:1;height:5px;border-radius:2px;background:rgba(235,222,202,0.09)}
+.seg i.on{background:var(--bronze)}
+.seg.sage i.on{background:var(--sage)}
+
+/* stat block */
+.stat{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 13px;flex:1;min-width:0}
+.stat .s-label{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.4px;color:var(--muted);text-transform:uppercase}
+.stat .s-value{font-family:var(--font-display);font-size:24px;font-weight:600;letter-spacing:-.3px;margin:6px 0 8px}
+.stat .s-value small{font-size:12px;color:var(--muted);font-weight:600;font-family:var(--font-mono)}
+
+/* diamantes de nível */
+.diams{display:flex;gap:4px}
+.diams i{width:8px;height:8px;background:transparent;border:1px solid var(--line-strong);transform:rotate(45deg);border-radius:2px}
+.diams i.on{background:var(--bronze);border-color:var(--bronze)}
+
+/* card de pendência (A Mesa) */
+.pend{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--card);border:1px solid var(--line);border-radius:13px;margin-bottom:8px}
+.pend .p-ico{width:36px;height:36px;flex:none;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--line)}
+.pend .p-name{flex:1;font-size:14px;font-weight:600;font-family:var(--font-ui)}
+.pend .p-sub{font-family:var(--font-mono);font-size:9px;color:var(--faint);margin-top:2px;letter-spacing:.4px}
+.pend .p-count{font-family:var(--font-mono);font-size:11.5px;font-weight:500;color:var(--text);letter-spacing:.5px}
+.pend .p-ok{font-family:var(--font-mono);font-size:9px;color:var(--sage);letter-spacing:.8px}
+.pend.idle{opacity:.5}
+
+/* hero de ação (home) — quieto */
+.heroquest{
+  border-radius:16px;padding:18px;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,#1B1712 0%,#12151A 60%,#0E1116 100%);
+  border:1px solid var(--line-strong);
+}
+.heroquest .hq-eyebrow{font-family:var(--font-mono);font-size:9px;letter-spacing:1.8px;color:var(--bronze);text-transform:uppercase}
+.heroquest .hq-title{font-family:var(--font-display);font-size:19px;font-weight:600;letter-spacing:-.2px;line-height:1.18;margin-top:9px;max-width:88%}
+.heroquest .hq-sub{font-size:12.5px;color:var(--muted);margin-top:7px;max-width:88%;line-height:1.45}
+.heroquest .hq-foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.heroquest .hq-cta{font-family:var(--font-ui);font-weight:600;font-size:12px;color:var(--bronze-text);background:var(--bronze);border-bottom:2px solid var(--bronze-press);border-radius:9px;padding:9px 14px}
+.heroquest .hq-pts{font-family:var(--font-mono);font-size:9.5px;color:var(--faint);letter-spacing:.6px}
+
+/* dock de captura */
+.dock{position:absolute;left:14px;right:14px;bottom:14px;display:flex;align-items:center;gap:11px;background:#14181E;border:1px solid var(--line-strong);border-radius:16px;padding:9px 12px;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+.dock .d-plus{width:38px;height:38px;flex:none;border-radius:12px;background:var(--bronze);border-bottom:2px solid var(--bronze-press);display:flex;align-items:center;justify-content:center}
+.dock .d-label{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.4px;color:var(--bronze);text-transform:uppercase}
+.dock .d-hint{font-size:12px;color:var(--text);margin-top:2px}
+
+/* tabbar do mock */
+.tabbar{display:flex;border-top:1px solid var(--line);background:var(--bg-raised);padding:8px 6px 14px;gap:2px}
+.tabbar .tb{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0;border-radius:10px}
+.tabbar .tb svg{stroke:var(--muted)}
+.tabbar .tb .tl{font-family:var(--font-mono);font-size:8.5px;color:var(--muted);letter-spacing:.6px}
+.tabbar .tb.on{background:var(--bronze-soft)}
+.tabbar .tb.on svg{stroke:var(--bronze)}
+.tabbar .tb.on .tl{color:var(--bronze)}
+
+/* campo de texto */
+.field{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;color:var(--muted);font-size:13.5px;line-height:1.5}
+.field .caret{color:var(--bronze)}
+
+/* toast de confirmação — quieto */
+.achv{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.achv .a-ico{width:30px;height:30px;flex:none;border-radius:10px;background:var(--sage-soft);border:1px solid rgba(113,180,154,0.35);display:flex;align-items:center;justify-content:center}
+.achv .a-main{font-size:13px;font-weight:500}
+.achv .a-sub{font-family:var(--font-mono);font-size:9px;color:var(--sage);letter-spacing:.6px;margin-top:1px}
+
+/* chips de fila */
+.fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:8px 13px;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.5px}
+.fchip b{font-weight:500;color:var(--text)}
+
+/* ===== antes/depois ===== */
+.bd{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:26px 0}
+@media(max-width:900px){.bd{grid-template-columns:1fr}}
+.bd .col{border:1px solid var(--line);border-radius:16px;padding:20px;background:var(--card2)}
+.bd .col.after{border-color:rgba(222,184,120,0.30)}
+.bd .col .col-tag{font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.8px;text-transform:uppercase;margin-bottom:14px}
+.bd .col.before .col-tag{color:var(--danger)}
+.bd .col.after .col-tag{color:var(--bronze)}
+.bd .mini{background:#0A0C10;border:1px solid var(--line);border-radius:10px;padding:14px;font-size:12.5px;color:#B9B4A9}
+.bd .mini .old-line{padding:7px 0;color:#767A82;border-bottom:1px dashed rgba(235,222,202,0.07);font-size:12px}
+.bd .mini .old-line.link{color:#9c8a63}
+.bd ul{list-style:none;margin-top:14px}
+.bd li{font-size:12.5px;color:#B9B4A9;padding:5px 0 5px 18px;position:relative}
+.bd li::before{content:"—";position:absolute;left:0;color:var(--muted)}
+.bd .after li::before{content:"+";color:var(--bronze);font-family:var(--font-mono)}
+
+/* ===== tabelas de tokens ===== */
+table.tokens{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+table.tokens th{font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-strong)}
+table.tokens td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;color:#C9C3B8}
+table.tokens td:first-child{font-family:var(--font-mono);font-size:11.5px;color:var(--text)}
+.sw{display:inline-block;width:26px;height:26px;border-radius:7px;border:1px solid rgba(235,222,202,0.16);vertical-align:-7px;margin-right:10px}
+.why{font-size:12px;color:var(--muted)}
+
+/* ===== componentes renderizados ===== */
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:20px}
+.comp{border:1px solid var(--line);border-radius:16px;background:var(--card2);overflow:hidden}
+.comp .c-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline}
+.comp .c-name{font-family:var(--font-mono);font-size:11px;color:var(--bronze);letter-spacing:.8px}
+.comp .c-new{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.2px;color:var(--danger);text-transform:uppercase}
+.comp .c-new.exists{color:var(--muted)}
+.comp .c-body{padding:18px 16px;background:var(--bg)}
+.comp .c-note{padding:11px 16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);line-height:1.5}
+
+/* ===== ondas ===== */
+.wave{border:1px solid var(--line);border-radius:16px;margin-bottom:14px;background:var(--card2);overflow:hidden}
+.wave .w-head{display:flex;align-items:baseline;gap:14px;padding:15px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.wave .w-n{font-family:var(--font-mono);font-size:11px;color:var(--bronze);letter-spacing:1px}
+.wave .w-title{font-size:15px;font-weight:600;letter-spacing:.1px;font-family:var(--font-display)}
+.wave .w-cost{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.6px}
+.wave .w-body{padding:14px 20px}
+.wave .w-body table{width:100%;border-collapse:collapse;font-size:12.5px}
+.wave .w-body td{padding:6px 8px 6px 0;border-bottom:1px dashed rgba(235,222,202,0.07);color:#C9C3B8;vertical-align:top}
+.wave .w-body td.f{font-family:var(--font-mono);font-size:11px;color:var(--bronze);white-space:nowrap;width:210px}
+.wave .w-why{padding:12px 20px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line)}
+.wave .w-why b{color:var(--text)}
+
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10.5px;color:var(--muted);letter-spacing:.6px}
+svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ================= CABEÇALHO ================= -->
+<header class="doc-head">
+  <div class="doc-eyebrow">AETERNUM / ESCRITÓRIO · C2 — A VARIAÇÃO C, SÓBRIA</div>
+  <h1 class="doc-title">O mesmo jogo.<br>Em <em>voz baixa</em>.</h1>
+  <div class="direction">
+    <b>Esta é a variação C corrigida, não uma variação nova.</b> Ficam o escuro, o placar como peça
+    central, os pontos em cada tarefa, o streak no fechamento. Sai o verde-elétrico, sai a sombra de
+    tecla de fliperama, sai a caixa alta em tudo. O accent volta a ser o bronze do app — usado como
+    especiaria, não como molho — e a pontuação na lista vira metadado: miúda, mono, apagada, alinhada.
+  </div>
+  <div class="doc-meta">
+    alvo: um usuário (Leo) · stack: React Native + Expo 54, Feather, Animated puro, expo-linear-gradient ·
+    tipografia decidida por ele: Bricolage Grotesque + Syne, com IBM Plex Mono para número vivo ·
+    base aprovada: proposta-visual-kimi-radical.html (variação C)
+  </div>
+</header>
+
+<!-- ================= 1. O QUE MUDOU ================= -->
+<h2 class="sec"><span class="n">01</span>O que mudou em relação à C</h2>
+<p class="sec-sub">Curto e direto: seis correções sobre a base aprovada. Tudo que não está listado aqui foi herdado intacto — estrutura, placar, lógica de pontos, a Mesa, o rito de um toque.</p>
+<div class="changes">
+  <div class="change">
+    <div class="c-n">COR</div>
+    <h4><s>Verde-elétrico #C8F04B</s> → bronze #DEB878, raro</h4>
+    <p>O volt saiu de tudo. O accent é o bronze que o app já tem — mas ele próprio era chamativo quando cobria todo botão e todo selo, então virou <b>moeda de um só lugar por tela</b>: o botão primário e o momento de recompensa. Segundo tom: a sálvia #71B49A (o success do theme.ts) para estado feito.</p>
+  </div>
+  <div class="change">
+    <div class="c-n">FORMA</div>
+    <h4><s>Sombra dura de tecla (4px)</s> → fio de 2px</h4>
+    <p>A sombra sólida de fliperama embaixo de cada botão era metade do efeito "arcade". O primário mantém um fio de 2px mais escuro na base — continua físico e pressionável, mas não parece botão de máquina de fliperama.</p>
+  </div>
+  <div class="change">
+    <div class="c-n">VOZ</div>
+    <h4><s>Caixa alta em títulos e labels</s> → caixa baixa</h4>
+    <p>O caps lock generalizado era a outra metade do barulho. Títulos de tela, saudação e hero passam a caixa baixa. Caixa alta sobrevive <b>só nas eyebrows em mono</b> (9–10px, tracking largo) — onde sempre viveu no midnight desk.</p>
+  </div>
+  <div class="change">
+    <div class="c-n">PONTOS NA LISTA</div>
+    <h4><s>+10 como prêmio visível</s> → +10 como metadado</h4>
+    <p>O ponto que falhou na rodada D. Na lista, o valor sai em <b>IBM Plex Mono 10.5px, tom apagado (#5F626B), coluna de margem alinhada à direita</b> — sem pill, sem fundo, sem cor de accent enquanto a tarefa está aberta. Ele vira recompensa só no toque de concluir: cor sálvia e movimento por menos de 400ms.</p>
+  </div>
+  <div class="change">
+    <div class="c-n">TIPOGRAFIA</div>
+    <h4><s>Space Grotesk + Fraunces</s> → Bricolage Grotesque + Syne</h4>
+    <p>Escolha do Leo, sabendo que o espécime as descartou por chamativas. A solução está na seção 02: <b>papéis que não se cruzam</b> (Syne = voz; Bricolage = UI; mono = número vivo) e no máximo uma alavanca de ênfase por elemento.</p>
+  </div>
+  <div class="change">
+    <div class="c-n">STREAK</div>
+    <h4>Sequência no fechamento, sem punição na quebra</h4>
+    <p>A tela de recompensa mostra sequência atual e recorde. Dia após um furo: "sequência 1 · recorde 11" no mesmo tom de sempre — <b>sem vermelho, sem texto de culpa</b>, e o recorde nunca sai da tela. É a lei do código: o placar informa, não julga.</p>
+  </div>
+</div>
+
+<!-- ================= 2. TIPOGRAFIA ================= -->
+<h2 class="sec"><span class="n">02</span>Tipografia — a escolha dele, funcionando</h2>
+<p class="sec-sub">Bricolage Grotesque e Syne são as duas famílias de personalidade forte; se disputarem o mesmo espaço, viram barulho — exatamente o que foi rejeitado. A solução não é dosar as duas em tudo: é dar a cada uma um território onde a outra não entra, e domar o caráter com uma regra de alavancas.</p>
+
+<h3 class="sub">A divisão de papéis — quem fala, quem trabalha, quem conta</h3>
+<table class="tokens">
+  <tr><th>família</th><th>papel</th><th>onde aparece (e onde NÃO aparece)</th></tr>
+  <tr>
+    <td>Syne 600–700</td>
+    <td><b>A voz.</b> Os momentos de fala do app: título de tela, saudação, número-herói.</td>
+    <td class="why">Título de tela (22px), "Boa noite, Leo.", o "+140" da recompensa, o saldo-herói do Placar. <b>Nunca</b> em corpo de texto, label, botão, lista ou eyebrow — Syne é expandida de mostrador; em texto miúdo ela vira textura. Poucas aparições por tela: uma, no máximo duas.</td>
+  </tr>
+  <tr>
+    <td>Bricolage Grotesque 400–600</td>
+    <td><b>A UI.</b> Tudo que se lê e se toca no dia a dia.</td>
+    <td class="why">Nomes de tarefa, botões, corpos, rótulos de seção, menus. Bricolage tem caráter mas comporta texto corrido em 400/500 — é a grotesca que trabalha. <b>Nunca</b> em número-herói nem em eyebrow miúda.</td>
+  </tr>
+  <tr>
+    <td>IBM Plex Mono 400–500</td>
+    <td><b>O instrumento.</b> Todo número que se move e todo número miúdo.</td>
+    <td class="why">Nem Bricolage nem Syne têm figuras tabulares, e <span class="mono">font-variant-numeric</span> não é garantido no Android (RN). Então: saldo contando, total do dia somando, o "+10" da lista, horários, contagens, eyebrows em caps — tudo mono, que já está carregada no app e é tabular por desenho.</td>
+  </tr>
+</table>
+
+<h3 class="sub">Número que chega pronto × número que se move — a regra de fronteira</h3>
+<table class="tokens">
+  <tr><th>caso</th><th>família</th><th>por quê</th></tr>
+  <tr><td>+140 da recompensa · saldo-herói do Placar</td><td class="mono">Syne 700</td><td class="why">Chega pronto, é renderizado uma vez, nunca re-renderiza dígito a dígito. Pode ter a largura expressiva da Syne sem tremer.</td></tr>
+  <tr><td>saldo contando na RewardSheet · total do dia somando</td><td class="mono">IBM Plex Mono 500</td><td class="why">Atualiza ao vivo: cada frame troca dígitos. Sem figuras tabulares a linha "dança" — em mono tabular, não. Na contagem o número é mono; o valor final, parado, pode ser Syne na próxima visita à tela.</td></tr>
+  <tr><td>+10 na linha da tarefa · 580/800 · 19:00 · contadores</td><td class="mono">IBM Plex Mono 400</td><td class="why">Miúdo e repetido: precisa alinhar em coluna e sumir na textura da lista. Mono tabular alinha; Syne/Bricolage fariam cada linha ter largura diferente.</td></tr>
+</table>
+
+<h3 class="sub">A regra das alavancas — provada no mesmo título</h3>
+<p class="sec-sub" style="margin-bottom:14px">Uma alavanca de ênfase por elemento, nunca três: <b>tamanho grande</b> OU <b>caixa alta</b> OU <b>peso alto</b>. A C quebrava as três ao mesmo tempo. Abaixo, o mesmo título nas duas configurações.</p>
+<div class="spec">
+  <div class="s-row bad">
+    <span class="s-tag">proibido · 3 alavancas</span>
+    <span style="font-family:var(--font-display);font-weight:800;font-size:30px;letter-spacing:.5px;text-transform:uppercase;line-height:1.1">Fechar o dia</span>
+    <span class="s-note">Syne 800 <span class="lever">peso</span> + 30px caps <span class="lever">caixa alta</span> + tamanho <span class="lever">grande</span> — era assim que a C gritava.</span>
+  </div>
+  <div class="s-row">
+    <span class="s-tag">adotado · 1 alavanca</span>
+    <span style="font-family:var(--font-display);font-weight:600;font-size:22px;letter-spacing:-.2px;line-height:1.15">Fechar o dia</span>
+    <span class="s-note">Syne 600, 22px, caixa baixa <span class="lever ok">só o desenho da Syne</span> — a personalidade vem da forma, não do volume.</span>
+  </div>
+  <div class="s-row">
+    <span class="s-tag">número-herói · 1 alavanca</span>
+    <span style="font-family:var(--font-display);font-weight:700;font-size:52px;letter-spacing:-1px;line-height:1;color:var(--bronze)">+140</span>
+    <span class="s-note">Syne 700, 52–64px <span class="lever ok">só o tamanho</span> — nunca 800, nunca caps. O bronze aqui é o único da tela.</span>
+  </div>
+  <div class="s-row">
+    <span class="s-tag">saudação · 1 alavanca</span>
+    <span style="font-family:var(--font-display);font-weight:600;font-size:26px;letter-spacing:-.3px;line-height:1.15">Boa noite, Leo.</span>
+    <span class="s-note">Syne 600, caixa baixa. Nome na cor do texto — o "Leo." em bronze da Home atual morre: bronze é raro agora.</span>
+  </div>
+  <div class="s-row">
+    <span class="s-tag">metadado · 0 alavancas</span>
+    <span style="font-family:var(--font-mono);font-weight:400;font-size:10.5px;color:var(--faint);letter-spacing:.2px">+10&nbsp;&nbsp;+10&nbsp;&nbsp;+10&nbsp;&nbsp;+10&nbsp;&nbsp;+10&nbsp;&nbsp;+10</span>
+    <span class="s-note">A coluna de pontos da lista: mono 10.5, tom apagado, alinhada à direita. Se isto vira textura, a discrição falhou.</span>
+  </div>
+  <div class="s-row">
+    <span class="s-tag">UI · 0–1 alavanca</span>
+    <span style="font-family:var(--font-ui);font-weight:500;font-size:14px">Cobrar o relatório da Ana <span style="color:var(--muted);font-weight:400">— Bricolage 500 carrega a lista inteira sem cansar.</span></span>
+    <span class="s-note">Bricolage 400/500 no corpo, 600 só em botão e nome de seção.</span>
+  </div>
+</div>
+
+<h3 class="sub">Custo real no código — theme.ts e App.tsx</h3>
+<table class="tokens">
+  <tr><th>arquivo</th><th>mudança</th><th>detalhe</th></tr>
+  <tr><td>package.json</td><td class="mono">+ @expo-google-fonts/bricolage-grotesque<br>+ @expo-google-fonts/syne</td><td class="why">Os pacotes existem no catálogo oficial do Expo e seguem o mesmo padrão dos já instalados (@expo-google-fonts/space-grotesk etc.). IBM Plex Mono já está instalado e permanece. Fraunces e Space Grotesk saem — o total de famílias cai de 3 para 3.</td></tr>
+  <tr><td>app/App.tsx</td><td class="mono">useFonts: −Fraunces_500Medium, −4× SpaceGrotesk; +BricolageGrotesque_400Regular/500Medium/600SemiBold/700Bold, +Syne_600SemiBold/700Bold</td><td class="why">Syne_800ExtraBold <b>não é carregada</b> — existe no espécime só como demonstração do que se evita. Seis arquivos de fonte novos, mesma ordem de grandeza dos cinco atuais; custo de carregamento praticamente igual.</td></tr>
+  <tr><td>app/src/theme.ts</td><td class="mono">fonts = { ui: Bricolage…500, uiSemi: …600, uiBold: …700, display: Syne_600, displayBold: Syne_700, mono: IBMPlexMono_500 }</td><td class="why">O mapa de fontes ganha <span class="mono">display</span>/<span class="mono">displayBold</span> e perde <span class="mono">serif</span>. Todas as telas que hoje usam <span class="mono">fonts.serif</span> (títulos, saudação, números de stat) passam a <span class="mono">fonts.display</span> — troca mecânica, sem lógica.</td></tr>
+</table>
+
+<h3 class="sub">E se as duas brigarem mesmo assim? — a saída de um arquivo</h3>
+<div class="spec">
+  <div class="s-row">
+    <span class="s-tag">alternativa · 1 família + mono</span>
+    <span>
+      <span style="font-family:var(--font-ui);font-weight:700;font-size:22px;letter-spacing:-.3px">Fechar o dia</span><br>
+      <span style="font-family:var(--font-ui);font-weight:700;font-size:38px;letter-spacing:-.8px;color:var(--bronze)">+140</span>
+    </span>
+    <span class="s-note"><b>Bricolage 700 cobre os dois papéis</b> (título e número-herói) com dignidade; perde-se o contraste de personalidade entre voz e UI. Custo da troca: editar 2 linhas no mapa <span class="mono">fonts</span> do theme.ts — os papéis já estão isolados por nome de token. Ele decide vendo, não lendo.</span>
+  </div>
+</div>
+
+<!-- ================= 2b. COR ================= -->
+<h2 class="sec"><span class="n">03</span>Cor — a correção principal</h2>
+<p class="sec-sub">Base escura intacta (<span class="mono">#080A0D · #0C0F13 · #0E1116 · #15191F · #11151A</span>, borda quente a 11%, texto <span class="mono">#F4EFE7</span>). A discussão é só o accent: no máximo dois tons, nenhum neon, nenhum glow, nenhuma área grande saturada.</p>
+<div class="swatches">
+  <div class="swcard">
+    <div class="sw-fill" style="background:#C8F04B"></div>
+    <div class="sw-body">
+      <div class="sw-name">#C8F04B · volt da C</div>
+      <div class="sw-verdict no">rejeitado por ele</div>
+      <div class="sw-why">Verde-elétrico saturado. Emocionante por uma semana, insuportável às 21h com sono. Sai sem substituto à altura.</div>
+    </div>
+  </div>
+  <div class="swcard">
+    <div class="sw-fill" style="background:linear-gradient(90deg,#DEB878 0 25%,#15191F 25% 100%);position:relative"><span style="position:absolute;left:12px;top:12px;font-family:var(--font-mono);font-size:9px;color:#1B1409;background:#DEB878;padding:3px 8px;border-radius:6px">botão</span><span style="position:absolute;left:80px;top:12px;font-family:var(--font-mono);font-size:9px;color:#1B1409;background:#DEB878;padding:3px 8px;border-radius:6px">selo</span><span style="position:absolute;left:135px;top:12px;font-family:var(--font-mono);font-size:9px;color:#1B1409;background:#DEB878;padding:3px 8px;border-radius:6px">badge</span></div>
+    <div class="sw-body">
+      <div class="sw-name">#DEB878 · em tudo</div>
+      <div class="sw-verdict no">também rejeitado</div>
+      <div class="sw-why">O argumento da rodada anterior: bronze quente em todo botão e todo selo era, ele mesmo, o chamativo. O problema não era a cor — era a frequência.</div>
+    </div>
+  </div>
+  <div class="swcard">
+    <div class="sw-fill" style="background:#15191F;position:relative"><span style="position:absolute;left:12px;top:14px;font-family:var(--font-ui);font-weight:600;font-size:11px;color:#1B1409;background:#DEB878;padding:6px 12px;border-radius:8px;border-bottom:2px solid #B6935C">Fechar o dia</span><span style="position:absolute;right:12px;top:18px;font-family:var(--font-mono);font-size:9px;color:#5F626B">+10&nbsp;&nbsp;+10&nbsp;&nbsp;+10</span></div>
+    <div class="sw-body">
+      <div class="sw-name">#DEB878 · raro + #71B49A</div>
+      <div class="sw-verdict yes">adotado</div>
+      <div class="sw-why">Bronze em um só lugar por tela (o primário, a recompensa); sálvia só para "feito". Os dois tons já existem no theme.ts — zero cor nova, só disciplina de uso.</div>
+    </div>
+  </div>
+</div>
+<table class="tokens" style="margin-top:18px">
+  <tr><th>token</th><th>valor</th><th>regra de uso</th></tr>
+  <tr><td>bronze (primary)</td><td><span class="sw" style="background:#DEB878"></span><span class="mono">#DEB878</span></td><td class="why">UM elemento cheio por tela: o botão primário ou o número da recompensa. Mais o fio dos diamantes e da barra de ciclo. Nunca em lista, nunca em badge, nunca em texto corrido.</td></tr>
+  <tr><td>sage (success)</td><td><span class="sw" style="background:#71B49A"></span><span class="mono">#71B49A</span></td><td class="why">Estado "feito": check marcado, "+10" no instante da conclusão, "feito ✓" na Mesa. É o success atual do theme.ts, sem mudança de valor.</td></tr>
+  <tr><td>faint</td><td><span class="sw" style="background:#5F626B"></span><span class="mono">#5F626B</span></td><td class="why">Token novo, o mais importante desta rodada: o tom dos pontos em repouso e dos metadados. Um passo abaixo do muted #9A9BA3.</td></tr>
+  <tr><td>danger / info / lilac</td><td class="mono">#D77969 · #7D9FD0 · #A99ACB</td><td class="why">Intactas do theme.ts, uso semântico e raro. Desconto do placar NUNCA em danger — a lei nº 4 do código (Revisao.tsx) manda desconto em muted, e esta proposta obedece.</td></tr>
+  <tr><td>AREA_COLORS</td><td colspan="2" class="why"><b>Inalteradas.</b> As 10 cores de área de vida seguem — aparecem só no fio do checkbox da tarefa e nas tags, como hoje.</td></tr>
+</table>
+
+<!-- ================= 4. MOCKUPS ================= -->
+<h2 class="sec"><span class="n">04</span>Telas</h2>
+<p class="sec-sub">Renderizadas em HTML/CSS com os tokens da C2, 390×844. Rótulos, estados e dados vêm do código real (<span class="mono">app/src/screens/</span>). Herdadas da C: estrutura, hierarquia, um toque. Corrigidas: cor, voz e pontos.</p>
+
+<!-- ========== FECHAR O DIA — o rito ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>21:34</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div class="scr-head">
+        <div class="scr-crumb">rito da noite · dia corrida</div>
+        <div class="scr-title">Fechar o dia</div>
+      </div>
+
+      <div class="qgroup"><span>MANHÃ</span><span class="qcount">3/3 · +60</span></div>
+      <div class="quest done">
+        <div class="box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71B49A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Corrida 5k</div><div class="q-steps">1. tênis na porta · 2. alongar 2min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest done">
+        <div class="box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71B49A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Meditação 10min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest done">
+        <div class="box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71B49A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Vitamina + água</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+
+      <div class="qgroup"><span>DIA</span><span class="qcount">1/2 · +20</span></div>
+      <div class="quest done">
+        <div class="box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71B49A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Bloco foco 90min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Inbox zero (staging)</div><div class="q-steps">3 itens esperando na triagem</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+
+      <div class="qgroup"><span>NOITE</span><span class="qcount">0/2</span></div>
+      <div class="quest">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Desligar telas 23h</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Preparar mesa de amanhã</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+
+      <div class="field" style="margin-top:14px;min-height:56px">como foi o dia? <span style="color:var(--faint)">— opcional, vale bônus</span><span class="caret">▌</span></div>
+      <div class="ghostact" style="margin-top:10px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
+        estruturar com o Hermes · +40 bônus
+      </div>
+
+      <div style="height:12px"></div>
+      <div class="bigact">
+        <span>Fechar o dia</span>
+        <span class="sub">garante +80 · bônus até +140</span>
+      </div>
+      <div style="height:20px"></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Prioridade nº 1 · frame 1 de 2</div>
+    <h3>O rito — igual à C, uma oitava abaixo</h3>
+    <ul>
+      <li><b>A estrutura é a da C, aprovada:</b> um BigAction sempre habilitado com a recompensa escrita no botão ("garante +80 · bônus até +140"), checkbox físico por rotina, escrita como bônus e nunca portão. O que muda é a voz.</li>
+      <li><b>O botão é bronze, não volt.</b> Fio de 2px na base em vez da sombra de tecla de 4px: continua lendo como "pressionável", sem cara de fliperama. É o único bronze cheio da tela.</li>
+      <li><b>Os pontos das rotinas em repouso são metadado</b> — mono 10px, tom <span class="mono">faint</span>, alinhados à direita. Feitos, sobem um degrau para sálvia. Nunca bronze, nunca pill: a recompensa grande vem no frame 2, não aqui.</li>
+      <li><b>Feito = sálvia, não volt.</b> O estado "done" usa o success do theme.ts (#71B49A), já aprovado. Nome da rotina feita cai para muted — o olho vai para o que falta, que é o que pede ação.</li>
+      <li><b>Contagem parcial por bloco</b> ("3/3 · +60") segue em mono miúda — o detalhista audita de onde vem cada ponto sem nenhum número gritar.</li>
+    </ul>
+    <div class="delta">hierarquia de cor na tela: <b>1 bronze</b> (o botão) · sálvia só no que já está feito · todo o resto em texto, muted e faint.</div>
+  </div>
+</div>
+
+<!-- ========== FECHAR — RECOMPENSA COM STREAK ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>21:36</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll" style="display:flex;flex-direction:column;justify-content:center">
+      <div style="text-align:center;margin-bottom:4px">
+        <div class="scr-crumb" style="margin-bottom:10px">dia fechado · registro gravado</div>
+        <div style="font-family:var(--font-display);font-size:64px;font-weight:700;letter-spacing:-1.5px;line-height:1;color:var(--bronze)">+140</div>
+        <div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:2px;color:var(--muted);margin-top:9px">PONTOS DE HOJE</div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 16px;margin-top:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.4px;color:var(--muted)">SALDO</span>
+          <span style="font-family:var(--font-mono);font-size:16px;font-weight:500;letter-spacing:.3px">1.240 → <span style="color:var(--text)">1.380</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:13px">
+          <span style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.4px;color:var(--muted)">NÍVEL 4</span>
+          <div class="diams"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+          <div style="display:flex;justify-content:space-between;margin-top:7px">
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--faint)">ciclo 3 · semana 4/12</span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">faltam 220 p/ N5</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="stat">
+          <div class="s-label">SEQUÊNCIA</div>
+          <div class="s-value">6<small> dias</small></div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">recorde: 11</div>
+        </div>
+        <div class="stat">
+          <div class="s-label">RITMOS</div>
+          <div class="s-value">4<small>/7</small></div>
+          <div class="seg sage"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+
+      <div style="height:24px"></div>
+      <div class="bigact"><span>Boa noite</span><span class="sub">amanhã abre às 5h30</span></div>
+      <div style="height:12px"></div>
+      <div class="ghostact">ver o que ficou sem marcar</div>
+      <div style="height:8px"></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Prioridade nº 1 · frame 2 de 2 — streak aprovado</div>
+    <h3>A recompensa, sem estrobo</h3>
+    <ul>
+      <li><b>O "+140" é o único bronze da tela e a única alavanca é o tamanho</b> (Syne 700, 64px, caixa baixa por definição — são dígitos). Na C era volt de 64px com contagem; aqui o número chega pronto e parado. Às 21h36, isso importa.</li>
+      <li><b>O que conta ao vivo fica em mono:</b> o saldo "1.240 → 1.380" soma em IBM Plex Mono tabular (600ms de <span class="mono">Animated.timing</span>) — sem dança de dígitos, porque a mono não muda de largura.</li>
+      <li><b>Streak com cara de fato, não de placar punitivo:</b> "sequência 6 dias · recorde 11" num StatBlock comum, tom neutro. Dia após um furo, a mesma peça lê "sequência 1 · recorde 11" — mesma cor, mesmo tamanho, sem vermelho e sem frase de culpa. O recorde nunca sai da tela: perder a sequência não apaga a melhor marca.</li>
+      <li><b>Pontos nunca descem:</b> nenhum elemento desta tela mostra perda. Desconto existe só no Placar semanal, em muted, como manda a lei nº 4 do código.</li>
+      <li><b>Saída de um toque, e a exceção declarada:</b> esta é a única tela com dois bronzes — o "+140" e o botão "Boa noite". A regra de um bronze por tela cede aqui de propósito: a tela inteira É o momento da recompensa. "Ver o que ficou sem marcar" permanece ghost — ninguém é punido por fechar no mínimo.</li>
+    </ul>
+    <div class="delta">animação total da tela: <b>&lt; 400ms de movimento</b> (contagem do saldo + segmentos acendendo), depois silêncio. Dados: os mesmos <span class="mono">getPontos()</span> que o approve já chama; streak depende de campo novo no BFF (ver ondas).</div>
+  </div>
+</div>
+
+<!-- ========== TAREFAS — 12 ITENS, O TESTE DA DISCRIÇÃO ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>15:12</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;padding:8px 2px 12px">
+        <div>
+          <div class="scr-crumb">central de execução</div>
+          <div class="scr-title">Tarefas</div>
+        </div>
+        <div style="text-align:right;font-family:var(--font-mono);font-size:9.5px;color:var(--muted);padding-bottom:3px">12 abertas · 1 atrasada</div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 14px">
+        <div class="qgroup" style="margin:8px 0 4px"><span>AGORA</span><span class="qcount">+120 na mesa</span></div>
+
+        <div class="trow">
+          <div class="tchk" style="border-color:#D77969"></div>
+          <div class="t-name">Cobrar o relatório da Ana</div>
+          <span class="t-due" style="color:var(--danger)">há 2d</span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow flash">
+          <div class="tchk"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0B100D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="t-name">Enviar a NF de julho</div>
+          <span class="t-due">hoje</span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#C9A97E"></div>
+          <div class="t-name">Revisar contrato do escritório</div>
+          <span class="t-due">hoje</span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#7FA98E"></div>
+          <div class="t-name">Agendar dentista</div>
+          <span class="t-due"></span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#A9A18C"></div>
+          <div class="t-name">Renovar seguro do carro</div>
+          <span class="t-due">sexta</span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#6BA8A0"></div>
+          <div class="t-name">Fechar a planilha de agosto</div>
+          <span class="t-due"></span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#C9BC7E"></div>
+          <div class="t-name">Ler 20 páginas do Shannon</div>
+          <span class="t-due"></span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#7FA98E"></div>
+          <div class="t-name">Treino de perna</div>
+          <span class="t-due">18h</span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#A9A18C"></div>
+          <div class="t-name">Responder a imobiliária</div>
+          <span class="t-due"></span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#7E9AC9"></div>
+          <div class="t-name">Protótipo da tela de onboarding</div>
+          <span class="t-due"></span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#C98E9B"></div>
+          <div class="t-name">Comprar o presente da mãe</div>
+          <span class="t-due">sáb</span>
+          <span class="t-pts">+10</span>
+        </div>
+        <div class="trow">
+          <div class="tchk" style="border-color:#D98A6E"></div>
+          <div class="t-name">Reservar o restaurante de sábado</div>
+          <span class="t-due"></span>
+          <span class="t-pts">+10</span>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:0 2px">
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--faint);letter-spacing:.8px">PRÓXIMOS 30 DIAS · 4 &nbsp;·&nbsp; BACKLOG · 9</span>
+        <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">recolhidos</span>
+      </div>
+      <div style="height:16px"></div>
+    </div>
+    <div class="tabbar">
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg><span class="tl">HOJE</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg><span class="tl">CAPTURAR</span></div>
+      <div class="tb on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="tl">TAREFAS</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="tl">MENTOR</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tl">MESA</span></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">O teste mais importante desta entrega · lista cheia</div>
+    <h3>Doze "+10" que não viram textura</h3>
+    <ul>
+      <li><b>A coluna de pontos lê como margem, não como conteúdo.</b> IBM Plex Mono 10.5px regular, cor <span class="mono">#5F626B</span> (o token novo <span class="mono">faint</span>, um passo abaixo do muted), largura fixa e alinhamento à direita. Doze repetições formam uma régua quieta — o olho percorre os nomes, não os números.</li>
+      <li><b>Sem pill, sem fundo, sem accent enquanto aberta.</b> Foi isso que virou poluição na rodada D: cada ponto embrulhado em badge colorido. Aqui o "+10" em repouso tem exatamente a mesma cor e peso do metadado de prazo ao lado — ele é datilografia, não decoração.</li>
+      <li><b>O momento da recompensa é o toque, não a linha.</b> A segunda linha mostra o flash: ao confirmar, o check enche de sálvia, o "+10" acende em sálvia e sobe 12px esmaecendo — <span class="mono">Animated.timing</span> de 350ms, menos de 400ms como mandado — e a linha sai da lista. Depois disso, nenhum traço.</li>
+      <li><b>A confirmação continua dentro da linha</b> (o "CONCLUIR? / cancelar / ✓" que já existe em <span class="mono">Tasks.tsx:63-87</span>, nascido no dedo) — só reestilizada, ver seção de componentes.</li>
+      <li><b>A cor que resta na lista é a das áreas</b> — fio de 1.5px no checkbox, exatamente como hoje (<span class="mono">severityColor()</span>: atrasada em danger, demais na cor da área). O "+120 na mesa" do cabeçalho de grupo é o único agregado: soma do que a seção vale, em faint.</li>
+      <li><b>Honestidade:</b> o valor por tarefa vem da tabela local <span class="mono">POINTS</span> em theme.ts (provisória, display-only). O saldo oficial de <span class="mono">getPontos()</span> sempre vence — ver seção 06.</li>
+    </ul>
+    <div class="delta">critério de aceite: <b>na lista cheia, a coluna de pontos não pode criar textura visual.</b> Se algum "+10" chamar atenção antes do nome da tarefa, esta tela está errada — e é por isso que ela é mostrada com 12, não com 3.</div>
+  </div>
+</div>
+
+<!-- ========== PLACAR (REVISÃO) ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>22:10</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div class="scr-head">
+        <div class="scr-crumb">revisão</div>
+        <div class="scr-title">Placar</div>
+      </div>
+
+      <div style="text-align:center;padding:10px 0 18px">
+        <div style="font-family:var(--font-display);font-size:54px;font-weight:700;letter-spacing:-1.5px;line-height:1">1.380</div>
+        <div style="font-family:var(--font-mono);font-size:9px;letter-spacing:2px;color:var(--muted);margin-top:8px">PONTOS ACUMULADOS</div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:13px">
+          <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text);letter-spacing:1px">N4</span>
+          <div class="diams"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+          <span style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint)">vitalício · não regride</span>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:1.4px;color:var(--muted)">CICLO 3 · SEMANA 4/12</span>
+          <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text)">580/800</span>
+        </div>
+        <div style="margin-top:10px"><div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px">
+          <span style="font-family:var(--font-mono);font-size:9.5px;color:var(--sage)">semana +210</span>
+          <span style="font-family:var(--font-mono);font-size:9.5px;color:var(--faint)">−40 descontos</span>
+          <span style="font-family:var(--font-mono);font-size:9.5px;color:var(--muted)">N5 em 220</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="stat"><div class="s-label">FECHAMENTOS</div><div class="s-value">5</div><div style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint)">esta semana</div></div>
+        <div class="stat"><div class="s-label">CAPTURAS</div><div class="s-value">23</div><div style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint)">esta semana</div></div>
+        <div class="stat"><div class="s-label">LEITURA</div><div class="s-value">94<small>m</small></div><div style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint)">esta semana</div></div>
+      </div>
+
+      <div class="qgroup" style="margin-top:18px"><span>SEMANA 4 · SCORECARD 71%</span></div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">
+          <span style="font-size:12.5px;color:#C9C3B8">dias de corrida fecham mais ritmos</span>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">4×</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-top:1px dashed rgba(235,222,202,0.08)">
+          <span style="font-size:12.5px;color:#C9C3B8">staging cresce nas quintas</span>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">3×</span>
+        </div>
+      </div>
+      <div style="height:20px"></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Revisão promovida · a peça central desta direção</div>
+    <h3>O Placar da C, em tom de escritório</h3>
+    <ul>
+      <li><b>Mesma estrutura aprovada na C:</b> saldo-herói no topo, nível com diamantes, ciclo segmentado, stats da semana, padrões. O que muda é a temperatura.</li>
+      <li><b>O saldo-herói é Syne 700 na cor do texto</b> — não em bronze. Ele chega pronto e parado; o bronze fica para os diamantes e os segmentos do ciclo, pequenos. Um número de 54px já é ênfase suficiente.</li>
+      <li><b>Desconto em muted, nunca em danger.</b> A C mostrava "−40" em coral; o código (<span class="mono">Revisao.tsx</span>, comentário da lei nº 4) manda desconto em MUTED porque desconto não é erro, é fato. A C2 corrige a C neste ponto e obedece o código.</li>
+      <li><b>Todos os dados já existem</b> em <span class="mono">getPontos()</span> e <span class="mono">getReviewWeekly()</span>: saldo, nível, ciclo pontos/meta, semana ganho/desconto, padrões, scorecard %, fechamentos/capturas/leitura. Zero endpoint novo.</li>
+      <li><b>Se não houve padrão, a seção some</b> — como já acontece hoje. Nada de "nenhum furo!": o placar informa, não julga, nem para elogiar.</li>
+    </ul>
+    <div class="delta">restyling de dados reais, <b>zero lógica nova</b> — continua a tela mais barata e mais transformadora do pacote.</div>
+  </div>
+</div>
+
+<!-- ========== HOME / HOJE ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>18:42</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 14px">
+        <div>
+          <div class="scr-crumb">quinta-feira, 07 de agosto</div>
+          <div style="font-family:var(--font-display);font-size:25px;font-weight:600;letter-spacing:-.3px;margin-top:2px">Boa noite, Leo.</div>
+        </div>
+        <div style="text-align:center;border:1px solid var(--line-strong);border-radius:13px;padding:7px 12px">
+          <div style="font-family:var(--font-mono);font-size:7px;letter-spacing:1.4px;color:var(--muted)">NÍVEL</div>
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;line-height:1.15">4</div>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 16px;margin-bottom:12px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <span style="font-family:var(--font-mono);font-size:15px;font-weight:500;letter-spacing:.3px">1.240 <span style="font-size:9px;color:var(--faint)">PTS</span></span>
+          <span style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint);letter-spacing:1px">CICLO 3 · S4/12</span>
+        </div>
+        <div style="margin-top:10px"><div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+      </div>
+
+      <div class="heroquest">
+        <div class="hq-eyebrow">próxima ação · 19h00</div>
+        <div class="hq-title">Shutdown: fecha o trabalho</div>
+        <div class="hq-sub">2 tarefas abertas · 1 follow-up · staging com 3 itens. Saia sabendo o que vem amanhã.</div>
+        <div class="hq-foot">
+          <span class="hq-cta">Abrir agora</span>
+          <span class="hq-pts">vale +30</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="stat"><div class="s-label">RITMOS</div><div class="s-value">5<small>/8</small></div><div class="seg sage"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+        <div class="stat"><div class="s-label">COBRANÇAS</div><div class="s-value">4</div><div style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint)">no radar</div></div>
+        <div class="stat"><div class="s-label">FOCO</div><div style="font-family:var(--font-ui);font-size:13px;font-weight:600;line-height:1.3;margin:8px 0 6px">Relatório p/ Ana</div><div style="font-family:var(--font-mono);font-size:8.5px;color:var(--a-trabalho)">TRABALHO · HOJE</div></div>
+      </div>
+
+      <div class="qgroup" style="margin-top:18px"><span>EM ESPERA</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="fchip"><b>3</b> triagem</span>
+        <span class="fchip"><b>5</b> anki</span>
+        <span class="fchip"><b>2</b> leituras</span>
+      </div>
+
+      <div class="qgroup" style="margin-top:18px"><span>AGENDA CURTA</span></div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:13px;padding:3px 14px;margin-bottom:88px">
+        <div style="display:flex;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--muted);width:36px">19:00</span>
+          <span style="font-size:13px;font-weight:500;flex:1">Shutdown do trabalho</span>
+          <span style="font-family:var(--font-mono);font-size:8px;color:var(--faint)">RITO</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;padding:9px 0">
+          <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--muted);width:36px">21:00</span>
+          <span style="font-size:13px;font-weight:500;flex:1">Fechar o dia</span>
+          <span style="font-family:var(--font-mono);font-size:8px;color:var(--faint)">RITO</span>
+        </div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="d-plus"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1B1409" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+      <div style="flex:1"><div class="d-label">captura universal</div><div class="d-hint">Fala ou digita. Organiza depois.</div></div>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Home / Hoje</div>
+    <h3>O painel do jogador, em volume de conversa</h3>
+    <ul>
+      <li><b>Mesma anatomia da C:</b> saudação → saldo com ciclo → a próxima ação com preço → stats → filas → agenda curta → dock de captura. O <span class="mono">actionForAt()</span> segue decidindo a missão; nenhuma lógica nova.</li>
+      <li><b>A saudação é o momento Syne da tela</b> ("Boa noite, Leo.", 600, caixa baixa). O "Leo." em bronze da Home atual sai — bronze não é para texto corrido.</li>
+      <li><b>O saldo da Home é mono, e há uma razão:</b> ele re-soma quando a tela refresha após qualquer ação (o app recarrega no <span class="mono">AppState "active"</span>). Número que pode se mover à vista fica em mono tabular — a regra da seção 02 aplicada sem exceção.</li>
+      <li><b>Um bronze por tela:</b> o CTA "Abrir agora" do hero. O selo de nível virou moldura fina neutra; o dock mantém o "+" em bronze por ser ação primária global — pequeno, não compete.</li>
+      <li><b>"Em espera" virou chip neutro com número em destaque de texto</b> — sem colorir por fila. A informação é o número, não a cor.</li>
+      <li><b>A grade "Ferramentas" saiu da Home</b> (vive na Mesa, próximo frame). A Home termina na agenda curta.</li>
+    </ul>
+    <div class="delta">hierarquia: <b>saudação → saldo → próxima ação → stats → filas</b>. Tudo que precisa dele tem número; nenhum número grita.</div>
+  </div>
+</div>
+
+<!-- ========== A MESA ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>18:44</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div class="scr-head">
+        <div class="scr-crumb">sistema</div>
+        <div class="scr-title">A Mesa</div>
+      </div>
+
+      <div class="qgroup" style="margin-top:0"><span>PRECISA DE VOCÊ</span><span class="qcount">3</span></div>
+      <div class="pend">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7D9FD0" stroke-width="2" stroke-linecap="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+        <div style="flex:1"><div class="p-name">Triagem</div><div class="p-sub">mais velho há 4 dias</div></div>
+        <span class="p-count">3</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A99ACB" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="none"/></svg></div>
+        <div style="flex:1"><div class="p-name">Revisão</div><div class="p-sub">5 cartões anki sugeridos</div></div>
+        <span class="p-count">5</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#DEB878" stroke-width="2" stroke-linecap="round"><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/><path d="M21 21H3"/><path d="M5 3h14a2 2 0 0 1 2 2v14"/></svg></div>
+        <div style="flex:1"><div class="p-name">Fechar o dia</div><div class="p-sub">rito das 21h · vale +80</div></div>
+        <span class="p-count">21h</span>
+      </div>
+
+      <div class="qgroup"><span>ROTINA DO DIA</span></div>
+      <div class="pend">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/></svg></div>
+        <div style="flex:1"><div class="p-name">Abertura</div><div class="p-sub">dia corrida · check-in feito</div></div>
+        <span class="p-ok">FEITO ✓</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/></svg></div>
+        <div style="flex:1"><div class="p-name">Shutdown</div><div class="p-sub">rito das 19h · 3 prioridades</div></div>
+        <span class="p-ok">FEITO ✓</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+        <div style="flex:1"><div class="p-name">Ritmos</div><div class="p-sub">5 de 8 hoje</div></div>
+        <span class="p-count">5/8</span>
+      </div>
+
+      <div class="qgroup"><span>ARQUIVO</span></div>
+      <div class="pend idle">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <div style="flex:1"><div class="p-name">Agenda</div><div class="p-sub">semana sem horários extras</div></div>
+      </div>
+      <div class="pend idle">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></div>
+        <div style="flex:1"><div class="p-name">Reduzir</div><div class="p-sub">hábitos a reduzir</div></div>
+      </div>
+      <div class="pend idle" style="margin-bottom:16px">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A9BA3" stroke-width="2" stroke-linecap="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
+        <div style="flex:1"><div class="p-name">Edificação</div><div class="p-sub">projetos de longo prazo</div></div>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg><span class="tl">HOJE</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg><span class="tl">CAPTURAR</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="tl">TAREFAS</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="tl">MENTOR</span></div>
+      <div class="tb on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tl">MESA</span></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Substituto de "Ferramentas" · herdado da C</div>
+    <h3>A Mesa — mesma regra, menos tinta</h3>
+    <ul>
+      <li><b>A lista por pendência é a da C, aprovada:</b> "precisa de você" com contador e idade do item mais velho, "rotina do dia" com estado, "arquivo" apagado a 50%. Regra de ordenação explícita e estável (pendência &gt; rito &gt; arquivo).</li>
+      <li><b>Os contadores perderam a pill colorida.</b> Na C, cada número tinha fundo colorido próprio (cyan, grape, volt) — três retângulos chamativos por tela. Aqui o contador é mono na cor do texto: a informação é o número. O que muda é só o ícone à esquerda, nas cores semânticas já existentes.</li>
+      <li><b>"Feito ✓" em sálvia miúda</b>, "vale +80" em faint — pontos como metadado até na navegação.</li>
+      <li><b>5ª aba da tabbar:</b> qualquer ferramenta a 1 toque de qualquer tela (hoje: Home → rolar → grade → toque).</li>
+      <li><b>Dados já existem:</b> <span class="mono">HomeSignals</span>, <span class="mono">getAbertura</span>, <span class="mono">getShutdown</span>, <span class="mono">staging.mais_velho_d</span> — composição de chamadas que o app já faz.</li>
+    </ul>
+    <div class="delta">a "gaveta" vira <b>quadro do que espera por ele</b> — e agora sem três cores de pill disputando atenção com o conteúdo.</div>
+  </div>
+</div>
+
+<!-- ================= 5. ANTES → DEPOIS ================= -->
+<h2 class="sec"><span class="n">05</span>Antes → depois</h2>
+<p class="sec-sub">Descrição honesta do que existe hoje (lida no código), ao lado do proposto.</p>
+
+<div class="bd">
+  <div class="col before">
+    <div class="col-tag">Antes · Fechar o dia (Fechar.tsx)</div>
+    <div class="mini">
+      <div class="old-line" style="color:#5A6069;font-family:var(--font-mono);font-size:10px">dia corrida</div>
+      <div class="old-line" style="color:#5A6069;font-size:11px">rotinas de hoje</div>
+      <div class="old-line">☑ Corrida 5k</div>
+      <div class="old-line">☐ Inbox zero (staging)</div>
+      <div class="old-line">☐ Desligar telas 23h</div>
+      <div class="old-line" style="color:#5A6069;font-size:11px;margin-top:6px">como foi o dia?</div>
+      <div class="old-line" style="border:1px solid var(--line);border-radius:6px;padding:8px;color:#4A4F57">despeja aqui — 1 linha já vale</div>
+      <div class="old-line link">estruturar com o Hermes →</div>
+      <div class="old-line" style="color:#5A6069">fechar sem escrever</div>
+      <div class="old-line" style="color:#5A6069;margin-top:8px;font-style:italic">(após gravar: "✓ dia fechado — 4 de 7 ritmos hoje · 1.380 pts · nível 4" em texto de 13px)</div>
+    </div>
+    <ul>
+      <li>Dois links de texto, nenhum botão primário: a ação mais importante do dia é a menos clicável da tela.</li>
+      <li>"Fechar sem escrever" tem nome de derrota — o modo mínimo parece trapaça, então o dia ruim vira dia não-registrado.</li>
+      <li>Checkbox é um glifo "☐" numa linha de texto — alvo pequeno demais para a última ação do dia.</li>
+      <li>A recompensa existe nos dados (<span class="mono">getPontos()</span> no approve) e morre num parágrafo cinza.</li>
+    </ul>
+  </div>
+  <div class="col after">
+    <div class="col-tag">Depois · C2</div>
+    <div class="mini" style="border-color:rgba(222,184,120,0.22)">
+      <div class="old-line" style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px">NOITE · 0/2</div>
+      <div class="old-line" style="color:var(--text)">[ &nbsp; ] Desligar telas 23h &nbsp; <span style="color:var(--faint);font-family:var(--font-mono)">+20</span></div>
+      <div class="old-line" style="color:var(--text)">[ &nbsp; ] Preparar mesa de amanhã &nbsp; <span style="color:var(--faint);font-family:var(--font-mono)">+20</span></div>
+      <div class="old-line" style="border:1px solid var(--line);border-radius:6px;padding:8px;color:#4A4F57;margin-top:8px">como foi o dia? — opcional, vale bônus</div>
+      <div class="old-line" style="background:var(--bronze);color:var(--bronze-text);border-radius:8px;padding:11px;text-align:center;font-weight:600;margin-top:8px;border-bottom:2px solid var(--bronze-press)">Fechar o dia · garante +80</div>
+      <div class="old-line" style="color:var(--muted);text-align:center;font-size:10px;font-family:var(--font-mono)">estruturar com o Hermes · +40 bônus</div>
+    </div>
+    <ul>
+      <li>Um primário de 60px, sempre habilitado, com a recompensa escrita no botão.</li>
+      <li>Escrever virou bônus pontuado; o modo mínimo é o caminho padrão, sem nome pejorativo.</li>
+      <li>Fechar abre a recompensa: +140, saldo somando em mono, sequência e recorde.</li>
+      <li>Pontos em repouso são metadado apagado — recompensa é evento, não decoração.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="bd">
+  <div class="col before">
+    <div class="col-tag">Antes · "Ferramentas" (Home.tsx:260-287)</div>
+    <div class="mini">
+      <div class="old-line" style="color:#5A6069;font-family:var(--font-mono);font-size:10px">SISTEMA — FERRAMENTAS</div>
+      <div class="old-line">[◌ Agenda] &nbsp; [◌ Abertura]</div>
+      <div class="old-line">[◌ Triagem] &nbsp; [◌ Ritmos]</div>
+      <div class="old-line">[◌ Reduzir] &nbsp; [◌ Revisão]</div>
+      <div class="old-line">[◌ Edificação] &nbsp; [◌ Shutdown]</div>
+      <div class="old-line">[◌ Fechar dia] &nbsp; [◌ Ajustes]</div>
+    </div>
+    <ul>
+      <li>10 botões idênticos, 2 colunas, no fim da Home: mesma cor, mesmo tamanho, mesma cara.</li>
+      <li>Nenhum indica pendência: abrir a Triagem para descobrir que está vazia é o passeio diário.</li>
+      <li>Mora atrás de um scroll longo — a segunda navegação do app exige procurar.</li>
+      <li>Sem regra de ordenação: Ajustes e Fechar o dia têm o mesmo peso visual.</li>
+    </ul>
+  </div>
+  <div class="col after">
+    <div class="col-tag">Depois · A Mesa (5ª aba)</div>
+    <div class="mini" style="border-color:rgba(222,184,120,0.22)">
+      <div class="old-line" style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px">PRECISA DE VOCÊ</div>
+      <div class="old-line" style="color:var(--text)">◈ Triagem — mais velho há 4d &nbsp; <span style="font-family:var(--font-mono)">3</span></div>
+      <div class="old-line" style="color:var(--text)">◈ Revisão — anki sugeridos &nbsp; <span style="font-family:var(--font-mono)">5</span></div>
+      <div class="old-line" style="color:var(--text)">◈ Fechar o dia — vale +80 &nbsp; <span style="font-family:var(--font-mono)">21h</span></div>
+      <div class="old-line" style="color:var(--faint);font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px;margin-top:6px">ARQUIVO</div>
+      <div class="old-line" style="color:#4A4F57">◈ Agenda · sem horários extras</div>
+      <div class="old-line" style="color:#4A4F57">◈ Ajustes · servidor, notificações</div>
+    </div>
+    <ul>
+      <li>Lista única ordenada por pendência: quem precisa dele tem número; quem não precisa fica apagado no arquivo.</li>
+      <li>5ª aba da tabbar: qualquer ferramenta a 1 toque de qualquer tela.</li>
+      <li>Contadores sem pill colorida — a informação é o número, não o embrulho.</li>
+      <li>Regra de ordenação explícita e estável — previsível para o detalhista.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ================= 6. SISTEMA ================= -->
+<h2 class="sec"><span class="n">06</span>Sistema</h2>
+<p class="sec-sub">Tokens e peças — renderizados, não descritos. A base de cor é a do theme.ts atual; o que há de novo é disciplina de uso e um token a mais.</p>
+
+<h3 class="sub">Escala tipográfica (resumo operacional)</h3>
+<table class="tokens">
+  <tr><th>token</th><th>valor</th><th>uso</th></tr>
+  <tr><td>display</td><td class="mono">Syne 600 · 22–26px · caixa baixa</td><td class="why">Título de tela, saudação. Uma alavanca: o desenho da Syne.</td></tr>
+  <tr><td>displayBold</td><td class="mono">Syne 700 · 48–64px</td><td class="why">Só número-herói que chega pronto (+140, saldo do Placar). Uma alavanca: o tamanho. Syne 800 não é carregada.</td></tr>
+  <tr><td>ui / uiSemi / uiBold</td><td class="mono">Bricolage 400/500 · 600 · 700</td><td class="why">Toda a UI. 500 carrega listas; 600 em botões e nomes de seção; 700 quase nunca.</td></tr>
+  <tr><td>mono</td><td class="mono">IBM Plex Mono 400/500</td><td class="why">Número vivo, número miúdo, eyebrows em caps, horários, contadores. Inalterada.</td></tr>
+  <tr><td>radius / spacing</td><td class="mono">inalterados</td><td class="why">O ritmo do midnight desk é bom; a C2 não mexe em geometria de layout, só em cor e voz. A sombra dura de 4px da C vira fio de 2px só nos primários.</td></tr>
+</table>
+
+<h3 class="sub">Componentes</h3>
+<div class="comp-grid">
+  <div class="comp">
+    <div class="c-head"><span class="c-name">PointTag</span><span class="c-new">novo · a peça desta rodada</span></div>
+    <div class="c-body">
+      <div class="trow" style="border-bottom:1px solid rgba(235,222,202,0.07)">
+        <div class="tchk" style="border-color:#C9A97E"></div>
+        <div class="t-name">Revisar contrato do escritório</div>
+        <span class="t-pts">+10</span>
+      </div>
+      <div class="trow flash" style="border-bottom:none">
+        <div class="tchk"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0B100D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div class="t-name">Enviar a NF de julho</div>
+        <span class="t-pts">+10</span>
+      </div>
+    </div>
+    <div class="c-note">Duas vidas: <b>repouso</b> — mono 10.5, faint, coluna de margem, zero chrome; <b>flash</b> — sálvia + translateY(−12px) + fade em 350ms no toque de concluir, depois some com a linha. Nenhum terceiro estado.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">BigAction</span><span class="c-new exists">da C · abrandado</span></div>
+    <div class="c-body">
+      <div class="bigact"><span>Fechar o dia</span><span class="sub">garante +80</span></div>
+      <div style="height:10px"></div>
+      <div class="bigact small"><span>Enviar</span><span class="sub">+5</span></div>
+    </div>
+    <div class="c-note">Bronze, caixa baixa, fio de 2px na base (era sombra de 4px volt). 60px no rito, 46px inline. Afunda 2px no <span class="mono">pressed</span> — <span class="mono">Animated.timing</span> de 80ms. Um por tela.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">QuestRow</span><span class="c-new exists">da C · abrandado</span></div>
+    <div class="c-body">
+      <div class="quest done" style="margin-bottom:8px">
+        <div class="box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71B49A" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Corrida 5k</div><div class="q-steps">1. tênis na porta · 2. alongar 2min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest" style="margin-bottom:0">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Desligar telas 23h</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+    </div>
+    <div class="c-note">Feito em sálvia (era volt), pontos em faint→sálvia, passos em mono roteiro sem check próprio (regra do código). Usada em Abertura, Fechar e Ritmos.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">RewardSheet</span><span class="c-new exists">da C · abrandado</span></div>
+    <div class="c-body" style="text-align:center">
+      <div style="font-family:var(--font-display);font-size:42px;font-weight:700;letter-spacing:-1px;color:var(--bronze)">+140</div>
+      <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:2px;color:var(--muted);margin:6px 0 4px">PONTOS DE HOJE</div>
+      <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-bottom:12px">1.240 → <span style="color:var(--text)">1.380</span></div>
+      <div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+      <div style="display:flex;justify-content:center;gap:14px;margin-top:12px;font-family:var(--font-mono);font-size:9px;color:var(--muted)"><span>SEQUÊNCIA 6</span><span style="color:var(--faint)">RECORDE 11</span></div>
+    </div>
+    <div class="c-note">O número chega pronto (Syne 700); quem conta ao vivo é o saldo, em mono. Streak e recorde no mesmo tom dos demais fatos. Movimento total &lt; 400ms.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">ConfirmRow (concluir tarefa)</span><span class="c-new exists">existe · reestilizar</span></div>
+    <div class="c-body">
+      <div style="display:flex;align-items:center;gap:11px;padding:9px 12px;border:1px solid rgba(113,180,154,0.4);border-radius:12px;background:rgba(113,180,154,0.06)">
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--font-mono);font-size:9px;letter-spacing:1.2px;color:var(--sage)">CONCLUIR? · +10</div>
+          <div style="font-size:13.5px;font-weight:500;margin-top:3px">Enviar a NF de julho</div>
+        </div>
+        <span style="font-size:12px;color:var(--muted)">cancelar</span>
+        <span style="width:36px;height:36px;border-radius:18px;background:var(--sage);display:flex;align-items:center;justify-content:center;flex:none"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B100D" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+      </div>
+    </div>
+    <div class="c-note">A confirmação dentro da linha que já existe em <span class="mono">Tasks.tsx</span> — com o valor visível no instante da decisão. É o único momento em que o +10 aparece antes do toque com cor.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">SegmentBar / StatBlock / PendRow</span><span class="c-new exists">da C · abrandados</span></div>
+    <div class="c-body">
+      <div class="seg" style="margin-bottom:12px"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div class="stat"><div class="s-label">RITMOS</div><div class="s-value">5<small>/8</small></div></div>
+        <div class="stat"><div class="s-label">COBRANÇAS</div><div class="s-value">4</div></div>
+      </div>
+      <div class="pend" style="margin-bottom:0">
+        <div class="p-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#7D9FD0" stroke-width="2" stroke-linecap="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+        <div style="flex:1"><div class="p-name">Triagem</div><div class="p-sub">mais velho há 4 dias</div></div>
+        <span class="p-count">3</span>
+      </div>
+    </div>
+    <div class="c-note">Segmentos em bronze (ciclo) e sálvia (feito), 5px de altura — sem glow. StatBlock com valor em Syne 600. PendRow com contador em mono na cor do texto, sem pill.</div>
+  </div>
+</div>
+
+<h3 class="sub">Honestidade de dados — o que não existe ainda</h3>
+<table class="tokens">
+  <tr><th>item</th><th>estado real</th><th>compromisso desta proposta</th></tr>
+  <tr><td class="mono">POINTS</td><td class="why">Pontos por tipo de ação <b>não existem</b> no app nem no BFF.</td><td class="why">Tabela local em <span class="mono">theme.ts</span>, provisória e display-only, declarada em código: <span class="mono">const POINTS = { tarefa: 10, rotina: 20, captura: 5, fechamento: 80, despejoBonus: 40 }</span>. O saldo oficial de <span class="mono">getPontos()</span> sempre vence — a tabela só alimenta rótulos ("vale +N").</td></tr>
+  <tr><td class="mono">streak</td><td class="why">Sequência corrida de fechamentos <b>exige campo novo no BFF</b>; <span class="mono">semanal.dailies</span> dá só os fechamentos da semana, não a corrida.</td><td class="why">A RewardSheet nasce SEM streak (onda 1) e ganha a peça quando o BFF expuser <span class="mono">sequencia_atual</span> / <span class="mono">sequencia_recorde</span>. Até lá, nenhum número inventado: a tela simplesmente não mostra a linha.</td></tr>
+</table>
+
+<!-- ================= 7. ONDAS ================= -->
+<h2 class="sec"><span class="n">07</span>Plano de implementação em ondas</h2>
+<p class="sec-sub">Ordenado por ganho ÷ custo. As ondas 1–3 <b>não dependem de backend</b>: o que exige BFF (streak) está isolado na onda 4. Nenhuma onda exige dependência nova além dos dois pacotes de fonte.</p>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 1</span><span class="w-title">O fechamento paga</span><span class="w-cost">1–2 dias · maior ganho do pacote</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/ui.tsx</td><td>Criar <span class="mono">BigAction</span>, <span class="mono">QuestRow</span>, <span class="mono">SegmentBar</span>, <span class="mono">RewardSheet</span> (~250 linhas, puro <span class="mono">Animated</span>).</td></tr>
+    <tr><td class="f">app/src/theme.ts</td><td>Adicionar <span class="mono">faint: "#5F626B"</span> e a tabela local <span class="mono">POINTS</span> (display-only, comentada como provisória).</td></tr>
+    <tr><td class="f">app/src/screens/Fechar.tsx</td><td>Dois links de texto → BigAction sempre habilitado; rotinas viram QuestRows; estado <span class="mono">done</span> vira RewardSheet com os dados de <span class="mono">getPontos()</span> que já chegam no approve. <b>Sem streak ainda</b> e sem chamada de API nova.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que primeiro:</b> é a tela de maior frequência e o pior momento do app hoje. Sozinha, resolve os problemas nº 1 e nº 3 da auditoria — sem tocar em mais nada e sem backend.</div>
+</div>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 2</span><span class="w-title">A voz nova (fontes + disciplina de accent)</span><span class="w-cost">1 dia · mecânico</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">package.json</td><td>Instalar <span class="mono">@expo-google-fonts/bricolage-grotesque</span> e <span class="mono">@expo-google-fonts/syne</span>.</td></tr>
+    <tr><td class="f">app/App.tsx</td><td><span class="mono">useFonts</span>: saem Fraunces e Space Grotesk, entram Bricolage (400/500/600/700) e Syne (600/700 — <b>800 não</b>). IBM Plex Mono permanece.</td></tr>
+    <tr><td class="f">app/src/theme.ts</td><td>Mapa <span class="mono">fonts</span> novo: <span class="mono">display</span>/<span class="mono">displayBold</span> entram, <span class="mono">serif</span> sai. Paleta dark intacta.</td></tr>
+    <tr><td class="f">app/src/ui.tsx + telas</td><td><span class="mono">fonts.serif</span> → <span class="mono">fonts.display</span> onde for título/número-herói (troca mecânica, tela a tela: Home, Tasks, Revisao, App). Regra de ouro no code review: um bronze cheio por tela.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que depois da 1:</b> a onda 1 prova a direção com estilos locais; a 2 generaliza a tipografia. Se a dupla Bricolage+Syne brigar na prática, a saída de um arquivo (Bricolage 700 + mono) está descrita na seção 02.</div>
+</div>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 3</span><span class="w-title">Pontos discretos em Tarefas + A Mesa</span><span class="w-cost">2 dias · o teste dos 12 itens</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/ui.tsx</td><td>Criar <span class="mono">PointTag</span> (repouso/flash) e <span class="mono">PendRow</span>.</td></tr>
+    <tr><td class="f">app/src/screens/Tasks.tsx</td><td>TaskRow ganha a coluna de pontos em <span class="mono">PointTag</span> (lê <span class="mono">POINTS.tarefa</span>); flash de 350ms no confirmar; ConfirmRow reestilizado com o valor visível.</td></tr>
+    <tr><td class="f">app/src/screens/Mesa.tsx <span style="color:var(--muted)">(novo)</span></td><td>Lista de PendRows com a regra pendência &gt; rito &gt; arquivo. Dados: os mesmos <span class="mono">HomeSignals</span> + <span class="mono">getAbertura</span>/<span class="mono">getShutdown</span>.</td></tr>
+    <tr><td class="f">app/App.tsx</td><td>Tabbar ganha a 5ª aba "Mesa"; chevron das subtelas volta para a Mesa, não para a Home.</td></tr>
+    <tr><td class="f">app/src/screens/Home.tsx</td><td>Apagar a seção "Ferramentas"; saldo + SegmentBar de ciclo ao topo (saldo em mono — re-soma no refresh); hero com "vale +N" em faint.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Critério de aceite da onda:</b> abrir Tarefas com 12+ itens e a coluna de pontos não criar textura. Se criar, o <span class="mono">faint</span> desce mais um passo — não se devolve pill nem cor.</div>
+</div>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 4</span><span class="w-title">Placar em escala + streak (o único backend)</span><span class="w-cost">2–3 dias · BFF explícito</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/screens/Revisao.tsx</td><td>ConquistasCard vira Placar: saldo-herói Syne 700 na cor do texto, SegmentBar de ciclo, stats da semana. Desconto permanece em muted (lei nº 4 — a C errava aqui). Dados 100% existentes.</td></tr>
+    <tr><td class="f">BFF (fora do app)</td><td><b>Custo explícito:</b> expor <span class="mono">sequencia_atual</span> e <span class="mono">sequencia_recorde</span> de fechamentos. Quando existir, a RewardSheet e o Placar ganham a peça de streak — sem migração, é campo aditivo.</td></tr>
+    <tr><td class="f">app/src/screens/Abertura.tsx · Capture.tsx</td><td>Polimento: TemplateCards e toasts quietos ("capturado · +5 · saldo") no mesmo padrão da RewardSheet.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que por último:</b> é a única onda com trabalho de backend, e as telas já funcionam sem ela. Streak é bônus declarado, nunca dependência das ondas 1–3.</div>
+</div>
+
+<div class="footer">
+  AETERNUM · C2 — A VARIAÇÃO C, SÓBRIA · proposta autocontida, sem recursos externos além do Google Fonts (fallbacks declarados) ·
+  desenhada sobre o código real de app/src · pt-BR
+</div>
+
+</div>
+</body>
+</html>

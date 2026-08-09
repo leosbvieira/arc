@@ -1,0 +1,1465 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aeternum — D3 · Noturno editorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ============ tokens (espelho de app/src/theme.ts — intocados) ============ */
+  :root{
+    --bg:#080A0D; --bgRaised:#0C0F13; --surface:#0E1116; --card:#15191F; --card2:#11151A;
+    --border:rgba(235,222,202,0.11); --text:#F4EFE7; --muted:#9A9BA3;
+    --bronze:#DEB878; --bronzeText:#181108; --bronzeSoft:rgba(222,184,120,0.13);
+    --danger:#D77969; --success:#71B49A; --info:#7D9FD0; --lilac:#A99ACB;
+    --hair:rgba(235,222,202,0.16); /* fio de cabelo editorial, um pouco mais presente que --border */
+    --serif:"Instrument Serif",Georgia,"Times New Roman",serif;
+    --serifOld:"Fraunces",Georgia,"Times New Roman",serif; /* só p/ comparação no espécime */
+    --ui:"Space Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:#05070A;color:var(--text);font-family:var(--ui);font-size:15px;line-height:1.55;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 32px 120px}
+  code{font-family:var(--mono);font-size:.85em;background:var(--card2);border:1px solid var(--border);
+    border-radius:6px;padding:1px 6px;color:var(--bronze)}
+
+  /* ============ página ============ */
+  .masthead{padding:96px 0 56px;border-bottom:1px solid var(--hair);margin-bottom:72px}
+  .masthead .kicker{font-family:var(--mono);font-size:11px;letter-spacing:2.5px;color:var(--bronze);
+    text-transform:uppercase;margin-bottom:20px}
+  .masthead h1{font-family:var(--serif);font-weight:400;font-size:64px;line-height:1.02;
+    letter-spacing:-.5px;max-width:820px}
+  .masthead h1 em{font-style:italic;color:var(--bronze)}
+  .masthead p{margin-top:24px;max-width:660px;color:var(--muted);font-size:16px;line-height:1.65}
+  .masthead .meta{margin-top:28px;display:flex;gap:26px;flex-wrap:wrap;font-family:var(--mono);
+    font-size:10.5px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase}
+
+  section{margin-top:88px}
+  .sechead{margin-bottom:40px;max-width:740px}
+  .sechead .n{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--bronze);margin-bottom:12px}
+  .sechead h2{font-family:var(--serif);font-weight:400;font-size:42px;letter-spacing:-.3px;line-height:1.1}
+  .sechead h2 em{font-style:italic;color:var(--bronze)}
+  .sechead p{margin-top:14px;color:var(--muted);font-size:15px;line-height:1.65}
+  .sechead p b{color:var(--text);font-weight:600}
+
+  /* ============ princípios (curtos — os seis da rodada 1 continuam valendo) ============ */
+  .principles{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .principle{background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:22px 22px 20px}
+  .principle .pn{font-family:var(--mono);font-size:10px;letter-spacing:1.6px;color:var(--bronze);margin-bottom:12px}
+  .principle h3{font-family:var(--serif);font-weight:400;font-size:21px;letter-spacing:-.2px;margin-bottom:9px}
+  .principle p{color:var(--muted);font-size:13.5px;line-height:1.6}
+  .principle p b{color:var(--text);font-weight:600}
+
+  /* ============ espécime tipográfico ============ */
+  .spec-grid{display:grid;grid-template-columns:1fr;gap:0;border-top:1px solid var(--hair)}
+  .spec-row{display:grid;grid-template-columns:220px 1fr;gap:28px;padding:26px 0;
+    border-bottom:1px solid var(--hair);align-items:baseline}
+  @media (max-width:800px){.spec-row{grid-template-columns:1fr;gap:12px}}
+  .spec-tag{font-family:var(--mono);font-size:10px;letter-spacing:1.6px;color:var(--muted);
+    text-transform:uppercase;line-height:1.7}
+  .spec-tag b{display:block;color:var(--bronze);font-weight:500}
+  .verdict{border:1px solid var(--hair);border-left:2px solid var(--bronze);border-radius:0 14px 14px 0;
+    background:var(--card2);padding:22px 26px;margin-top:34px;color:var(--muted);font-size:14px;line-height:1.7}
+  .verdict b{color:var(--text)}
+  .cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
+  .cmp .cell{border:1px solid var(--border);border-radius:16px;background:var(--card2);padding:22px;text-align:left}
+  .cmp .cell.chosen{border-color:rgba(222,184,120,0.4);background:var(--bg)}
+  .cmp .cn{font-family:var(--mono);font-size:9.5px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:14px}
+  .cmp .cell.chosen .cn{color:var(--bronze)}
+  .cmp .cv{font-size:52px;line-height:1;letter-spacing:-.5px}
+  .cmp .cd{margin-top:12px;font-size:12px;color:var(--muted);line-height:1.55}
+  .tnum{font-variant-numeric:tabular-nums lining-nums}
+
+  /* ============ moldura de celular ============ */
+  .figrow{display:flex;gap:44px;flex-wrap:wrap;align-items:flex-start;margin-bottom:72px}
+  .phone{width:390px;min-width:390px;height:844px;border-radius:52px;background:var(--bg);
+    border:1px solid rgba(235,222,202,0.16);box-shadow:0 40px 90px rgba(0,0,0,0.6),0 0 0 8px #0d1013,0 0 0 9px rgba(235,222,202,0.07);
+    position:relative;overflow:hidden;display:flex;flex-direction:column}
+  .ph-status{height:44px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 28px;flex:none}
+  .ph-status .t{font-family:var(--mono);font-size:12.5px;font-weight:500;color:var(--text)}
+  .ph-notch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:112px;height:26px;
+    background:#000;border-radius:14px;z-index:5}
+  .ph-header{flex:none;display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px 14px}
+  .ph-title{font-family:var(--serif);font-weight:400;font-size:22px;letter-spacing:-.2px}
+  .ph-brand{width:72px;font-family:var(--mono);font-size:8px;letter-spacing:1.2px;color:var(--muted);text-align:right}
+  .ph-back{width:38px;height:38px;border-radius:13px;background:var(--card2);border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;color:var(--text)}
+  .ph-body{flex:1;overflow:hidden;position:relative;padding:0 18px;display:flex;flex-direction:column}
+  .ph-fade{position:absolute;left:0;right:0;bottom:0;height:48px;pointer-events:none;
+    background:linear-gradient(to bottom,rgba(8,10,13,0),var(--bg) 88%)}
+  .ph-tabbar{flex:none;display:flex;gap:4px;background:#0C0F13;border-top:1px solid var(--border);
+    padding:7px 8px 16px;position:relative;z-index:4}
+  .ph-tab{flex:1;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:4px;border-radius:12px;color:var(--muted);padding:4px 0;position:relative}
+  .ph-tab.on{background:var(--bronzeSoft);color:var(--bronze)}
+  .ph-tab span{font-size:9.5px;font-weight:500}
+  .ph-tab.on span{font-weight:600}
+  .ph-tab .tdot{position:absolute;top:5px;right:calc(50% - 20px);min-width:15px;height:15px;border-radius:8px;
+    background:var(--bronze);color:var(--bronzeText);font-family:var(--mono);font-size:8.5px;display:flex;align-items:center;
+    justify-content:center;padding:0 4px}
+
+  .figcap{flex:1;min-width:300px;max-width:470px;padding-top:8px}
+  .figcap .fc-kicker{font-family:var(--mono);font-size:10px;letter-spacing:1.8px;color:var(--bronze);
+    text-transform:uppercase;margin-bottom:12px}
+  .figcap h3{font-family:var(--serif);font-weight:400;font-size:30px;letter-spacing:-.3px;margin-bottom:16px}
+  .figcap h4{font-family:var(--ui);font-weight:600;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;
+    color:var(--muted);margin:22px 0 10px}
+  .figcap p{color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:10px}
+  .figcap ul{list-style:none;margin:0 0 10px}
+  .figcap li{color:var(--muted);font-size:14px;line-height:1.6;padding-left:18px;position:relative;margin-bottom:8px}
+  .figcap li::before{content:"—";position:absolute;left:0;color:var(--bronze)}
+  .figcap li b,.figcap p b{color:var(--text);font-weight:600}
+
+  /* ============ peças da UI (mockups + galeria) ============ */
+  .eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:1.6px;color:var(--bronze);text-transform:uppercase}
+  .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1.3px;color:var(--muted);text-transform:uppercase}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px}
+  .card2{background:var(--card2);border:1px solid var(--border);border-radius:16px}
+  .pbar{height:4px;border-radius:99px;background:rgba(255,255,255,0.07);overflow:hidden}
+  .pbar i{display:block;height:100%;border-radius:99px;background:var(--bronze)}
+
+  /* PointTag — o jogo como notação: número na margem, não chip */
+  .pts{font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--muted);
+    letter-spacing:.4px;white-space:nowrap}
+  .pts.won{color:var(--bronze)}
+  .pts.big{font-size:12px}
+
+  /* TallyHeader — placar corrente do dia, figura tabular (mono = não dança) */
+  .tally{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:10px 2px 12px;border-bottom:1px solid var(--hair)}
+  .tally .tl{font-family:var(--mono);font-size:9px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase}
+  .tally .tv{font-family:var(--mono);font-size:15px;font-weight:500;color:var(--bronze);
+    font-variant-numeric:tabular-nums;letter-spacing:.3px}
+  .tally .tv small{font-size:9.5px;color:var(--muted);letter-spacing:1px}
+
+  /* CheckRow editorial — ritmo com preço na margem */
+  .ckrow{display:flex;align-items:flex-start;gap:12px;background:var(--card);border:1px solid var(--border);
+    border-radius:14px;padding:13px 14px;min-height:54px;margin-bottom:8px}
+  .ckrow .box{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--muted);flex:none;
+    display:flex;align-items:center;justify-content:center;margin-top:1px;color:transparent}
+  .ckrow.done{border-color:rgba(222,184,120,0.3)}
+  .ckrow.done .box{background:var(--bronze);border-color:var(--bronze);color:var(--bronzeText)}
+  .ckrow .nm{font-weight:600;font-size:14.5px;flex:1;line-height:1.3;min-width:0}
+  .ckrow.done .nm{color:var(--bronze)}
+  .ckrow .steps{margin-top:5px;font-size:12px;color:var(--muted);line-height:1.5}
+  .ckrow .steps b{font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--muted)}
+
+  /* RiteButton — único primário do rito */
+  .rite{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:56px;
+    background:linear-gradient(135deg,#E8C88C,#DEB878 55%,#CDA45F);color:var(--bronzeText);border-radius:16px;
+    font-family:var(--ui);font-weight:700;font-size:16px;border:none;
+    box-shadow:0 10px 28px rgba(222,184,120,0.2)}
+
+  /* StreakLine — fileira de dias; o vazio fica, ninguém é punido */
+  .streak{display:flex;align-items:flex-end;gap:8px}
+  .streak .sd{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .streak .sd i{width:13px;height:13px;border-radius:50%;border:1px solid rgba(154,155,163,0.55)}
+  .streak .sd.on i{background:var(--bronze);border-color:var(--bronze)}
+  .streak .sd.today i{box-shadow:0 0 0 3px var(--bronzeSoft)}
+  .streak .sd.hole i{background:transparent;border-color:rgba(154,155,163,0.3)}
+  .streak .sd span{font-family:var(--mono);font-size:7px;letter-spacing:.6px;color:var(--muted)}
+
+  /* LedgerRow — linha de razão: fio de cabelo, respiro, mono tabular à direita */
+  .lrow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    padding:11px 2px;border-bottom:1px solid var(--hair)}
+  .lrow .lk{font-family:var(--ui);font-size:12.5px;color:var(--muted)}
+  .lrow .lv{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lrow .lv.gain{color:var(--success)}
+  .lrow .lv.off{color:var(--muted)} /* desconto: fato, não erro — nunca danger */
+
+  /* número-herói do placar */
+  .hero-num{font-family:var(--serif);font-weight:400;font-size:92px;line-height:.92;
+    letter-spacing:-1px;color:var(--text)}
+  .hero-num small{font-size:22px;color:var(--muted);letter-spacing:0;font-style:italic}
+
+  /* selo de nível */
+  .seal{width:50px;height:50px;border-radius:25px;border:1px solid rgba(222,184,120,0.35);
+    background:var(--bronzeSoft);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none}
+  .seal .s1{font-family:var(--mono);font-size:7px;letter-spacing:1px;color:var(--bronze)}
+  .seal .s2{font-family:var(--serif);font-size:19px;line-height:1.1}
+
+  /* métricas da Home */
+  .mrow{display:flex;gap:8px}
+  .metric{flex:1;min-height:86px;border-radius:16px;padding:12px;background:var(--card2);border:1px solid var(--border)}
+  .metric .ml{font-family:var(--mono);font-size:8.5px;letter-spacing:1.1px;color:var(--muted)}
+  .metric .mv{font-family:var(--serif);font-size:23px;margin:7px 0;font-weight:400}
+  .metric .mv small{color:var(--muted);font-size:13px}
+
+  /* hero da Home */
+  .hero{border-radius:20px;padding:16px;border:1px solid rgba(222,184,120,0.19);min-height:176px;
+    background:linear-gradient(135deg,#27231D,#171B1D 55%,#12161B);display:flex;flex-direction:column;position:relative}
+  .hero .ht{font-family:var(--serif);font-weight:400;font-size:27px;line-height:1.15;letter-spacing:-.3px;margin-top:12px;max-width:88%}
+  .hero .hs{font-size:13px;line-height:1.45;color:var(--muted);margin-top:6px;max-width:88%}
+  .hero .hf{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:14px}
+  .hero .ha{font-weight:600;font-size:12.5px;color:var(--bronze)}
+  .hero .arw{width:34px;height:34px;border-radius:17px;background:var(--bronze);color:var(--bronzeText);
+    display:flex;align-items:center;justify-content:center}
+
+  /* linhas de tarefa com notação de pontos */
+  .trow{display:flex;align-items:center;gap:11px;border-bottom:1px solid var(--border);padding:11px 0;min-height:70px}
+  .tcheck{width:38px;height:38px;border-radius:19px;border:1.5px solid;display:flex;align-items:center;
+    justify-content:center;flex:none}
+  .tcheck i{width:11px;height:11px;border-radius:6px}
+  .trow .tt{font-weight:600;font-size:14px;line-height:1.3}
+  .trow .tm{font-size:11px;color:var(--muted);margin-top:3px}
+  .trow.done .tt{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(154,155,163,0.5);
+    text-decoration-thickness:1px}
+  .trow .margin{width:36px;text-align:right;flex:none}
+
+  /* PendingCard — navegação com sinal */
+  .pend{display:flex;align-items:center;gap:12px;background:var(--card2);border:1px solid var(--border);
+    border-radius:14px;padding:12px 14px;margin-bottom:8px}
+  .pend .pi{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none}
+  .pend .pl{flex:1;min-width:0}
+  .pend .pt{font-weight:600;font-size:13.5px}
+  .pend .ps{font-size:10.5px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+  .pend .ct{min-width:24px;height:24px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:11px;font-weight:500;padding:0 7px;flex:none}
+
+  .badge{display:inline-flex;align-items:center;gap:7px;min-height:30px;border:1px solid;
+    border-radius:99px;padding:0 11px;background:rgba(255,255,255,0.025);font-size:11.5px;color:var(--muted)}
+  .badge i{width:5px;height:5px;border-radius:3px;flex:none}
+  .badge b{font-family:var(--mono);font-size:11px;font-weight:500}
+
+  /* UndoToast — recibo de conclusão */
+  .toast{display:flex;align-items:center;gap:10px;background:#191D22;border:1px solid rgba(222,184,120,0.28);
+    border-radius:14px;padding:11px 14px;box-shadow:0 14px 34px rgba(0,0,0,0.5)}
+  .toast .tm{font-size:12.5px;flex:1}
+  .toast .tu{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--bronze);text-transform:uppercase}
+
+  /* ============ antes → depois ============ */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:26px}
+  @media (max-width:900px){.ba{grid-template-columns:1fr}}
+  .ba .pane{border-radius:20px;border:1px solid var(--border);background:var(--bg);padding:22px;position:relative;overflow:hidden}
+  .ba .pane.old{opacity:.92}
+  .ba .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;margin-bottom:16px;
+    display:inline-block;padding:5px 10px;border-radius:99px;border:1px solid var(--border)}
+  .ba .old .tag{color:var(--muted)}
+  .ba .new .tag{color:var(--bronze);border-color:rgba(222,184,120,0.4);background:var(--bronzeSoft)}
+  .ba .new{border-color:rgba(222,184,120,0.3)}
+  .ba-note{color:var(--muted);font-size:13.5px;line-height:1.65;max-width:880px}
+  .ba-note b{color:var(--text)}
+  .oldlink{color:var(--bronze);font-size:13.5px;padding:4px 0;display:block}
+  .oldlink.dim{color:var(--muted)}
+  .oldcheck{color:var(--muted);font-size:14px;padding:7px 0;display:block}
+  .oldcheck.on{color:var(--bronze)}
+
+  /* ============ sistema / tokens ============ */
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .sw{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--card2)}
+  .sw .c{height:56px}
+  .sw .d{padding:9px 11px}
+  .sw .n{font-size:12px;font-weight:600}
+  .sw .h{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px}
+  .subhead{font-family:var(--mono);font-size:10.5px;letter-spacing:1.8px;color:var(--bronze);
+    text-transform:uppercase;margin:44px 0 18px}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}
+  .gcell{border:1px solid var(--border);border-radius:18px;background:var(--bg);padding:20px}
+  .gcell .gn{font-family:var(--mono);font-size:10px;letter-spacing:1.4px;color:var(--muted);
+    text-transform:uppercase;margin-bottom:6px}
+  .gcell .gd{font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:16px}
+  .gcell .stage{background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .typetable{width:100%;border-collapse:collapse;margin-top:6px}
+  .typetable td{border-bottom:1px solid var(--hair);padding:12px 8px;vertical-align:baseline}
+  .typetable .spec{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;text-align:right}
+
+  /* ============ herança / rejeição ============ */
+  .inherit{border:1px solid var(--hair);border-radius:18px;background:var(--card2);padding:26px 28px}
+  .inherit p{color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:10px}
+  .inherit p:last-child{margin-bottom:0}
+  .inherit b{color:var(--text)}
+  .inherit .no{color:var(--danger)}
+
+  /* ============ plano em ondas ============ */
+  .waves{display:flex;flex-direction:column;gap:14px}
+  .wave{border:1px solid var(--border);border-radius:18px;background:var(--card2);padding:24px 26px}
+  .wave .wh{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+  .wave .wn{font-family:var(--serif);font-size:34px;color:var(--bronze)}
+  .wave .wt{font-family:var(--serif);font-size:22px;font-weight:400;letter-spacing:-.2px}
+  .wave .wg{font-family:var(--mono);font-size:9.5px;letter-spacing:1.2px;color:var(--success);
+    text-transform:uppercase;margin-left:auto}
+  .wave p{color:var(--muted);font-size:13.5px;line-height:1.65;margin-bottom:8px}
+  .wave p b{color:var(--text)}
+  .wave .cost{font-family:var(--mono);font-size:10.5px;color:var(--info);letter-spacing:.4px;margin-top:6px;display:block}
+  .foot{margin-top:100px;padding-top:32px;border-top:1px solid var(--hair);display:flex;
+    justify-content:space-between;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:10px;
+    letter-spacing:1.4px;color:var(--muted);text-transform:uppercase}
+</style>
+</head>
+<body>
+<!-- ============ ícones Feather (inline, traço 2) ============ -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></symbol>
+  <symbol id="i-feather" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></symbol>
+  <symbol id="i-check-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-message-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-sunrise" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/><polyline points="8 6 12 2 16 6"/></symbol>
+  <symbol id="i-sunset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="2" x2="12" y2="9"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/><polyline points="16 5 12 9 8 5"/></symbol>
+  <symbol id="i-arrow-up-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-trending-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a1.65 1.65 0 0 0 .33 1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33 1.82 2 2 0 0 1 2 2 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2 2 2 2 0 0 1 2-2h-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0 1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51 1H21a2 2 0 0 1-2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2h-.09a1.65 1.65 0 0 0-1.51 1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09a1.65 1.65 0 0 0 .33 1.82 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33l.06-.06a1.65 1.65 0 0 0 1.51 1H9a1.65 1.65 0 0 0 1-1.51V9a2 2 0 0 1 2 2 2 2 0 0 1 2 2 2 2 0 0 1 2 2 2 2 0 0 1 2-2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82.33l.06.06a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1-2 2 2 2 0 0 1-2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1.51 1H9a1.65 1.65 0 0 0 1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09z"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></symbol>
+  <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+</svg>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="kicker">Aeternum · escritório · direção D3</div>
+    <h1>Noturno editorial: o jogo escrito <em>na margem</em>, não pintado na tela.</h1>
+    <p>A alma da variação A — sobriedade, midnight desk, bronze raro — com as duas falhas que o Leo
+      apontou corrigidas de raiz: a tipografia (Fraunces sai, Instrument Serif entra; a defesa está
+      no espécime) e o jogo, que aqui aparece como <b>notação editorial</b>: o ponto é um número na
+      margem da linha, o streak é uma fileira de dias, o placar é uma página de razão. Nenhum HUD,
+      nenhum neon, nenhum grito.</p>
+    <div class="meta">
+      <span>alvo · Android / Expo 54</span>
+      <span>fontes · Google Fonts / @expo-google-fonts</span>
+      <span>ícones · Feather</span>
+      <span>animação · Animated puro</span>
+      <span>lidas · theme / ui / App / Fechar / Tasks / Revisao / Home</span>
+    </div>
+  </header>
+
+  <!-- ==================== 1 · PRINCÍPIOS ==================== -->
+  <section id="principios">
+    <div class="sechead">
+      <div class="n">01 — princípios desta direção</div>
+      <h2>Os seis de sempre, mais três desta casa</h2>
+      <p>Um toque resolve, escrever nunca bloqueia, um primário por tela, a tela diz o que precisa
+        dele, fechar devolve, sistema e não telas — continuam valendo na íntegra. O que D3 acrescenta:</p>
+    </div>
+    <div class="principles">
+      <div class="principle">
+        <div class="pn">D3·1</div>
+        <h3>O jogo é notação, não cenografia</h3>
+        <p>Pontos moram <b>na margem da linha que os gerou</b>, em mono tabular, como nota de
+          rodapé. Se um elemento brilha, é porque é o único bronze da tela — nunca porque grita.</p>
+      </div>
+      <div class="principle">
+        <div class="pn">D3·2</div>
+        <h3>O número carrega o peso</h3>
+        <p>Placar e recompensa se apoiam em <b>algarismo grande, fio de cabelo e respiro</b> — a
+          energia vem da escala tipográfica, não de saturação. Cor saturada de área grande: zero.</p>
+      </div>
+      <div class="principle">
+        <div class="pn">D3·3</div>
+        <h3>A falha fica no papel, sem carimbo</h3>
+        <p>Streak quebrado mostra <b>o dia vazio na fileira</b> e o recorde preservado — a lei do
+          código (“placar informa, não julga; pontos nunca descem”) vira forma gráfica, não discurso.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 2 · ESPÉCIME ==================== -->
+  <section id="especime">
+    <div class="sechead">
+      <div class="n">02 — espécime tipográfico</div>
+      <h2>Fraunces sai. <em>Instrument Serif</em> entra.</h2>
+      <p>Decisão tomada e defendida aqui, em tamanho real. Resumo: Fraunces é uma fonte de eixo
+        óptico — nasceu para 60px+ com <code>opsz</code> alto e os eixos SOFT/WONK ajustáveis. O app
+        carrega <b>uma instância estática</b> (<code>Fraunces_500Medium</code>) e a usa a 18–34px,
+        onde ela engrossa, arredonda e fica rusticamente “fofa” — é isso que soa como “tipografia
+        não muito boa”. Ajustar o eixo óptico no RN/Expo não é viável: <code>@expo-google-fonts</code>
+        entrega instâncias estáticas por peso, sem controle de <code>opsz</code>. Trocar de família
+        é mais barato e melhor do que lutar com a fonte errada no tamanho errado.</p>
+    </div>
+
+    <div class="spec-grid">
+      <div class="spec-row">
+        <div class="spec-tag"><b>eyebrow</b>IBM Plex Mono 500 · 10px<br>caps · tracking 1.6</div>
+        <div class="eyebrow">fechamento · quarta-feira · dia yoga</div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-tag"><b>título de herói</b>Instrument Serif 400 · 40px<br>itálico no acento</div>
+        <div style="font-family:var(--serif);font-size:40px;line-height:1.08;letter-spacing:-.3px">
+          O dia fecha com <em style="color:var(--bronze)">um toque.</em></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-tag"><b>título de seção</b>Instrument Serif 400 · 21px</div>
+        <div style="font-family:var(--serif);font-size:21px">Agora · Próximos 30 dias · Placar</div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-tag"><b>corpo / lista</b>Space Grotesk 500–600 · 14.5px</div>
+        <div style="font-size:14.5px;font-weight:600;line-height:1.45">Responder a proposta do Fernando antes das 18h
+          <span style="display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:3px">
+          Trabalho · hoje 18:00 — corpo segue em Space Grotesk, que já estava boa e não se mexe.</span></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-tag"><b>notação de pontos</b>IBM Plex Mono 500 · 10.5px<br>tabular</div>
+        <div style="font-family:var(--mono);font-size:12px;line-height:2">
+          <span class="pts won" style="font-size:12px">+20</span> <span style="color:var(--muted)">ritmo marcado</span><br>
+          <span class="pts" style="font-size:12px">+10</span> <span style="color:var(--muted)">tarefa aberta</span><br>
+          <span class="pts won" style="font-size:12px">+140</span> <span style="color:var(--muted)">dia fechado</span>
+        </div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-tag"><b>algarismo-herói</b>Instrument Serif 400 · 92px<br>figuras lining</div>
+        <div class="hero-num">1.660<small> pts</small></div>
+      </div>
+      <div class="spec-row">
+        <div class="spec-tag"><b>contador vivo</b>IBM Plex Mono 500 · tabular<br>(atualiza sem dançar)</div>
+        <div>
+          <span style="font-family:var(--mono);font-size:26px;font-weight:500;color:var(--bronze);font-variant-numeric:tabular-nums">1.660</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:1px;margin-left:10px">SALDO · ATUALIZA AO VIVO</span>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6;max-width:520px">
+            Regra da casa: número que <b>atualiza na frente dele</b> (saldo contando, tally do dia) é mono
+            tabular — dígitos de largura fixa, nada pula. Número que <b>chega pronto</b> (o +140 da
+            recompensa, o saldo-herói do placar) é serif grande. As duas vozes nunca disputam a mesma linha.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="font-family:var(--serif);font-weight:400;font-size:26px;margin:44px 0 6px">O mesmo número, três vozes — a prova</h3>
+    <p style="color:var(--muted);font-size:13.5px;max-width:640px;line-height:1.65">O pedido era “o mesmo número em
+      dois pesos”. Instrument Serif tem um peso só (400 + itálico) — e é exatamente por isso que a comparação honesta
+      é de voz, não de peso: o que as alternativas fazem com o mesmo algarismo.</p>
+    <div class="cmp">
+      <div class="cell">
+        <div class="cn">Space Grotesk 700 — a voz da C</div>
+        <div class="cv" style="font-family:var(--ui);font-weight:700">1.380</div>
+        <div class="cd">Geométrica e pesada — cara de placar de fliperama. Foi o que fez a C parecer
+          HUD mesmo sem neon. Rejeitada para números grandes.</div>
+      </div>
+      <div class="cell">
+        <div class="cn">Fraunces 500 — a voz da A (atual)</div>
+        <div class="cv" style="font-family:var(--serifOld);font-weight:500">1.380</div>
+        <div class="cd">Em corpo de tela (18–34px) a Fraunces estática perde o recorte: terminais
+          arredondados, ritmo irregular entre dígitos. É “quase bonita” — o pior veredito para um detalhista.</div>
+      </div>
+      <div class="cell chosen">
+        <div class="cn">Instrument Serif 400 — escolhida</div>
+        <div class="cv" style="font-family:var(--serif)">1.380</div>
+        <div class="cd">Contraste alto, traço afiado, proporção editorial. Um peso basta porque a voz
+          vem do contraste, não do peso. O itálico vira acento raro (“o dia fecha <i>com um toque</i>”).</div>
+      </div>
+    </div>
+
+    <div class="verdict">
+      <b>Por que não Newsreader:</b> é serifada de texto, feita para parágrafo longo — em título e em
+      algarismo grande fica literária demais, “clube do livro”, e as figuras oldstyle dela brigam com
+      a ideia de placar. <b>Por que não Fraunces ajustada:</b> exigiria eixo óptico que o
+      <code>@expo-google-fonts</code> não expõe — inviável no stack real, ponto final.
+      <b>Instrument Serif</b> existe no Google Fonts e tem pacote <code>@expo-google-fonts/instrument-serif</code>
+      (<code>InstrumentSerif_400Regular</code> + <code>_400Italic</code>): carrega exatamente como as três atuais.
+      Custo da troca: editar <code>fonts.serif</code> em <code>theme.ts</code> e os imports de <code>App.tsx</code>.
+      Nada mais — todos os estilos já apontam para o token.
+    </div>
+  </section>
+
+  <!-- ==================== 3 · MOCKUPS ==================== -->
+  <section id="mockups">
+    <div class="sechead">
+      <div class="n">03 — mockups</div>
+      <h2>As cinco telas que importam, redesenhadas</h2>
+      <p>Renderizadas com os tokens reais do <code>theme.ts</code>. Todos os rótulos vêm do código
+        (<code>Fechar.tsx</code>, <code>Tasks.tsx</code>, <code>Revisao.tsx</code>, <code>Home.tsx</code>);
+        os pontos por ação são a tabela local proposta (<code>POINTS</code>, ver onda 2) — nenhum
+        endpoint novo até a onda do streak.</p>
+    </div>
+
+    <!-- ========== FECHAR O DIA — rito ========== -->
+    <div class="figrow">
+      <div class="phone">
+        <div class="ph-notch"></div>
+        <div class="ph-status"><span class="t">21:47</span>
+          <span><svg width="16" height="11" viewBox="0 0 16 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#F4EFE7"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#F4EFE7"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#F4EFE7"/><rect x="13" y="0" width="3" height="11" rx="1" fill="#9A9BA3"/></svg>
+          <svg width="23" height="11" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="#9A9BA3"/><rect x="2" y="2" width="14" height="8" rx="1.5" fill="#F4EFE7"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="#9A9BA3"/></svg></span>
+        </div>
+        <div class="ph-header">
+          <div class="ph-back"><svg class="ic" width="17" height="17"><use href="#i-arrow-left"/></svg></div>
+          <div class="ph-title">Fechar o dia</div>
+          <div class="ph-brand">AETERNUM</div>
+        </div>
+        <div class="ph-body">
+          <div class="tally">
+            <span class="tl">quarta · dia yoga · 11ª sequência em curso</span>
+            <span class="tv">+80 <small>HOJE</small></span>
+          </div>
+          <div style="margin-top:14px">
+            <div class="lbl" style="margin-bottom:8px">Manhã · 2/3 · +40</div>
+            <div class="ckrow done">
+              <div class="box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+              <div style="flex:1;min-width:0"><div class="nm">meditar 10 min</div></div>
+              <span class="pts won">+20</span>
+            </div>
+            <div class="ckrow done">
+              <div class="box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+              <div style="flex:1;min-width:0"><div class="nm">yoga da manhã</div></div>
+              <span class="pts won">+20</span>
+            </div>
+            <div class="ckrow">
+              <div class="box"></div>
+              <div style="flex:1;min-width:0"><div class="nm">café sem tela</div></div>
+              <span class="pts">+20</span>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <div class="lbl" style="margin-bottom:8px">Dia · 1/1 · +20</div>
+            <div class="ckrow done">
+              <div class="box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+              <div style="flex:1;min-width:0"><div class="nm">shutdown às 19h</div></div>
+              <span class="pts won">+20</span>
+            </div>
+          </div>
+          <div style="margin-top:16px">
+            <div class="lbl" style="margin-bottom:8px">Noite · 0/2</div>
+            <div class="ckrow">
+              <div class="box"></div>
+              <div style="flex:1;min-width:0"><div class="nm">skincare da noite</div>
+                <div class="steps"><b>1.</b> lavar o rosto · <b>2.</b> hidratante</div></div>
+              <span class="pts">+20</span>
+            </div>
+            <div class="ckrow">
+              <div class="box"></div>
+              <div style="flex:1;min-width:0"><div class="nm">ler 20 min</div></div>
+              <span class="pts">+20</span>
+            </div>
+          </div>
+          <div style="margin-top:auto;padding:16px 0 10px">
+            <button class="rite">Fechar o dia · garante +80</button>
+            <div style="text-align:center;margin-top:10px">
+              <span style="font-size:12px;color:var(--muted)">escrever como foi o dia <span style="font-family:var(--mono);font-size:10px;color:var(--bronze)">+40</span> · opcional, sempre depois</span>
+            </div>
+          </div>
+          <div class="ph-fade"></div>
+        </div>
+        <div class="ph-tabbar">
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-circle"/></svg><span>Hoje</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-feather"/></svg><span>Capturar</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-check-square"/></svg><span>Tarefas</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-grid"/></svg><span>Painel</span><span class="tdot">8</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-message-circle"/></svg><span>Mentor</span></div>
+        </div>
+      </div>
+      <div class="figcap">
+        <div class="fc-kicker">tela 1 · prioridade nº 1</div>
+        <h3>Fechar o dia — o rito em um toque</h3>
+        <ul>
+          <li><b>Um primário, sempre habilitado:</b> “Fechar o dia · garante +80” fecha com o que
+            estiver marcado. O valor no botão é o tally real do dia — ele vê o que já garantiu, não
+            o que perdeu. Fechar com 3 de 7 ritmos ainda vale o dia; pontos nunca descem.</li>
+          <li><b>Os pontos são notação na margem,</b> alinhados à direita de cada CheckRow, na
+            mesma coluna vertical (a margem de um jornal). Em lista de 7 ritmos não vira ruído
+            porque é sempre o mesmo glifo, no mesmo lugar, na mesma cor quieta — o olho lê a
+            coluna só quando quer.</li>
+          <li><b>Os blocos Manhã/Dia/Noite mostram o parcial</b> (“2/3 · +40”) — o detalhista vê de
+            onde vem cada ponto; nada é caixa-preta. Passos seguem roteiro numerado em cinza, sem
+            checkbox próprio (regra que já existe no código).</li>
+          <li><b>Escrever virou side quest tipográfica:</b> o despejo com <code>+40</code> é uma
+            linha discreta abaixo do primário — presente, com preço, jamais portão. É o fim da era
+            dos dois links de texto iguais.</li>
+          <li><b>A sequência já aparece no rito</b> (“11ª sequência em curso”, no tally) — o fechamento
+            é o que mantém a fileira viva, e ele sabe disso antes de apertar.</li>
+        </ul>
+        <h4>o que mudou e por quê</h4>
+        <p>Hoje a tela mais frequente do app são dois links de texto sem hierarquia. Aqui o gesto de
+          exausto-das-22h custa um toque num alvo de 56px — e a notação de pontos dá ao detalhista a
+          contabilidade que o mantém voltando, sem transformar a tela em cassino.</p>
+      </div>
+    </div>
+
+    <!-- ========== FECHAR O DIA — recompensa ========== -->
+    <div class="figrow">
+      <div class="phone">
+        <div class="ph-notch"></div>
+        <div class="ph-status"><span class="t">21:52</span>
+          <span><svg width="16" height="11" viewBox="0 0 16 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#F4EFE7"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#F4EFE7"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#F4EFE7"/><rect x="13" y="0" width="3" height="11" rx="1" fill="#9A9BA3"/></svg>
+          <svg width="23" height="11" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="#9A9BA3"/><rect x="2" y="2" width="14" height="8" rx="1.5" fill="#F4EFE7"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="#9A9BA3"/></svg></span>
+        </div>
+        <div class="ph-body" style="padding-top:34px">
+          <div style="text-align:center">
+            <div class="eyebrow">dia fechado · quarta-feira</div>
+            <div class="hero-num" style="font-size:104px;margin-top:18px">+140</div>
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:1.6px;color:var(--muted);margin-top:12px">
+              SALDO <span style="color:var(--bronze);font-variant-numeric:tabular-nums">1.520 → 1.660</span></div>
+          </div>
+          <div style="border-top:1px solid var(--hair);margin-top:28px;padding-top:22px;text-align:center">
+            <div style="font-family:var(--serif);font-size:30px">12 <em style="font-size:20px;color:var(--muted)">dias seguidos</em></div>
+            <div class="streak" style="justify-content:center;margin-top:14px">
+              <div class="sd on"><i></i><span>Q</span></div>
+              <div class="sd on"><i></i><span>Q</span></div>
+              <div class="sd on"><i></i><span>S</span></div>
+              <div class="sd on"><i></i><span>S</span></div>
+              <div class="sd on"><i></i><span>D</span></div>
+              <div class="sd on"><i></i><span>S</span></div>
+              <div class="sd on"><i></i><span>T</span></div>
+              <div class="sd on"><i></i><span>Q</span></div>
+              <div class="sd on"><i></i><span>Q</span></div>
+              <div class="sd on"><i></i><span>S</span></div>
+              <div class="sd on"><i></i><span>S</span></div>
+              <div class="sd today on"><i></i><span>H</span></div>
+            </div>
+            <div style="font-family:var(--mono);font-size:9px;letter-spacing:1.2px;color:var(--muted);margin-top:12px">RECORDE · 18</div>
+          </div>
+          <div style="border-top:1px solid var(--hair);margin-top:24px;padding-top:16px">
+            <div class="lrow" style="border-bottom:none;padding:6px 2px">
+              <span class="lk">ciclo 3 · semana 4/12</span>
+              <span class="lv">1.660 / 3.000</span>
+            </div>
+            <div class="pbar" style="margin-top:6px"><i style="width:55%"></i></div>
+            <div class="lrow" style="border-bottom:none;padding:12px 2px 4px">
+              <span class="lk">nível N2 · vitalício</span>
+              <span class="lv off">N3 em 1.340</span>
+            </div>
+          </div>
+          <div style="margin-top:auto;padding:14px 0 12px;text-align:center">
+            <span style="font-size:12.5px;color:var(--bronze);font-weight:600">ver placar</span>
+          </div>
+          <div class="ph-fade"></div>
+        </div>
+        <div class="ph-tabbar">
+          <div class="ph-tab on"><svg class="ic" width="20" height="20"><use href="#i-circle"/></svg><span>Hoje</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-feather"/></svg><span>Capturar</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-check-square"/></svg><span>Tarefas</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-grid"/></svg><span>Painel</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-message-circle"/></svg><span>Mentor</span></div>
+        </div>
+      </div>
+      <div class="figcap">
+        <div class="fc-kicker">tela 2 · a dopamina do dia</div>
+        <h3>A recompensa — número, fileira, fio de cabelo</h3>
+        <ul>
+          <li><b>O algarismo é a peça tipográfica:</b> “+140” em Instrument Serif a 104px, sem glow,
+            sem confete, sem emoji. A energia é escala e respiro — o único momento em que a fonte
+            display vai ao limite.</li>
+          <li><b>O streak é a fileira de dias</b> — doze círculos preenchidos, o de hoje com anel.
+            Tipo carrega o peso (“12 dias seguidos” em serif); o recorde (“18”) fica em mono pequeno,
+            sempre visível: a história não se apaga quando a sequência quebra.</li>
+          <li><b>A quebra, sem punição:</b> o dia falhado fica como círculo vazio na fileira — o fato
+            está no papel, sem vermelho, sem “você perdeu”, sem reset dramático. No fechamento
+            seguinte o contador diz “dia 1 de uma nova sequência · recorde 18 continua teu”.
+            Pontos não descem; só a fileira conta a verdade. (Renderizado na galeria de componentes.)</li>
+          <li><b>O resto é razão:</b> saldo antes → depois em mono tabular, ciclo com barra de 4px,
+            “N3 em 1.340” — tudo já vem do <code>getPontos()</code> que o <code>aprovar()</code> chama
+            hoje e joga fora num parágrafo de 13px.</li>
+          <li><b>Animação barata:</b> o +140 conta de 0 (600ms, <code>Animated.timing</code>) e o
+            círculo de hoje acende com spring. Sem reanimated — não está instalado.</li>
+        </ul>
+        <h4>honestidade de dados</h4>
+        <p>Saldo, ciclo e nível existem. <b>Streak corrido não existe no BFF</b> — <code>semanal.dailies</code>
+          conta fechamentos da semana, não a sequência. Custo real na onda 4; até lá a fileira mostra
+          os últimos 7–12 dias derivados do histórico semanal.</p>
+      </div>
+    </div>
+
+    <!-- ========== TAREFAS ========== -->
+    <div class="figrow">
+      <div class="phone">
+        <div class="ph-notch"></div>
+        <div class="ph-status"><span class="t">16:20</span>
+          <span><svg width="16" height="11" viewBox="0 0 16 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#F4EFE7"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#F4EFE7"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#F4EFE7"/><rect x="13" y="0" width="3" height="11" rx="1" fill="#9A9BA3"/></svg>
+          <svg width="23" height="11" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="#9A9BA3"/><rect x="2" y="2" width="14" height="8" rx="1.5" fill="#F4EFE7"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="#9A9BA3"/></svg></span>
+        </div>
+        <div class="ph-header">
+          <div style="width:38px"></div>
+          <div class="ph-title">Tarefas</div>
+          <div class="ph-brand">AETERNUM</div>
+        </div>
+        <div class="ph-body">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px">
+            <div>
+              <div style="font-family:var(--mono);color:var(--bronze);font-size:9px;letter-spacing:1.4px">CENTRAL DE EXECUÇÃO</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-top:4px">12 abertas · 2 atrasadas</div>
+            </div>
+            <div style="width:42px;height:42px;border-radius:14px;background:var(--bronze);display:flex;align-items:center;justify-content:center;color:var(--bronzeText)">
+              <svg width="19" height="19"><use href="#i-plus"/></svg></div>
+          </div>
+          <div class="tally">
+            <span class="tl">hoje · 3 concluídas</span>
+            <span class="tv">+35 <small>GANHOS</small></span>
+          </div>
+          <div style="margin-top:14px">
+            <div class="eyebrow" style="margin-bottom:2px">execução</div>
+            <div style="font-family:var(--serif);font-size:20px;margin-bottom:6px">Agora</div>
+
+            <div class="trow">
+              <div class="tcheck" style="border-color:rgba(215,121,105,0.67)"><i style="background:rgba(215,121,105,0.13)"></i></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                  <span style="font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--danger)">TRABALHO</span>
+                  <span style="font-family:var(--mono);font-size:9.5px;color:var(--danger)">ontem</span>
+                </div>
+                <div class="tt" style="margin-top:3px">Responder a proposta do Fernando</div>
+              </div>
+              <div class="margin pts big" style="color:var(--danger)">+15</div>
+            </div>
+
+            <div class="trow">
+              <div class="tcheck" style="border-color:rgba(201,169,126,0.67)"><i style="background:rgba(201,169,126,0.13)"></i></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                  <span style="font-family:var(--mono);font-size:9px;letter-spacing:1px;color:#C9A97E">TRABALHO</span>
+                  <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">hoje 18:00</span>
+                </div>
+                <div class="tt" style="margin-top:3px">Enviar relatório de sexta</div>
+              </div>
+              <div class="margin pts big">+10</div>
+            </div>
+
+            <div class="trow done">
+              <div class="tcheck" style="border-color:var(--bronze);background:var(--bronze)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#181108" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                  <span style="font-family:var(--mono);font-size:9px;letter-spacing:1px;color:var(--muted)">FINANCE</span>
+                  <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">hoje</span>
+                </div>
+                <div class="tt" style="margin-top:3px">Pagar fatura do cartão</div>
+              </div>
+              <div class="margin pts big won">+10</div>
+            </div>
+
+            <div class="trow">
+              <div class="tcheck" style="border-color:rgba(155,142,196,0.67)"><i style="background:rgba(155,142,196,0.13)"></i></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                  <span style="font-family:var(--mono);font-size:9px;letter-spacing:1px;color:#9B8EC4">SAÚDE MENTAL</span>
+                  <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">amanhã</span>
+                </div>
+                <div class="tt" style="margin-top:3px">Agendar terapia de junho</div>
+              </div>
+              <div class="margin pts big">+10</div>
+            </div>
+
+            <div class="trow" style="opacity:.65">
+              <div class="tcheck" style="border-color:rgba(126,154,201,0.5)"><i style="background:rgba(126,154,201,0.1)"></i></div>
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+                  <span style="font-family:var(--mono);font-size:9px;letter-spacing:1px;color:#7E9AC9">CARREIRA</span>
+                  <span style="font-family:var(--mono);font-size:9.5px;color:var(--muted)">em 5 dias</span>
+                </div>
+                <div class="tt" style="margin-top:3px">Atualizar portfólio com o Arc</div>
+              </div>
+              <div class="margin pts big">+10</div>
+            </div>
+          </div>
+
+          <div style="position:absolute;left:18px;right:18px;bottom:14px">
+            <div class="toast">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DEB878" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <span class="tm">Pagar fatura do cartão — concluída</span>
+              <span class="tu">+10 · desfazer</span>
+            </div>
+          </div>
+          <div class="ph-fade"></div>
+        </div>
+        <div class="ph-tabbar">
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-circle"/></svg><span>Hoje</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-feather"/></svg><span>Capturar</span></div>
+          <div class="ph-tab on"><svg class="ic" width="20" height="20"><use href="#i-check-square"/></svg><span>Tarefas</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-grid"/></svg><span>Painel</span><span class="tdot">8</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-message-circle"/></svg><span>Mentor</span></div>
+        </div>
+      </div>
+      <div class="figcap">
+        <div class="fc-kicker">tela 3 · pontos por tarefa</div>
+        <h3>Tarefas — a margem que conta o jogo</h3>
+        <ul>
+          <li><b>Cada linha mostra o que vale,</b> numa coluna de margem fixa à direita (+10, +15).
+            Num lista de 12 tarefas não vira ruído por três motivos: o glifo é sempre o mesmo (mono
+            10.5–12px), a posição é sempre a mesma (coluna de 36px, alinhamento de margem), e a cor
+            padrão é <code>textMuted</code> — bronze só depois de ganho. Notação, não chip.</li>
+          <li><b>Os preços têm lógica legível:</b> tarefa vale +10; atrasada vale +15 (resgatar o
+            que estava parado custa mais energia, então paga mais — e o valor herda a cor de
+            severidade, ligando preço e urgência sem texto extra). Tabela na onda 2.</li>
+          <li><b>O gesto de concluir:</b> um toque no círculo (a confirmação-inline de hoje sai —
+            era fricção na ação primária). No toque, três coisas acontecem com <code>Animated</code>
+            puro: o círculo preenche em bronze, o <b>+10 sai da margem e sobe para o tally</b> (slide
+            + fade de 300ms, número animado entre estados, não física), e o <b>tally do topo
+            incrementa</b> em mono tabular — o total do dia se forma à vista, sem sair da tela.</li>
+          <li><b>O recibo é o UndoToast</b> (“+10 · desfazer”) — a mesma direção da variação A:
+            concluir sem pedir licença, desfazer a um toque. O item concluído fica na lista com
+            risco fino até o próximo refresh — o detalhista confere o que fez.</li>
+          <li><b>O tally é o fio entre telas:</b> o mesmo “hoje · +35” aparece em Tarefas, no rito
+            de fechamento e na Home. Um número, três molduras — o jogo é um só.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ========== PLACAR (REVISÃO) ========== -->
+    <div class="figrow">
+      <div class="phone">
+        <div class="ph-notch"></div>
+        <div class="ph-status"><span class="t">22:04</span>
+          <span><svg width="16" height="11" viewBox="0 0 16 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#F4EFE7"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#F4EFE7"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#F4EFE7"/><rect x="13" y="0" width="3" height="11" rx="1" fill="#9A9BA3"/></svg>
+          <svg width="23" height="11" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="#9A9BA3"/><rect x="2" y="2" width="14" height="8" rx="1.5" fill="#F4EFE7"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="#9A9BA3"/></svg></span>
+        </div>
+        <div class="ph-header">
+          <div class="ph-back"><svg class="ic" width="17" height="17"><use href="#i-arrow-left"/></svg></div>
+          <div class="ph-title">Revisão</div>
+          <div class="ph-brand">AETERNUM</div>
+        </div>
+        <div class="ph-body">
+          <div style="border-bottom:1px solid var(--hair);padding-bottom:20px">
+            <div class="eyebrow">placar · conquistas</div>
+            <div class="hero-num" style="margin-top:10px">1.660<small> pts</small></div>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+              <div style="display:flex;gap:6px">
+                <div style="width:9px;height:9px;background:var(--bronze);transform:rotate(45deg)"></div>
+                <div style="width:9px;height:9px;background:var(--bronze);transform:rotate(45deg)"></div>
+                <div style="width:9px;height:9px;border:1px solid var(--muted);transform:rotate(45deg)"></div>
+                <div style="width:9px;height:9px;border:1px solid var(--muted);transform:rotate(45deg)"></div>
+              </div>
+              <span style="font-size:11.5px;color:var(--muted)">N2 · vitalício — o nível não regride</span>
+            </div>
+          </div>
+
+          <div style="margin-top:6px">
+            <div class="lrow"><span class="lk">ciclo 3 · semana 4/12</span><span class="lv">1.660 / 3.000</span></div>
+            <div class="lrow"><span class="lk">semana · ganho</span><span class="lv gain">+320</span></div>
+            <div class="lrow"><span class="lk">semana · desconto</span><span class="lv off">−45</span></div>
+            <div class="lrow"><span class="lk">padrão · tela depois das 23h</span><span class="lv off">3 furos · −45</span></div>
+            <div class="lrow"><span class="lk">próximo nível</span><span class="lv off">N3 em 1.340</span></div>
+            <div class="lrow" style="border-bottom:none"><span class="lk">sequência de fechamentos</span><span class="lv">12 dias · recorde 18</span></div>
+          </div>
+
+          <div style="margin-top:14px">
+            <div class="lbl" style="margin-bottom:8px">semana 23 · scorecard</div>
+            <div style="display:flex;align-items:baseline;gap:10px">
+              <span style="font-family:var(--serif);font-size:34px">86<em style="font-size:18px;color:var(--muted)">%</em></span>
+              <span style="font-family:var(--mono);font-size:9.5px;letter-spacing:1.2px;color:var(--muted)">EXECUÇÃO CORRENTE</span>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <div style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px">
+                <div style="font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums">5</div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">fechamentos</div></div>
+              <div style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px">
+                <div style="font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums">23</div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">capturas</div></div>
+              <div style="flex:1;background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px">
+                <div style="font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums">210m</div>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px">leitura</div></div>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;display:flex;align-items:center;justify-content:center;height:50px;border-radius:12px;border:1px solid var(--border)">
+            <span style="font-weight:600;font-size:14px">Fechar a semana no vault</span>
+          </div>
+          <div class="ph-fade"></div>
+        </div>
+        <div class="ph-tabbar">
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-circle"/></svg><span>Hoje</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-feather"/></svg><span>Capturar</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-check-square"/></svg><span>Tarefas</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-grid"/></svg><span>Painel</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-message-circle"/></svg><span>Mentor</span></div>
+        </div>
+      </div>
+      <div class="figcap">
+        <div class="fc-kicker">tela 4 · o herói desta rodada</div>
+        <h3>Placar — uma página de razão, não um painel</h3>
+        <ul>
+          <li><b>A ambição da C com o acabamento da A:</b> tudo que a C quis mostrar — saldo, nível,
+            ciclo, semana com ganho/desconto, padrões — já existia em <code>Revisao.tsx</code>. O que
+            faltava era hierarquia: aqui o saldo é o maior número do app (92px serif), e o resto é
+            livro-razão com fio de cabelo.</li>
+          <li><b>LedgerRow é a molécula:</b> rótulo em corpo quieto à esquerda, valor em mono tabular
+            à direita, separados por fio de 1px. Ganho em <code>success</code>, desconto em
+            <b>muted — nunca danger</b>: é a lei nº 4 do código (“informa, não julga”) aplicada como
+            regra de cor. Padrões com furo aparecem como lançamento contábil, não como bronca.</li>
+          <li><b>Diamantes sobem para junto do saldo</b> — os mesmos <code>Diamantes</code> que já
+            existem no código, com a legenda “vitalício” que desarma a ansiedade de regressão.</li>
+          <li><b>O streak mora aqui também</b> (“12 dias · recorde 18”, uma linha de razão) — o placar
+            é a referência permanente; a tela de recompensa é o extrato do dia.</li>
+          <li><b>Zero endpoint novo:</b> saldo, ciclo, semana, padrões, scorecard, métricas — tudo já
+            vem de <code>getPontos()</code> / <code>getReviewWeekly()</code>. Apenas a linha de
+            sequência depende da onda 4; sem ela, a linha some (degradação muda, padrão da tela).</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ========== HOME ========== -->
+    <div class="figrow">
+      <div class="phone">
+        <div class="ph-notch"></div>
+        <div class="ph-status"><span class="t">21:15</span>
+          <span><svg width="16" height="11" viewBox="0 0 16 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#F4EFE7"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#F4EFE7"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#F4EFE7"/><rect x="13" y="0" width="3" height="11" rx="1" fill="#9A9BA3"/></svg>
+          <svg width="23" height="11" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="#9A9BA3"/><rect x="2" y="2" width="14" height="8" rx="1.5" fill="#F4EFE7"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="#9A9BA3"/></svg></span>
+        </div>
+        <div class="ph-body" style="padding-top:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px">quarta-feira, 06 de agosto</div>
+              <div style="font-family:var(--serif);font-size:31px;margin-top:4px">Boa noite, <em style="color:var(--bronze)">Leo.</em></div>
+            </div>
+            <div class="seal"><span class="s1">NÍVEL</span><span class="s2">2</span></div>
+          </div>
+          <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:1.2px;color:var(--muted);margin-bottom:12px">
+            HOJE <span style="color:var(--bronze);font-variant-numeric:tabular-nums">+115</span> · SEQUÊNCIA <span style="color:var(--bronze)">11</span> · FALTA FECHAR O DIA</div>
+
+          <div class="hero">
+            <div class="eyebrow">rito da noite</div>
+            <div class="ht">O dia pede fechamento.</div>
+            <div class="hs">5 de 7 ritmos marcados. Fechar garante os +80 de hoje e mantém a sequência viva.</div>
+            <div class="hf">
+              <span class="ha">abrir agora · garante +80</span>
+              <span class="arw"><svg width="17" height="17"><use href="#i-arrow-up-right"/></svg></span>
+            </div>
+          </div>
+
+          <div class="mrow" style="margin-top:8px">
+            <div class="metric">
+              <div class="ml">RITMOS</div>
+              <div class="mv">5<small>/7</small></div>
+              <div class="pbar"><i style="width:71%;background:var(--success)"></i></div>
+            </div>
+            <div class="metric">
+              <div class="ml">CICLO</div>
+              <div class="mv">S4<small>/12</small></div>
+              <div class="pbar"><i style="width:55%"></i></div>
+            </div>
+            <div class="metric">
+              <div class="ml">COBRANÇAS</div>
+              <div class="mv">3</div>
+              <div style="font-size:10.5px;color:var(--muted)">no radar</div>
+            </div>
+          </div>
+
+          <div style="margin-top:22px">
+            <div class="eyebrow" style="margin-bottom:2px">direção</div>
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">
+              <span style="font-family:var(--serif);font-size:21px">Foco de hoje</span>
+              <span style="font-size:12px;color:var(--bronze);font-weight:600">ver tarefas</span>
+            </div>
+            <div class="trow" style="min-height:60px">
+              <span style="width:20px;font-family:var(--mono);font-size:10px;color:var(--muted)">01</span>
+              <div style="width:3px;height:34px;border-radius:3px;background:#C9A97E"></div>
+              <div style="flex:1;min-width:0">
+                <div class="tt">Responder a proposta do Fernando</div>
+                <div class="tm">Trabalho · ontem</div>
+              </div>
+              <span class="pts" style="color:var(--danger)">+15</span>
+            </div>
+            <div class="trow" style="min-height:60px">
+              <span style="width:20px;font-family:var(--mono);font-size:10px;color:var(--muted)">02</span>
+              <div style="width:3px;height:34px;border-radius:3px;background:#C9A97E"></div>
+              <div style="flex:1;min-width:0">
+                <div class="tt">Enviar relatório de sexta</div>
+                <div class="tm">Trabalho · hoje 18:00</div>
+              </div>
+              <span class="pts">+10</span>
+            </div>
+            <div class="trow" style="min-height:60px;border-bottom:none">
+              <span style="width:20px;font-family:var(--mono);font-size:10px;color:var(--muted)">03</span>
+              <div style="width:3px;height:34px;border-radius:3px;background:#9B8EC4"></div>
+              <div style="flex:1;min-width:0">
+                <div class="tt">Agendar terapia de junho</div>
+                <div class="tm">Saúde Mental · amanhã</div>
+              </div>
+              <span class="pts">+10</span>
+            </div>
+          </div>
+
+          <div style="margin-top:20px">
+            <div class="eyebrow" style="margin-bottom:2px">sistema</div>
+            <div style="font-family:var(--serif);font-size:21px;margin-bottom:8px">Painel</div>
+            <div class="pend">
+              <div class="pi" style="background:rgba(222,184,120,0.1)"><svg class="ic" width="17" height="17" style="color:var(--bronze)"><use href="#i-grid"/></svg></div>
+              <div class="pl"><div class="pt">Painel do sistema</div>
+                <div class="ps">triagem 5 · anki 12 · leituras 2</div></div>
+              <div class="ct" style="background:var(--bronze);color:var(--bronzeText)">8</div>
+            </div>
+          </div>
+          <div class="ph-fade"></div>
+        </div>
+        <div class="ph-tabbar">
+          <div class="ph-tab on"><svg class="ic" width="20" height="20"><use href="#i-circle"/></svg><span>Hoje</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-feather"/></svg><span>Capturar</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-check-square"/></svg><span>Tarefas</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-grid"/></svg><span>Painel</span><span class="tdot">8</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-message-circle"/></svg><span>Mentor</span></div>
+        </div>
+      </div>
+      <div class="figcap">
+        <div class="fc-kicker">tela 5 · jogo sem cassino</div>
+        <h3>Home — o jogo aparece como fio de texto</h3>
+        <ul>
+          <li><b>Uma linha de fólio, não um HUD:</b> “HOJE +115 · SEQUÊNCIA 11 · FALTA FECHAR O DIA”
+            em mono pequeno sob a saudação. É o mesmo tally das outras telas — o estado do jogo em
+            uma linha de 9.5px que informa tudo e não decora nada.</li>
+          <li><b>O selo de nível fica onde está</b> (já era o melhor elemento da Home atual) e o hero
+            agora carrega o preço do rito: “abrir agora · garante +80”. Ação e valor na mesma frase —
+            a motivação é aritmética, não moral.</li>
+          <li><b>Foco de hoje com pontos na margem</b> — as três prioridades mostram o que valem,
+            com a atrasada em danger. Ele escolhe pelo que paga e pelo que cobra, sem abrir Tarefas.</li>
+          <li><b>Métricas intactas</b> (Ritmos / Ciclo / Cobranças): eram boas na A, continuam —
+            agora com números em Instrument Serif, que é o que muda a cara do bloco inteiro.</li>
+          <li><b>Fora a grade “Ferramentas”:</b> um único PendingCard leva ao Painel, com o resumo
+            das dívidas. A Home para de ser gaveta e volta a ser capa.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ========== PAINEL (substituto de Ferramentas) ========== -->
+    <div class="figrow">
+      <div class="phone">
+        <div class="ph-notch"></div>
+        <div class="ph-status"><span class="t">21:16</span>
+          <span><svg width="16" height="11" viewBox="0 0 16 11"><rect x="0" y="6" width="3" height="5" rx="1" fill="#F4EFE7"/><rect x="4.5" y="4" width="3" height="7" rx="1" fill="#F4EFE7"/><rect x="9" y="2" width="3" height="9" rx="1" fill="#F4EFE7"/><rect x="13" y="0" width="3" height="11" rx="1" fill="#9A9BA3"/></svg>
+          <svg width="23" height="11" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="20" height="11" rx="3" fill="none" stroke="#9A9BA3"/><rect x="2" y="2" width="14" height="8" rx="1.5" fill="#F4EFE7"/><path d="M23 4v4a2 2 0 0 0 0-4z" fill="#9A9BA3"/></svg></span>
+        </div>
+        <div class="ph-header">
+          <div style="width:38px"></div>
+          <div class="ph-title">Painel</div>
+          <div class="ph-brand">AETERNUM</div>
+        </div>
+        <div class="ph-body">
+          <div class="eyebrow" style="margin-bottom:2px">agora precisa de você</div>
+          <div style="font-family:var(--serif);font-size:22px;margin-bottom:10px">3 filas em espera</div>
+          <div class="pend" style="border-color:rgba(125,159,208,0.35)">
+            <div class="pi" style="background:rgba(125,159,208,0.12)"><svg class="ic" width="17" height="17" style="color:var(--info)"><use href="#i-inbox"/></svg></div>
+            <div class="pl"><div class="pt">Triagem</div><div class="ps">5 itens · mais velho há 3 dias</div></div>
+            <div class="ct" style="background:var(--info);color:#0B1220">5</div>
+          </div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(169,154,203,0.12)"><svg class="ic" width="17" height="17" style="color:var(--lilac)"><use href="#i-layers"/></svg></div>
+            <div class="pl"><div class="pt">Cards Anki</div><div class="ps">12 aguardando revisão</div></div>
+            <div class="ct" style="background:var(--lilac);color:#14101D">12</div>
+          </div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(222,184,120,0.12)"><svg class="ic" width="17" height="17" style="color:var(--bronze)"><use href="#i-book-open"/></svg></div>
+            <div class="pl"><div class="pt">Leituras por compilar</div><div class="ps">2 sessões abertas</div></div>
+            <div class="ct" style="background:var(--bronze);color:var(--bronzeText)">2</div>
+          </div>
+
+          <div class="eyebrow" style="margin:18px 0 2px">ritos</div>
+          <div style="margin-bottom:10px"></div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(169,154,203,0.12)"><svg class="ic" width="17" height="17" style="color:var(--lilac)"><use href="#i-sunrise"/></svg></div>
+            <div class="pl"><div class="pt">Abertura</div><div class="ps">feita às 6:12</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--success)">✓</span>
+          </div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(222,184,120,0.12)"><svg class="ic" width="17" height="17" style="color:var(--bronze)"><use href="#i-sunset"/></svg></div>
+            <div class="pl"><div class="pt">Shutdown</div><div class="ps">feito às 19:02</div></div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--success)">✓</span>
+          </div>
+          <div class="pend" style="border-color:rgba(222,184,120,0.4);background:var(--bronzeSoft)">
+            <div class="pi" style="background:rgba(222,184,120,0.16)"><svg class="ic" width="17" height="17" style="color:var(--bronze)"><use href="#i-moon"/></svg></div>
+            <div class="pl"><div class="pt">Fechar o dia</div><div class="ps">pendente · garante +80</div></div>
+            <svg class="ic" width="16" height="16" style="color:var(--bronze)"><use href="#i-chevron-right"/></svg>
+          </div>
+
+          <div class="eyebrow" style="margin:18px 0 2px">rotina &amp; sistema</div>
+          <div style="margin-bottom:10px"></div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(113,180,154,0.12)"><svg class="ic" width="17" height="17" style="color:var(--success)"><use href="#i-repeat"/></svg></div>
+            <div class="pl"><div class="pt">Rotinas</div><div class="ps">7 ativas · 3 blocos</div></div>
+            <svg class="ic" width="15" height="15" style="color:var(--muted)"><use href="#i-chevron-right"/></svg>
+          </div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(222,184,120,0.1)"><svg class="ic" width="17" height="17" style="color:var(--bronze)"><use href="#i-compass"/></svg></div>
+            <div class="pl"><div class="pt">Revisão · placar</div><div class="ps">1.660 pts · semana 4/12</div></div>
+            <svg class="ic" width="15" height="15" style="color:var(--muted)"><use href="#i-chevron-right"/></svg>
+          </div>
+          <div class="pend">
+            <div class="pi" style="background:rgba(154,155,163,0.12)"><svg class="ic" width="17" height="17" style="color:var(--muted)"><use href="#i-settings"/></svg></div>
+            <div class="pl"><div class="pt">Ajustes</div><div class="ps">servidor · notificações</div></div>
+            <svg class="ic" width="15" height="15" style="color:var(--muted)"><use href="#i-chevron-right"/></svg>
+          </div>
+          <div class="ph-fade"></div>
+        </div>
+        <div class="ph-tabbar">
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-circle"/></svg><span>Hoje</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-feather"/></svg><span>Capturar</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-check-square"/></svg><span>Tarefas</span></div>
+          <div class="ph-tab on"><svg class="ic" width="20" height="20"><use href="#i-grid"/></svg><span>Painel</span><span class="tdot">8</span></div>
+          <div class="ph-tab"><svg class="ic" width="20" height="20"><use href="#i-message-circle"/></svg><span>Mentor</span></div>
+        </div>
+      </div>
+      <div class="figcap">
+        <div class="fc-kicker">tela 6 · o fim da gaveta</div>
+        <h3>Painel — navegação com sinal, herdada da A</h3>
+        <ul>
+          <li><b>O desenho é o da variação A, que estava certo:</b> quinta aba, grupos por papel
+            (“agora precisa de você” / ritos / rotina &amp; sistema), cada linha com estado real e
+            contador. O que D3 troca é o acabamento: títulos em Instrument Serif, números tabulares,
+            e o rito pendente destacado por borda bronze + preço (“garante +80”), não por cor
+            saturada.</li>
+          <li><b>Hierarquia por dívida:</b> o que tem fila vem primeiro, com número e idade do item
+            mais velho — “5 itens · mais velho há 3 dias” cria vergonha útil sem punição.</li>
+          <li><b>Ritos mostram o estado do dia:</b> ✓ na Abertura e no Shutdown, destaque no Fechar
+            pendente. A navegação passa a responder “o que precisa de mim agora?” — a pergunta que a
+            grade de 10 botões iguais nunca respondia.</li>
+          <li><b>O badge da aba soma as dívidas</b> (5+2+1=8) — dado que a Home já busca hoje
+            (<code>getTriagem</code>, <code>listAnkiCards</code>, <code>listPendingReadingSessions</code>).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 4 · ANTES → DEPOIS ==================== -->
+  <section id="antes-depois">
+    <div class="sechead">
+      <div class="n">04 — antes → depois</div>
+      <h2>Os dois momentos que decidem a direção</h2>
+    </div>
+
+    <div class="ba">
+      <div class="pane old">
+        <span class="tag">antes · Fechar.tsx hoje</span>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">dia yoga</div>
+        <div style="margin-top:14px;font-size:13px;color:var(--muted)">rotinas de hoje</div>
+        <div style="margin-top:10px">
+          <span class="oldcheck on">☑ meditar 10 min</span>
+          <span class="oldcheck">☐ skincare da noite</span>
+          <span class="oldcheck">☐ ler 20 min</span>
+        </div>
+        <div style="margin-top:14px;font-size:13px;color:var(--muted)">como foi o dia?</div>
+        <div style="margin-top:8px;background:var(--card);border-radius:8px;padding:12px;font-size:12.5px;color:var(--muted);min-height:56px">despeja aqui — 1 linha já vale</div>
+        <span class="oldlink" style="margin-top:12px">estruturar com o Hermes →</span>
+        <span class="oldlink dim">fechar sem escrever</span>
+        <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+          <div style="font-family:var(--serifOld);font-size:17px">✓ dia fechado</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:5px">4 de 7 ritmos hoje · 1.380 pts · nível 4</div>
+        </div>
+      </div>
+      <div class="pane new">
+        <span class="tag">depois · D3</span>
+        <div class="tally" style="padding-top:2px">
+          <span class="tl">quarta · dia yoga</span>
+          <span class="tv">+80 <small>HOJE</small></span>
+        </div>
+        <div style="margin-top:12px">
+          <div class="ckrow done" style="margin-bottom:6px">
+            <div class="box"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div>
+            <div style="flex:1"><div class="nm">meditar 10 min</div></div><span class="pts won">+20</span>
+          </div>
+          <div class="ckrow" style="margin-bottom:6px">
+            <div class="box"></div>
+            <div style="flex:1"><div class="nm">skincare da noite</div></div><span class="pts">+20</span>
+          </div>
+          <div class="ckrow">
+            <div class="box"></div>
+            <div style="flex:1"><div class="nm">ler 20 min</div></div><span class="pts">+20</span>
+          </div>
+        </div>
+        <button class="rite" style="margin-top:14px;height:50px;font-size:15px">Fechar o dia · garante +80</button>
+        <div style="text-align:center;margin-top:8px"><span style="font-size:11.5px;color:var(--muted)">escrever como foi o dia +40 · opcional</span></div>
+        <div style="margin-top:16px;border-top:1px solid var(--hair);padding-top:14px;text-align:center">
+          <div class="eyebrow">dia fechado</div>
+          <div class="hero-num" style="font-size:56px;margin-top:8px">+140</div>
+          <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:1.2px;color:var(--muted);margin-top:8px">SALDO 1.520 → 1.660 · 12 DIAS SEGUIDOS</div>
+        </div>
+      </div>
+    </div>
+    <p class="ba-note"><b>Fechar o dia:</b> saem os dois links de texto com a mesma tipografia e pesos
+      ambíguos; entra um primário de 56px que declara o que garante. E a “recompensa” deixa de ser
+      uma linha cinza de 13px — vira a página de número, fileira e razão da tela 2. Os dados já
+      chegavam no <code>aprovar()</code>; eram jogados fora.</p>
+
+    <div class="ba" style="margin-top:34px">
+      <div class="pane old">
+        <span class="tag">antes · Revisao.tsx (ConquistasCard)</span>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted)">CONQUISTAS</span>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">1.380 pts</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:14px">
+          <span style="font-family:var(--serifOld);font-size:30px">N2</span>
+          <span style="font-size:11px;color:var(--muted)">vitalício · nível não regride</span>
+        </div>
+        <div class="pbar" style="margin-top:14px"><i style="width:46%"></i></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px">
+          <span style="font-size:11px;color:var(--muted)">ciclo 3 · semana 4/12</span>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">1.380/3.000</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:baseline">
+          <span style="font-size:12px;color:var(--muted);flex:1">semana</span>
+          <span style="font-family:var(--mono);font-size:13px;color:var(--success)">+320</span>
+          <span style="font-family:var(--mono);font-size:13px;color:var(--muted)">−45</span>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:var(--muted)">N3 em 1.620 pts</div>
+      </div>
+      <div class="pane new">
+        <span class="tag">depois · D3</span>
+        <div class="eyebrow">placar · conquistas</div>
+        <div class="hero-num" style="font-size:64px;margin-top:8px">1.660<small style="font-size:16px"> pts</small></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">N2 · vitalício — o nível não regride</div>
+        <div style="margin-top:14px">
+          <div class="lrow"><span class="lk">ciclo 3 · semana 4/12</span><span class="lv">1.660 / 3.000</span></div>
+          <div class="lrow"><span class="lk">semana · ganho</span><span class="lv gain">+320</span></div>
+          <div class="lrow"><span class="lk">semana · desconto</span><span class="lv off">−45</span></div>
+          <div class="lrow" style="border-bottom:none"><span class="lk">sequência</span><span class="lv">12 dias · recorde 18</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="ba-note"><b>Placar:</b> hoje o saldo é uma linha de 12px no canto de um card — o dado
+      mais importante do sistema com a hierarquia de uma legenda. Na D3 ele vira o algarismo-herói,
+      e os lançamentos viram razão com fio de cabelo. Mesmos dados, nenhum endpoint novo: só
+      tipografia e hierarquia.</p>
+  </section>
+
+  <!-- ==================== 5 · SISTEMA ==================== -->
+  <section id="sistema">
+    <div class="sechead">
+      <div class="n">05 — sistema</div>
+      <h2>Tokens e peças que esta direção exige</h2>
+      <p>Paleta intocada — o mandato é restrição: um accent só (bronze <code>#DEB878</code>), usado
+        raro. O que muda é tipografia e o vocabulário de notação.</p>
+    </div>
+
+    <div class="subhead">cor — nada muda, e é por isso que funciona</div>
+    <div class="swatches">
+      <div class="sw"><div class="c" style="background:#080A0D"></div><div class="d"><div class="n">bg</div><div class="h">#080A0D</div></div></div>
+      <div class="sw"><div class="c" style="background:#15191F"></div><div class="d"><div class="n">card</div><div class="h">#15191F</div></div></div>
+      <div class="sw"><div class="c" style="background:#11151A"></div><div class="d"><div class="n">card2</div><div class="h">#11151A</div></div></div>
+      <div class="sw"><div class="c" style="background:#DEB878"></div><div class="d"><div class="n">bronze · único accent</div><div class="h">#DEB878</div></div></div>
+      <div class="sw"><div class="c" style="background:#71B49A"></div><div class="d"><div class="n">success · só ganho</div><div class="h">#71B49A</div></div></div>
+      <div class="sw"><div class="c" style="background:#D77969"></div><div class="d"><div class="n">danger · só severidade</div><div class="h">#D77969</div></div></div>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-top:12px;line-height:1.6;max-width:760px">
+      Regra de cor do placar: ganho em <code>success</code>, desconto em <code>textMuted</code> —
+      <b>desconto nunca é danger</b>, porque desconto não é erro, é fato (lei nº 4 do
+      <code>Revisao.tsx</code>). Danger fica reservada à severidade de tarefa. As 10
+      <code>AREA_COLORS</code> seguem como estão.</p>
+
+    <div class="subhead">tipografia — a escala nova</div>
+    <table class="typetable">
+      <tr><td style="font-family:var(--serif);font-size:40px">Fecho do dia</td><td class="spec">Instrument Serif 400 · 40 · herói</td></tr>
+      <tr><td style="font-family:var(--serif);font-size:21px">Agora · Placar</td><td class="spec">Instrument Serif 400 · 21 · seção</td></tr>
+      <tr><td style="font-weight:600;font-size:14.5px">Responder a proposta do Fernando</td><td class="spec">Space Grotesk 600 · 14.5 · linha</td></tr>
+      <tr><td style="font-size:12.5px;color:var(--muted)">Fechar garante os pontos de hoje.</td><td class="spec">Space Grotesk 400 · 12.5 · apoio</td></tr>
+      <tr><td><span class="eyebrow">FECHAMENTO · QUARTA</span></td><td class="spec">IBM Plex Mono 500 · 9.5 · caps</td></tr>
+      <tr><td><span style="font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums">+80 · 1.660 · 4/7</span></td><td class="spec">IBM Plex Mono 500 · tabular · contadores vivos</td></tr>
+      <tr><td><span style="font-family:var(--serif);font-size:30px">1.660</span></td><td class="spec">Instrument Serif 400 · números-herói</td></tr>
+    </table>
+
+    <div class="subhead">componentes — renderizados, não descritos</div>
+    <div class="gallery">
+      <div class="gcell">
+        <div class="gn">PointTag — o jogo como notação</div>
+        <div class="gd">Mono tabular na margem da linha que gerou o ponto. Muted antes, bronze depois
+          de ganho. Sem chip, sem pill, sem fundo: a forma mais barata de mostrar preço em lista longa.</div>
+        <div class="stage">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--hair)">
+            <span style="font-size:13px;font-weight:600">tarefa aberta</span><span class="pts big">+10</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--hair)">
+            <span style="font-size:13px;font-weight:600;color:var(--danger)">atrasada</span><span class="pts big" style="color:var(--danger)">+15</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 0">
+            <span style="font-size:13px;font-weight:600;color:var(--muted);text-decoration:line-through">concluída</span><span class="pts big won">+10</span></div>
+        </div>
+      </div>
+
+      <div class="gcell">
+        <div class="gn">TallyHeader — o total do dia se formando</div>
+        <div class="gd">Topo fixo de Tarefas, Fechar e Home. Mono tabular: incrementa ao vivo sem
+          dígito dançando. Um número, três telas — o fio que costura o jogo.</div>
+        <div class="stage">
+          <div class="tally" style="border-bottom:none">
+            <span class="tl">hoje · 3 concluídas</span>
+            <span class="tv">+35 <small>GANHOS</small></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="gcell">
+        <div class="gn">StreakLine — sequência e quebra sem punição</div>
+        <div class="gd">O caso difícil, renderizado: sequência recomeçada há 2 dias depois de um furo.
+          O dia vazio fica na fileira (círculo oco, sem vermelho); o contador diz a verdade; o recorde
+          permanece do lado. Nada desce, nada é apagado.</div>
+        <div class="stage">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+            <span style="font-family:var(--serif);font-size:24px">2 <em style="font-size:15px;color:var(--muted)">dias — nova sequência</em></span>
+            <span style="font-family:var(--mono);font-size:9px;letter-spacing:1.2px;color:var(--muted)">RECORDE · 18</span>
+          </div>
+          <div class="streak">
+            <div class="sd on"><i></i><span>Q</span></div>
+            <div class="sd on"><i></i><span>Q</span></div>
+            <div class="sd hole"><i></i><span>S</span></div>
+            <div class="sd on"><i></i><span>S</span></div>
+            <div class="sd on"><i></i><span>D</span></div>
+            <div class="sd on"><i></i><span>S</span></div>
+            <div class="sd today on"><i></i><span>H</span></div>
+          </div>
+          <div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;color:var(--muted);margin-top:12px">
+            sábado ficou em branco — acontece. o recorde continua teu.</div>
+        </div>
+      </div>
+
+      <div class="gcell">
+        <div class="gn">LedgerRow — a razão do placar</div>
+        <div class="gd">Molécula do placar: rótulo quieto, valor tabular, fio de cabelo. Ganho em
+          success; desconto em muted — informa, não julga.</div>
+        <div class="stage">
+          <div class="lrow"><span class="lk">semana · ganho</span><span class="lv gain">+320</span></div>
+          <div class="lrow"><span class="lk">semana · desconto</span><span class="lv off">−45</span></div>
+          <div class="lrow" style="border-bottom:none"><span class="lk">próximo nível</span><span class="lv off">N3 em 1.340</span></div>
+        </div>
+      </div>
+
+      <div class="gcell">
+        <div class="gn">RiteButton + número de recompensa</div>
+        <div class="gd">O primário de 56px (único por tela) e o algarismo que o dia devolve. O número
+          conta de 0 em 600ms com <code>Animated.timing</code> — recompensa rápida, nunca teatro.</div>
+        <div class="stage">
+          <button class="rite" style="height:48px;font-size:14.5px">Fechar o dia · garante +80</button>
+          <div style="text-align:center;margin-top:18px">
+            <span class="hero-num" style="font-size:52px">+140</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="gcell">
+        <div class="gn">UndoToast — concluir sem pedir licença</div>
+        <div class="gd">Recibo da conclusão de tarefa: sai a confirmação-inline de <code>Tasks.tsx</code>;
+        entra toque único + desfazer. O ponto ganho aparece no próprio toast.</div>
+        <div class="stage">
+          <div class="toast">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DEB878" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="tm">Enviar relatório de sexta — concluída</span>
+            <span class="tu">+10 · desfazer</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="subhead">a tabela de pontos (local, até o BFF expor)</div>
+    <div class="stage" style="background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;max-width:640px">
+      <pre style="font-family:var(--mono);font-size:12px;line-height:1.8;color:var(--text);white-space:pre-wrap">// theme.ts — proposta, zero endpoint novo
+export const POINTS = {
+  captura: 5,          // Capture.tsx — cada captura confirmada
+  tarefa: 10,          // Tasks.tsx — concluir no prazo
+  tarefaAtrasada: 15,  // resgatar o que estava parado paga mais
+  ritmo: 20,           // Fechar/Abertura — cada rotina marcada
+  diario: 40,          // Fechar — despejo escrito (opcional)
+};</pre>
+      <p style="color:var(--muted);font-size:12.5px;line-height:1.6;margin-top:10px">
+        É display-only: o saldo oficial continua vindo de <code>getPontos()</code>. A tabela local
+        existe para <b>mostrar preço antes do ato</b>; quando o BFF expuser pontos por tipo de ação,
+        ela vira leitura remota e o shape não muda.</p>
+    </div>
+  </section>
+
+  <!-- ==================== 6 · HERANÇA / REJEIÇÃO ==================== -->
+  <section id="heranca">
+    <div class="sechead">
+      <div class="n">06 — o que herdei de A e de C, e o que rejeitei</div>
+    </div>
+    <div class="inherit">
+      <p><b>De A herdei quase tudo:</b> a paleta intocada, o bronze raro, o Painel como substituto de
+        “Ferramentas”, o RiteButton, a filosofia de um primário por tela. A estava certa no corpo —
+        errava na voz.</p>
+      <p><b>De A rejeitei a Fraunces</b> <span class="no">(estática, no tamanho errado, sem eixo
+        óptico disponível no stack)</span> <b>e a timidez do jogo:</b> pontos escondidos no placar não
+        motivam ninguém — o Leo pediu valor na linha da tarefa, e é isso que a margem entrega.</p>
+      <p><b>De C herdei a ambição do placar e o preço em tudo:</b> saldo protagonista, streak no
+        fechamento, “+N” ao lado de cada ação, o tally do dia. A leitura de que o jogo já existia no
+        código e só faltava superfície estava correta.</p>
+      <p><b>De C rejeitei o verde-elétrico, o peso 700 nos números e a gramática de HUD</b>
+        <span class="no">(chip, badge, “boss fight”, barra segmentada de videogame)</span> — era
+        fliperama com bom gosto de dados. Aqui o jogo é escrito, não pintado: notação de margem,
+        fileira de dias, livro-razão.</p>
+      <p><b>E de ambas rejeitei a ideia de que sofisticação é adição.</b> D3 é subtração: uma família
+        nova, um accent, um gesto por tela. O resto é fio de cabelo e respiro.</p>
+    </div>
+  </section>
+
+  <!-- ==================== 7 · PLANO EM ONDAS ==================== -->
+  <section id="ondas">
+    <div class="sechead">
+      <div class="n">07 — plano em ondas</div>
+      <h2>Do maior ganho ao menor custo, com o preço honesto</h2>
+      <p>Arquivos reais, em <code>app/</code>. As duas dívidas de dados — tabela de pontos e streak
+        corrido — estão precificadas, não escondidas.</p>
+    </div>
+    <div class="waves">
+      <div class="wave">
+        <div class="wh"><span class="wn">1</span><span class="wt">Troca tipográfica</span>
+          <span class="wg">a cara inteira muda · ~2h</span></div>
+        <p><b><code>app/App.tsx</code></b>: trocar o import <code>@expo-google-fonts/fraunces</code>
+          por <code>@expo-google-fonts/instrument-serif</code> (<code>InstrumentSerif_400Regular</code>,
+          <code>InstrumentSerif_400Italic</code>) no <code>useFonts</code>.</p>
+        <p><b><code>app/src/theme.ts</code></b>: <code>fonts.serif</code> passa a
+          <code>"InstrumentSerif_400Regular"</code>. Todo título do app muda sem tocar em mais nada —
+          é por isso que esta onda vem primeiro: ROI absurdo.</p>
+        <span class="cost">risco: Instrument Serif não tem pesos — qualquer lugar que dependia de
+          peso serifado para hierarquia precisa de tamanho ou itálico. Varredura de 30min nos
+          estilos com fonts.serif.</span>
+      </div>
+      <div class="wave">
+        <div class="wh"><span class="wn">2</span><span class="wt">Pontos na margem + tally do dia</span>
+          <span class="wg">o pedido nº 1 do Leo · ~1 dia</span></div>
+        <p><b><code>app/src/theme.ts</code></b>: adicionar <code>POINTS</code> (tabela local acima).
+          <b><code>app/src/ui.tsx</code></b>: novos <code>PointTag</code>, <code>TallyHeader</code> e
+          <code>UndoToast</code>.</p>
+        <p><b><code>app/src/screens/Tasks.tsx</code></b>: valor na margem de cada
+          <code>TaskRow</code>; concluir em um toque (sai a confirmação-inline, entra UndoToast);
+          tally no topo somando o dia. <b><code>Fechar.tsx</code></b>: preço em cada CheckRow e
+          parciais por bloco (“2/3 · +40”).</p>
+        <span class="cost">dívida honesta: não existe pontuação por tipo de ação no BFF — a tabela é
+          local e display-only até o endpoint existir. Se o saldo oficial discordar da soma local,
+          o oficial vence (ele é o único exibido no placar).</span>
+      </div>
+      <div class="wave">
+        <div class="wh"><span class="wn">3</span><span class="wt">Fechar o dia: um toque + recompensa</span>
+          <span class="wg">a tela nº 1 · ~1–2 dias</span></div>
+        <p><b><code>app/src/screens/Fechar.tsx</code></b>: RiteButton “Fechar o dia · garante +N”
+          sempre habilitado (o modo mínimo de hoje vira o caminho padrão); despejo rebaixado a
+          linha opcional com preço; estado <code>done</code> reescrito como a página de recompensa —
+          algarismo-herói com contagem <code>Animated</code>, StreakLine, saldo e ciclo do
+          <code>getPontos()</code> já chamado no <code>aprovar()</code>.</p>
+      </div>
+      <div class="wave">
+        <div class="wh"><span class="wn">4</span><span class="wt">Streak corrido no BFF</span>
+          <span class="wg">única dívida de backend · ~0.5–1 dia + migração</span></div>
+        <p><b>BFF</b>: campo novo, ex.: <code>pontos.sequencia { atual, melhor, ultimo_dia }</code>,
+          derivável dos registros de fechamento que já existem (as notas diárias do vault).
+          <b><code>Fechar.tsx</code> / <code>Revisao.tsx</code></b>: StreakLine lê o campo; sem ele,
+          a linha de sequência some (degradação muda, padrão já usado na Revisão).</p>
+        <span class="cost">não é de graça: <code>semanal.dailies</code> só conta a semana corrente —
+          aproximar o streak de 12 semanas de histórico semanal quebra acima disso. Campo novo é o
+          caminho correto; a onda 3 funciona sem ele e não fica refém.</span>
+      </div>
+      <div class="wave">
+        <div class="wh"><span class="wn">5</span><span class="wt">Placar como página de razão</span>
+          <span class="wg">o herói da rodada · ~1 dia</span></div>
+        <p><b><code>app/src/screens/Revisao.tsx</code></b>: <code>ConquistasCard</code> vira
+          hero-num + <code>LedgerRow</code>s (dados 100% existentes); scorecard semanal sobe para
+          logo abaixo da razão; “Fechar a semana no vault” como primário único. Objetivos, Anki e
+          filas seguem abaixo, reestilizados com a escala nova.</p>
+      </div>
+      <div class="wave">
+        <div class="wh"><span class="wn">6</span><span class="wt">Home: fólio do jogo + Painel</span>
+          <span class="wg">costura final · ~1–2 dias</span></div>
+        <p><b><code>app/src/screens/Home.tsx</code></b>: linha-fólio “HOJE +N · SEQUÊNCIA N” sob a
+          saudação; pontos na margem do Foco; grade “Ferramentas” removida, entra o PendingCard.
+          <b><code>app/App.tsx</code></b>: quinta aba <code>painel</code> com badge agregado.
+          <b><code>app/src/screens/Painel.tsx</code> (novo)</b>: PendingCards agrupados, fontes já
+          buscadas pela Home.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>Aeternum · escritório — direção D3</span>
+    <span>noturno editorial · Instrument Serif / Space Grotesk / IBM Plex Mono</span>
+    <span>o jogo escrito na margem</span>
+  </div>
+</div>
+
+</body>
+</html>

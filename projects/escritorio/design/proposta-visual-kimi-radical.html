@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aeternum — Variação C (Ruptura): HUD de jogo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ===== NOVA PALETA — "hud noturno" ===== */
+  --bg:#07090C;          /* void: quase preto, leve frio */
+  --bg-raised:#0C0F14;
+  --card:#12161D;
+  --card2:#0E1219;
+  --line:rgba(255,255,255,0.08);
+  --line-strong:rgba(255,255,255,0.16);
+  --text:#F2F5F0;
+  --muted:#878F98;
+  --volt:#C8F04B;        /* primária: energia, pontos, ação */
+  --volt-press:#8FAE2E;  /* sombra dura do botão físico */
+  --volt-soft:rgba(200,240,75,0.12);
+  --volt-text:#131A05;
+  --cyan:#4ED0E8;        /* info / filas */
+  --coral:#FF6B5E;       /* danger / cobrança */
+  --grape:#B18CFF;       /* revisão / anki */
+  --mint:#5BD9A3;        /* sucesso / feito */
+  /* áreas de vida — mantidas do theme.ts atual */
+  --a-trabalho:#C9A97E; --a-staging:#8A8A93; --a-corpo:#7FA98E; --a-mente:#9B8EC4;
+  --a-resp:#A9A18C; --a-finance:#6BA8A0; --a-carreira:#7E9AC9; --a-estudo:#C9BC7E;
+  --a-relac:#C98E9B; --a-lazer:#D98A6E;
+
+  --font-ui:"Space Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:#04060A}
+body{
+  background:#04060A;color:var(--text);font-family:var(--font-ui);
+  font-size:15px;line-height:1.55;
+  background-image:
+    radial-gradient(900px 500px at 85% -5%, rgba(200,240,75,0.05), transparent 60%),
+    radial-gradient(700px 420px at -10% 30%, rgba(78,208,232,0.04), transparent 60%);
+}
+.wrap{max-width:1240px;margin:0 auto;padding:56px 40px 96px}
+.mono{font-family:var(--font-mono)}
+a{color:var(--volt)}
+
+/* ===== cabeçalho do documento ===== */
+.doc-head{border-bottom:1px solid var(--line);padding-bottom:34px;margin-bottom:44px}
+.doc-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:2.2px;color:var(--volt);text-transform:uppercase}
+.doc-title{font-size:44px;font-weight:700;letter-spacing:-1.2px;line-height:1.05;margin-top:12px;text-transform:uppercase}
+.doc-title em{font-style:normal;color:var(--volt)}
+.direction{
+  margin-top:22px;padding:18px 22px;border:1px solid rgba(200,240,75,0.35);border-radius:14px;
+  background:linear-gradient(120deg,rgba(200,240,75,0.10),rgba(200,240,75,0.02));
+  font-size:18px;line-height:1.5;font-weight:500;max-width:980px;
+}
+.direction b{color:var(--volt)}
+.doc-meta{margin-top:16px;font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.4px}
+
+/* ===== seções ===== */
+h2.sec{font-size:26px;font-weight:700;letter-spacing:-.5px;text-transform:uppercase;margin:72px 0 8px}
+h2.sec .n{font-family:var(--font-mono);font-size:13px;color:var(--volt);letter-spacing:1px;margin-right:12px;vertical-align:4px}
+.sec-sub{color:var(--muted);max-width:760px;margin-bottom:30px}
+
+/* princípios */
+.principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
+.principle{border:1px solid var(--line);border-radius:14px;padding:20px 22px;background:var(--card2)}
+.principle .p-n{font-family:var(--font-mono);font-size:10px;color:var(--volt);letter-spacing:1.6px}
+.principle h3{font-size:17px;font-weight:600;margin:8px 0 6px}
+.principle p{color:var(--muted);font-size:13.5px}
+
+/* ===== moldura de celular ===== */
+.mockrow{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap;margin:44px 0}
+.phone{
+  width:390px;height:844px;flex:none;border-radius:52px;background:#000;
+  padding:11px;position:relative;
+  box-shadow:0 0 0 2px #262b33,0 30px 80px rgba(0,0,0,.75),0 0 90px rgba(200,240,75,0.05);
+}
+.phone .notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:112px;height:26px;background:#000;border-radius:0 0 16px 16px;z-index:5}
+.scr{width:100%;height:100%;border-radius:42px;overflow:hidden;background:var(--bg);position:relative;display:flex;flex-direction:column}
+.scr-scroll{flex:1;overflow:hidden;padding:0 16px;position:relative}
+.statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 26px 6px;font-family:var(--font-mono);font-size:11.5px;color:var(--text)}
+.statusbar .sicons{display:flex;gap:5px;align-items:center;color:var(--muted)}
+.notes{flex:1;min-width:340px;max-width:520px}
+.notes .tag{font-family:var(--font-mono);font-size:10px;letter-spacing:1.8px;color:var(--volt);text-transform:uppercase}
+.notes h3{font-size:22px;font-weight:700;letter-spacing:-.4px;margin:8px 0 12px;text-transform:uppercase}
+.notes ul{list-style:none;margin-top:6px}
+.notes li{padding:9px 0 9px 22px;position:relative;border-bottom:1px dashed rgba(255,255,255,0.07);color:#C6CBD2;font-size:13.5px}
+.notes li:last-child{border-bottom:none}
+.notes li::before{content:"▸";position:absolute;left:0;color:var(--volt);font-family:var(--font-mono);font-size:11px;top:11px}
+.notes li b{color:var(--text)}
+.notes .delta{margin-top:16px;font-family:var(--font-mono);font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card2)}
+.notes .delta b{color:var(--mint)}
+
+/* ===== dentro da tela: componentes do HUD ===== */
+.scr-head{padding:8px 2px 14px}
+.scr-title{font-size:21px;font-weight:700;text-transform:uppercase;letter-spacing:-.3px}
+.scr-crumb{font-family:var(--font-mono);font-size:9px;letter-spacing:1.6px;color:var(--muted);text-transform:uppercase;margin-bottom:5px}
+
+/* botão físico — o primário do sistema */
+.bigact{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--volt);color:var(--volt-text);border-radius:14px;
+  border-bottom:4px solid var(--volt-press);
+  padding:0 18px;min-height:64px;font-weight:700;font-size:15.5px;
+  text-transform:uppercase;letter-spacing:.3px;
+}
+.bigact .sub{font-family:var(--font-mono);font-weight:600;font-size:11px;letter-spacing:.5px;opacity:.75;text-transform:none}
+.bigact.small{min-height:52px;font-size:13.5px;border-bottom-width:3px}
+.ghostact{
+  display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;
+  border:1px solid var(--line-strong);border-radius:12px;color:var(--muted);
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.6px;text-transform:uppercase;
+}
+
+/* linha-missão (rotina) */
+.quest{display:flex;align-items:center;gap:12px;padding:11px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+.quest .box{width:40px;height:40px;flex:none;border-radius:10px;border:2px solid var(--line-strong);display:flex;align-items:center;justify-content:center;background:var(--card2)}
+.quest.done .box{background:var(--volt);border-color:var(--volt)}
+.quest.done .box svg{stroke:var(--volt-text)}
+.quest .q-name{flex:1;font-size:14.5px;font-weight:600;line-height:1.25}
+.quest .q-steps{font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:.3px}
+.quest .q-pts{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.5px}
+.quest.done .q-pts{color:var(--volt)}
+.quest.done .q-name{color:var(--mint)}
+.qgroup{font-family:var(--font-mono);font-size:9px;letter-spacing:1.8px;color:var(--muted);text-transform:uppercase;margin:14px 2px 8px;display:flex;justify-content:space-between}
+.qgroup .qcount{color:var(--volt)}
+
+/* barra segmentada */
+.seg{display:flex;gap:3px}
+.seg i{flex:1;height:6px;border-radius:2px;background:rgba(255,255,255,0.09)}
+.seg i.on{background:var(--volt)}
+.seg.mint i.on{background:var(--mint)}
+.seg.cyan i.on{background:var(--cyan)}
+
+/* stat block */
+.stat{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 13px;flex:1;min-width:0}
+.stat .s-label{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.4px;color:var(--muted);text-transform:uppercase}
+.stat .s-value{font-size:26px;font-weight:700;letter-spacing:-.5px;margin:6px 0 8px;font-variant-numeric:tabular-nums}
+.stat .s-value small{font-size:13px;color:var(--muted);font-weight:500}
+
+/* selo de nível com diamantes */
+.diams{display:flex;gap:4px}
+.diams i{width:9px;height:9px;background:rgba(255,255,255,0.12);transform:rotate(45deg);border-radius:2px}
+.diams i.on{background:var(--volt)}
+
+/* card de pendência (navegação) */
+.pend{display:flex;align-items:center;gap:12px;padding:13px 14px;background:var(--card);border:1px solid var(--line);border-radius:13px;margin-bottom:8px}
+.pend .p-ico{width:38px;height:38px;flex:none;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--volt-soft)}
+.pend .p-name{flex:1;font-size:14px;font-weight:600}
+.pend .p-sub{font-family:var(--font-mono);font-size:9.5px;color:var(--muted);margin-top:2px;letter-spacing:.4px}
+.pend .p-count{font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--volt);background:var(--volt-soft);border-radius:8px;padding:5px 9px;letter-spacing:.5px}
+.pend .p-count.cyan{color:var(--cyan);background:rgba(78,208,232,0.10)}
+.pend .p-count.grape{color:var(--grape);background:rgba(177,140,255,0.10)}
+.pend .p-ok{font-family:var(--font-mono);font-size:10px;color:var(--mint);letter-spacing:.8px}
+.pend.idle{opacity:.5}
+.pend.idle .p-ico{background:rgba(255,255,255,0.05)}
+
+/* hero de ação (home) */
+.heroquest{
+  border-radius:16px;padding:18px;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,#1A2208 0%,#101408 55%,#0C1014 100%);
+  border:1px solid rgba(200,240,75,0.30);
+}
+.heroquest .hq-eyebrow{font-family:var(--font-mono);font-size:9px;letter-spacing:1.8px;color:var(--volt);text-transform:uppercase}
+.heroquest .hq-title{font-size:23px;font-weight:700;letter-spacing:-.5px;line-height:1.12;margin-top:10px;max-width:86%;text-transform:uppercase}
+.heroquest .hq-sub{font-size:12.5px;color:#B9C0A6;margin-top:7px;max-width:88%;line-height:1.45}
+.heroquest .hq-foot{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.heroquest .hq-cta{font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:1px;color:var(--volt-text);background:var(--volt);border-bottom:3px solid var(--volt-press);border-radius:9px;padding:9px 14px;text-transform:uppercase}
+.heroquest .hq-pts{font-family:var(--font-mono);font-size:10px;color:var(--volt);letter-spacing:.6px}
+
+/* dock de captura */
+.dock{position:absolute;left:14px;right:14px;bottom:14px;display:flex;align-items:center;gap:11px;background:#14181F;border:1px solid rgba(200,240,75,0.28);border-radius:16px;padding:9px 12px;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+.dock .d-plus{width:40px;height:40px;flex:none;border-radius:12px;background:var(--volt);border-bottom:3px solid var(--volt-press);display:flex;align-items:center;justify-content:center}
+.dock .d-label{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.4px;color:var(--volt);text-transform:uppercase}
+.dock .d-hint{font-size:12px;color:var(--text);margin-top:2px}
+
+/* tabbar do mock */
+.tabbar{display:flex;border-top:1px solid var(--line);background:var(--bg-raised);padding:8px 6px 14px;gap:2px}
+.tabbar .tb{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0;border-radius:10px}
+.tabbar .tb svg{stroke:var(--muted)}
+.tabbar .tb .tl{font-family:var(--font-mono);font-size:8.5px;color:var(--muted);letter-spacing:.6px}
+.tabbar .tb.on{background:var(--volt-soft)}
+.tabbar .tb.on svg{stroke:var(--volt)}
+.tabbar .tb.on .tl{color:var(--volt)}
+
+/* campo de texto */
+.field{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;color:var(--muted);font-size:13.5px;line-height:1.5}
+.field .caret{color:var(--volt)}
+
+/* toast de conquista */
+.achv{display:flex;align-items:center;gap:10px;background:rgba(200,240,75,0.08);border:1px solid rgba(200,240,75,0.30);border-radius:12px;padding:11px 13px}
+.achv .a-ico{width:32px;height:32px;flex:none;border-radius:10px;background:var(--volt);display:flex;align-items:center;justify-content:center}
+.achv .a-main{font-size:13px;font-weight:600}
+.achv .a-sub{font-family:var(--font-mono);font-size:9.5px;color:var(--volt);letter-spacing:.6px;margin-top:1px}
+
+/* pills */
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{padding:9px 15px;border:1.5px solid var(--line-strong);border-radius:999px;font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.4px}
+.pill.on{border-color:var(--volt);color:var(--volt);background:var(--volt-soft)}
+
+/* template cards (abertura) */
+.tcard{flex:1;border:1.5px solid var(--line-strong);border-radius:16px;padding:20px 14px;text-align:center;background:var(--card)}
+.tcard .t-ico{width:46px;height:46px;margin:0 auto 10px;border-radius:14px;background:var(--volt-soft);display:flex;align-items:center;justify-content:center}
+.tcard .t-name{font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:.2px}
+.tcard .t-sub{font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-top:5px;letter-spacing:.8px}
+
+/* chips de fila */
+.fchip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-strong);border-radius:999px;padding:8px 13px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);letter-spacing:.5px}
+.fchip b{font-weight:600}
+.fchip.cyan b{color:var(--cyan)} .fchip.grape b{color:var(--grape)} .fchip.volt b{color:var(--volt)}
+
+/* ===== antes/depois ===== */
+.bd{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:26px 0}
+@media(max-width:900px){.bd{grid-template-columns:1fr}}
+.bd .col{border:1px solid var(--line);border-radius:16px;padding:20px;background:var(--card2)}
+.bd .col.after{border-color:rgba(200,240,75,0.30);background:linear-gradient(180deg,rgba(200,240,75,0.04),transparent 40%),var(--card2)}
+.bd .col .col-tag{font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.8px;text-transform:uppercase;margin-bottom:14px}
+.bd .col.before .col-tag{color:var(--coral)}
+.bd .col.after .col-tag{color:var(--volt)}
+.bd .mini{background:#0A0D11;border:1px solid var(--line);border-radius:10px;padding:14px;font-size:12.5px;color:#B9BEC6}
+.bd .mini .old-line{padding:7px 0;color:#7A828B;border-bottom:1px dashed rgba(255,255,255,0.06);font-size:12px}
+.bd .mini .old-line.link{color:#9c8a63}
+.bd ul{list-style:none;margin-top:14px}
+.bd li{font-size:12.5px;color:#B9BEC6;padding:5px 0 5px 18px;position:relative}
+.bd li::before{content:"—";position:absolute;left:0;color:var(--muted)}
+.bd .after li::before{content:"+";color:var(--volt);font-family:var(--font-mono)}
+
+/* ===== tabelas de tokens ===== */
+table.tokens{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+table.tokens th{font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-strong)}
+table.tokens td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;color:#C6CBD2}
+table.tokens td:first-child{font-family:var(--font-mono);font-size:11.5px;color:var(--text)}
+.sw{display:inline-block;width:26px;height:26px;border-radius:7px;border:1px solid rgba(255,255,255,0.14);vertical-align:-7px;margin-right:10px}
+.why{font-size:12px;color:var(--muted)}
+
+/* ===== componentes renderizados ===== */
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:20px}
+.comp{border:1px solid var(--line);border-radius:16px;background:var(--card2);overflow:hidden}
+.comp .c-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline}
+.comp .c-name{font-family:var(--font-mono);font-size:11px;color:var(--volt);letter-spacing:.8px}
+.comp .c-new{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.2px;color:var(--coral);text-transform:uppercase}
+.comp .c-new.exists{color:var(--muted)}
+.comp .c-body{padding:18px 16px;background:var(--bg)}
+.comp .c-note{padding:11px 16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}
+
+/* ===== ondas ===== */
+.wave{border:1px solid var(--line);border-radius:16px;margin-bottom:14px;background:var(--card2);overflow:hidden}
+.wave .w-head{display:flex;align-items:baseline;gap:14px;padding:15px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.wave .w-n{font-family:var(--font-mono);font-size:12px;color:var(--volt);letter-spacing:1px}
+.wave .w-title{font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:-.2px}
+.wave .w-cost{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.6px}
+.wave .w-body{padding:14px 20px}
+.wave .w-body table{width:100%;border-collapse:collapse;font-size:12.5px}
+.wave .w-body td{padding:6px 8px 6px 0;border-bottom:1px dashed rgba(255,255,255,0.06);color:#C6CBD2;vertical-align:top}
+.wave .w-body td.f{font-family:var(--font-mono);font-size:11px;color:var(--volt);white-space:nowrap;width:210px}
+.wave .w-why{padding:12px 20px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line)}
+.wave .w-why b{color:var(--text)}
+
+/* sacrifícios */
+.sac{border-left:3px solid var(--coral);padding:14px 18px;background:rgba(255,107,94,0.05);border-radius:0 12px 12px 0;margin-bottom:12px}
+.sac h4{font-size:14px;font-weight:600;margin-bottom:4px}
+.sac p{font-size:12.5px;color:#B9BEC6}
+
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10.5px;color:var(--muted);letter-spacing:.6px}
+svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ================= CABEÇALHO ================= -->
+<header class="doc-head">
+  <div class="doc-eyebrow">AETERNUM / ESCRITÓRIO · VARIAÇÃO C — RUPTURA</div>
+  <h1 class="doc-title">O placar <em>é</em> o app.</h1>
+  <div class="direction">
+    <b>Direção: HUD de jogo.</b> O sistema de pontos, nível, ciclo e semana que hoje vive escondido
+    na aba Revisão sobe para a superfície e vira a interface inteira: números enormes, cor saturada,
+    botões com peso físico, e cada ação do Leo devolvendo pontos visíveis no instante em que acontece.
+  </div>
+  <div class="doc-meta">
+    alvo: um usuário (Leo) · stack: React Native + Expo 54, Feather, Animated puro, expo-linear-gradient ·
+    proposta autoral, nem a sóbria “midnight desk” (A) nem a editorial clara (B)
+  </div>
+</header>
+
+<!-- ================= 1. PRINCÍPIOS ================= -->
+<h2 class="sec"><span class="n">01</span>Princípios</h2>
+<p class="sec-sub">Os seis do briefing original são o problema a resolver — aqui eles viram leis de desenho do HUD, cada uma amarrada ao detalhista e ao procrastinador.</p>
+<div class="principles">
+  <div class="principle">
+    <div class="p-n">P1 · UM TOQUE RESOLVE</div>
+    <h3>Toda ação frequente é um botão físico grande</h3>
+    <p>Alvo mínimo de 56px, peso visual de objeto (sombra dura embaixo), sem menu intermediário. O procrastinador não “navega até” a ação — ele aperta.</p>
+  </div>
+  <div class="principle">
+    <div class="p-n">P2 · ESCREVER NUNCA BLOQUEIA</div>
+    <h3>Texto é bônus com pontos, nunca portão</h3>
+    <p>O despejo do fechamento vale pontos extras (+40) mas o botão “fechar o dia” está sempre habilitado. Escrever é uma side quest, não a missão.</p>
+  </div>
+  <div class="principle">
+    <div class="p-n">P3 · UM PRIMÁRIO POR TELA</div>
+    <h3>Exatamente um elemento volt por tela</h3>
+    <p>O verde-volt é moeda escassa: só o botão primário e os pontos ganhos o usam em cheio. Se dois elementos gritam, o detalhista desmonta a tela — então só um grita.</p>
+  </div>
+  <div class="principle">
+    <div class="p-n">P4 · A TELA DIZ O QUE PRECISA DELE</div>
+    <h3>Pendência é número, não enfeite</h3>
+    <p>Cada entrada de navegação carrega contador ou estado (“3 pendentes”, “feito ✓”). Ele nunca abre uma tela para descobrir que não havia nada lá.</p>
+  </div>
+  <div class="principle">
+    <div class="p-n">P5 · FECHAR DEVOLVE</div>
+    <h3>Toda conclusão paga na hora, em número grande</h3>
+    <p>Fechar o dia é o boss fight: tela de recompensa com pontos somando, barra de nível enchendo e diamantes. A dopamina deixa de ser uma linha cinza de texto.</p>
+  </div>
+  <div class="principle">
+    <div class="p-n">P6 · SISTEMA, NÃO TELAS</div>
+    <h3>Uma gramática: quest, stat, segmento, recompensa</h3>
+    <p>Quatro peças resolvem todas as telas. O detalhista encontra o mesmo padrão em todo lugar — e o mesmo padrão é fácil de manter coerente no <span class="mono">ui.tsx</span>.</p>
+  </div>
+</div>
+
+<!-- ================= 2. MOCKUPS ================= -->
+<h2 class="sec"><span class="n">02</span>Telas</h2>
+<p class="sec-sub">Renderizadas em HTML/CSS com os tokens novos, 390×844. Todos os rótulos, estados e dados vêm do código real (<span class="mono">app/src/screens/</span>).</p>
+
+<!-- ========== FECHAR O DIA — prioridade nº 1 ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>21:34</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div class="scr-head">
+        <div class="scr-crumb">rito da noite · dia corrida</div>
+        <div class="scr-title">Fechar o dia</div>
+      </div>
+
+      <div class="qgroup"><span>MANHÃ</span><span class="qcount">3/3 · +60</span></div>
+      <div class="quest done">
+        <div class="box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Corrida 5k</div><div class="q-steps">1. tênis na porta · 2. alongar 2min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest done">
+        <div class="box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Meditação 10min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest done">
+        <div class="box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Vitamina + água</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+
+      <div class="qgroup"><span>DIA</span><span class="qcount">1/2 · +20</span></div>
+      <div class="quest done">
+        <div class="box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Bloco foco 90min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Inbox zero (staging)</div><div class="q-steps">3 itens esperando na triagem</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+
+      <div class="qgroup"><span>NOITE</span><span class="qcount">0/2</span></div>
+      <div class="quest">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Desligar telas 23h</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Preparar mesa de amanhã</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+
+      <div class="field" style="margin-top:16px;min-height:64px">como foi o dia? <span style="color:#5A626B">— opcional, vale bônus</span><span class="caret">▌</span></div>
+      <div class="ghostact" style="margin-top:10px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
+        estruturar com o Hermes · +40 bônus
+      </div>
+
+      <div style="height:12px"></div>
+      <div class="bigact">
+        <span>Fechar o dia</span>
+        <span class="sub">garante +80 · bônus até +140</span>
+      </div>
+      <div style="height:20px"></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Prioridade nº 1 · a tela de maior frequência</div>
+    <h3>Fechar o dia — um toque, pontos na cara</h3>
+    <ul>
+      <li><b>O botão primário está sempre habilitado e diz o que paga.</b> Hoje o fecho são dois links de texto (“estruturar com o Hermes →” / “fechar sem escrever”) sem hierarquia. Aqui é UM <span class="mono">BigAction</span> volt de 64px. O sublabel “garante +80” é a promessa concreta — procrastinador não resiste a número garantido.</li>
+      <li><b>Rotinas viram missões com preço.</b> Cada <span class="mono">QuestRow</span> tem checkbox de 40px (alvo real de polegar, não uma linha de texto com “☐”) e o valor em pontos à direita. Marcar na hora já existe no código (<span class="mono">marcar()</span> chama <span class="mono">checkRoutine</span> otimista) — o visual finalmente comunica isso.</li>
+      <li><b>Escrever virou bônus, nunca portão.</b> O campo de despejo continua um toque acima do botão, mas o rótulo diz “opcional, vale bônus”. O modo mínimo deixa de parecer derrota (“fechar sem escrever”) e vira o caminho padrão.</li>
+      <li><b>Os blocos Manhã/Dia/Noite mostram placar parcial</b> (“3/3 · +60”) — o detalhista vê de onde vem cada ponto; nada é caixa-preta.</li>
+      <li><b>Passos da rotina continuam roteiro</b> (cinza, sem checkbox próprio), exatamente como no comentário do código: quem conta é o item pai, binário.</li>
+    </ul>
+    <div class="delta">energia de ativação: <b>hoje</b> = rolar, achar link de texto, decidir entre dois caminhos · <b>proposto</b> = tocar nos quadrados que faltam (ou nenhum) e apertar o botão grande.</div>
+  </div>
+</div>
+
+<!-- ========== FECHAR — RECOMPENSA ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>21:36</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll" style="display:flex;flex-direction:column;justify-content:center">
+      <div style="text-align:center;margin-bottom:6px">
+        <div class="scr-crumb" style="margin-bottom:10px">dia fechado · registro gravado</div>
+        <div style="font-size:64px;font-weight:700;letter-spacing:-2px;line-height:1;color:var(--volt);font-variant-numeric:tabular-nums">+140</div>
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:2px;color:var(--muted);margin-top:8px">PONTOS DE HOJE</div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-top:22px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:1.4px;color:var(--muted)">SALDO</span>
+          <span style="font-size:22px;font-weight:700;font-variant-numeric:tabular-nums">1.380 <small style="font-size:11px;color:var(--muted)">pts</small></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+          <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:1.4px;color:var(--muted)">NÍVEL 4</span>
+          <div class="diams"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+          <div style="display:flex;justify-content:space-between;margin-top:7px">
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">ciclo 3 · semana 4/12</span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--volt)">faltam 220 p/ N5</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="stat"><div class="s-label">RITMOS</div><div class="s-value" style="color:var(--mint)">4<small>/7</small></div><div class="seg mint"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+        <div class="stat"><div class="s-label">SEQUÊNCIA</div><div class="s-value">6<small> dias</small></div><div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">melhor: 11</div></div>
+      </div>
+
+      <div style="height:26px"></div>
+      <div class="bigact"><span>Boa noite</span><span class="sub">amanhã abre às 5h30</span></div>
+      <div style="height:14px"></div>
+      <div class="ghostact">ver o que ficou sem marcar</div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">O momento mais importante do dia</div>
+    <h3>A recompensa que hoje não existe</h3>
+    <ul>
+      <li><b>Hoje o fim do rito é uma linha cinza:</b> “✓ dia fechado / 4 de 7 ritmos hoje · 1.380 pts · nível 4” (<span class="mono">Fechar.tsx:180-199</span>). Os dados de recompensa JÁ chegam (<span class="mono">getPontos()</span> no approve) — e são jogados fora num parágrafo de 13px.</li>
+      <li><b>Aqui o número é o protagonista.</b> “+140” em 64px, saldo atualizado, barra de nível segmentada enchendo, diamantes — os mesmos <span class="mono">Diamantes</span> que já existem na Revisão, promovidos ao momento em que importam.</li>
+      <li><b>Animação barata e garantida:</b> contagem dos pontos e preenchimento da barra com <span class="mono">Animated.timing</span> puro (600ms). Nada de reanimated — não está instalado.</li>
+      <li><b>Saída com um toque:</b> “Boa noite” volta para a Home. “Ver o que ficou sem marcar” existe para o detalhista, mas é ghost — ninguém é punido por fechar o dia no mínimo.</li>
+      <li><b>Sequência (“streak”) é derivável</b> dos fechamentos diários que o scorecard já conta (<span class="mono">semanal.dailies</span>); se o BFF não expõe ainda, entra na onda 4 com custo explícito.</li>
+    </ul>
+    <div class="delta">P5 do briefing: <b>fechar devolve</b>. A única dose de dopamina do dia deixa de ser uma linha de texto e vira o payoff do jogo.</div>
+  </div>
+</div>
+
+<!-- ========== HOME / HUD ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>18:42</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 2px 14px">
+        <div>
+          <div class="scr-crumb">quinta-feira, 07 de agosto</div>
+          <div class="scr-title" style="font-size:19px">Boa noite, Leo.</div>
+        </div>
+        <div style="text-align:center;background:var(--volt-soft);border:1px solid rgba(200,240,75,0.35);border-radius:14px;padding:8px 12px">
+          <div style="font-family:var(--font-mono);font-size:7.5px;letter-spacing:1.4px;color:var(--volt)">NÍVEL</div>
+          <div style="font-size:21px;font-weight:700;line-height:1.1">4</div>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:12px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <span style="font-size:30px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums">1.240</span>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:1px">PTS · CICLO 3 · S4/12</span>
+        </div>
+        <div style="margin-top:10px"><div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+      </div>
+
+      <div class="heroquest">
+        <div class="hq-eyebrow">próxima missão · 19h00</div>
+        <div class="hq-title">Shutdown: fecha o trabalho</div>
+        <div class="hq-sub">2 tarefas abertas · 1 follow-up · staging com 3 itens. Saia sabendo o que vem amanhã.</div>
+        <div class="hq-foot">
+          <span class="hq-cta">Abrir agora</span>
+          <span class="hq-pts">vale +30</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="stat"><div class="s-label">RITMOS</div><div class="s-value">5<small>/8</small></div><div class="seg mint"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+        <div class="stat"><div class="s-label">COBRANÇAS</div><div class="s-value">4</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">no radar</div></div>
+        <div class="stat"><div class="s-label">FOCO</div><div class="s-value" style="font-size:15px;padding-top:8px;line-height:1.3">Relatório p/ Ana</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--a-trabalho)">TRABALHO · HOJE</div></div>
+      </div>
+
+      <div class="qgroup" style="margin-top:20px"><span>EM ESPERA — PRECISA DE VOCÊ</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="fchip cyan"><b>3</b> triagem</span>
+        <span class="fchip grape"><b>5</b> anki</span>
+        <span class="fchip volt"><b>2</b> leituras</span>
+      </div>
+
+      <div class="qgroup" style="margin-top:20px"><span>AGENDA CURTA</span></div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:13px;padding:4px 14px;margin-bottom:90px">
+        <div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--volt);width:36px">19:00</span>
+          <span style="font-size:13px;font-weight:600;flex:1">Shutdown do trabalho</span>
+          <span style="font-family:var(--font-mono);font-size:8.5px;color:var(--muted)">RITO</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;padding:10px 0">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--volt);width:36px">21:00</span>
+          <span style="font-size:13px;font-weight:600;flex:1">Fechar o dia</span>
+          <span style="font-family:var(--font-mono);font-size:8.5px;color:var(--muted)">RITO</span>
+        </div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="d-plus"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#131A05" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+      <div style="flex:1"><div class="d-label">captura universal</div><div class="d-hint">Fala ou digita. Organiza depois.</div></div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Home / Hoje</div>
+    <h3>A Home vira o painel do jogador</h3>
+    <ul>
+      <li><b>O placar sai do porão.</b> Saldo e barra de ciclo — dados que hoje só aparecem na Revisão (<span class="mono">p.saldo_total</span>, <span class="mono">p.ciclo</span>) — abrem a Home. O jogo que o app já é por dentro agora é visível por fora.</li>
+      <li><b>O hero de ação continua sendo UM</b> (o <span class="mono">actionForAt()</span> já decide a próxima missão — nenhuma lógica nova), mas ganha o preço: “vale +30”. Decidir o que fazer continua não sendo problema dele (P4).</li>
+      <li><b>Métricas viram stats com barra segmentada</b> em vez de barras fininhas — legíveis de longe, com cara de HUD. “Ritmos”, “Cobranças” e o 1º foco do digest cabem na primeira dobra.</li>
+      <li><b>“Em espera” sobrevive como chips com contador</b> (triagem/anki/leituras — os mesmos <span class="mono">HomeSignals</span> de hoje), agora com cara de notificação de jogo, não de badge enfeitado.</li>
+      <li><b>A grade “Ferramentas” sai da Home.</b> O substituto está na próxima tela. O dock de captura universal fica — é a melhor peça da Home atual.</li>
+    </ul>
+    <div class="delta">hierarquia: <b>nível → saldo → próxima missão → stats → filas</b>. Tudo que precisa dele tem número; tudo que não precisa não está na tela.</div>
+  </div>
+</div>
+
+<!-- ========== A MESA — substituto de Ferramentas ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>18:44</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div class="scr-head">
+        <div class="scr-crumb">sistema</div>
+        <div class="scr-title">A Mesa</div>
+      </div>
+
+      <div class="qgroup" style="margin-top:0"><span>PRECISA DE VOCÊ</span><span class="qcount">3</span></div>
+      <div class="pend">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#4ED0E8" stroke-width="2" stroke-linecap="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+        <div style="flex:1"><div class="p-name">Triagem</div><div class="p-sub">mais velho há 4 dias</div></div>
+        <span class="p-count cyan">3</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B18CFF" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="none"/></svg></div>
+        <div style="flex:1"><div class="p-name">Revisão</div><div class="p-sub">5 cartões anki sugeridos</div></div>
+        <span class="p-count grape">5</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round"><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/><path d="M21 21H3"/><path d="M5 3h14a2 2 0 0 1 2 2v14"/></svg></div>
+        <div style="flex:1"><div class="p-name">Fechar o dia</div><div class="p-sub">rito das 21h · vale +80</div></div>
+        <span class="p-count">21h</span>
+      </div>
+
+      <div class="qgroup"><span>ROTINA DO DIA</span></div>
+      <div class="pend">
+        <div class="p-ico" style="background:rgba(177,140,255,0.10)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#B18CFF" stroke-width="2" stroke-linecap="round"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/></svg></div>
+        <div style="flex:1"><div class="p-name">Abertura</div><div class="p-sub">dia corrida · check-in feito</div></div>
+        <span class="p-ok">FEITO ✓</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico" style="background:rgba(200,240,75,0.10)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/></svg></div>
+        <div style="flex:1"><div class="p-name">Shutdown</div><div class="p-sub">rito das 19h · 3 prioridades</div></div>
+        <span class="p-ok">FEITO ✓</span>
+      </div>
+      <div class="pend">
+        <div class="p-ico" style="background:rgba(91,217,163,0.10)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5BD9A3" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+        <div style="flex:1"><div class="p-name">Ritmos</div><div class="p-sub">5 de 8 hoje</div></div>
+        <span class="p-count" style="color:var(--mint);background:rgba(91,217,163,0.10)">5/8</span>
+      </div>
+
+      <div class="qgroup"><span>ARQUIVO</span></div>
+      <div class="pend idle">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <div style="flex:1"><div class="p-name">Agenda</div><div class="p-sub">semana sem horários extras</div></div>
+      </div>
+      <div class="pend idle">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></div>
+        <div style="flex:1"><div class="p-name">Reduzir</div><div class="p-sub">hábitos a reduzir</div></div>
+      </div>
+      <div class="pend idle">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg></div>
+        <div style="flex:1"><div class="p-name">Edificação</div><div class="p-sub">projetos de longo prazo</div></div>
+      </div>
+      <div class="pend idle" style="margin-bottom:24px">
+        <div class="p-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+        <div style="flex:1"><div class="p-name">Ajustes</div><div class="p-sub">servidor, notificações</div></div>
+      </div>
+    </div>
+    <div class="tabbar">
+      <div class="tb on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg><span class="tl">HOJE</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg><span class="tl">CAPTURAR</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="tl">TAREFAS</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="tl">MENTOR</span></div>
+      <div class="tb"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span class="tl">MESA</span></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Substituto de “Ferramentas”</div>
+    <h3>A Mesa — navegação por pendência</h3>
+    <ul>
+      <li><b>A grade de 10 botões iguais morre.</b> No lugar, uma lista única ordenada por urgência: “precisa de você” (com contador e idade do item mais velho), “rotina do dia” (com estado) e “arquivo” (sem pendência, apagado). Nada tem o mesmo tamanho por acidente.</li>
+      <li><b>Cada linha responde “por que eu abriria isto?”</b> antes do toque: <span class="mono">3</span> na triagem, <span class="mono">5</span> anki, “feito ✓”, “5/8”. Zero telas abertas à toa — P4 aplicado à navegação.</li>
+      <li><b>Vira a 5ª aba da tabbar (“Mesa”).</b> Hoje as 10 subtelas só existem no fim da Home; com a Mesa na tabbar, qualquer ferramenta fica a 1 toque de qualquer lugar (hoje: Home → rolar → grade → toque).</li>
+      <li><b>Os dados já existem:</b> <span class="mono">HomeSignals</span> (staging, anki, reading), <span class="mono">abertura.rotinas_manha</span>, <span class="mono">shutdown.feito</span>, <span class="mono">staging.mais_velho_d</span>. A Mesa é composição de chamadas que o app já faz — nenhum endpoint novo na onda 1.</li>
+      <li><b>Para o detalhista:</b> uma regra de ordenação explícita (pendência &gt; rito do dia &gt; arquivo), estável e previsível. A grade atual não tem regra nenhuma.</li>
+    </ul>
+    <div class="delta">a “gaveta” vira um <b>quadro de missões</b>: o que está esperando brilha com número, o resto fica quieto no arquivo.</div>
+  </div>
+</div>
+
+<!-- ========== ABERTURA ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>05:31</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll" style="display:flex;flex-direction:column;justify-content:center">
+      <div style="text-align:center;margin-bottom:26px">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round" style="margin:0 auto 12px"><path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/></svg>
+        <div style="font-size:26px;font-weight:700;text-transform:uppercase;letter-spacing:-.4px;line-height:1.15">Como é o<br>dia de hoje?</div>
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-top:10px;letter-spacing:.8px">UM TOQUE E O DIA FICA GRAVADO · VALE +10</div>
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="tcard">
+          <div class="t-ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round"><path d="M9.59 4.59A2 2 0 1 1 11 8H2"/><path d="M12.59 19.41A2 2 0 1 0 14 16H2"/><path d="M17.73 7.73A2.5 2.5 0 1 1 19.5 12H2"/></svg></div>
+          <div class="t-name">Dia yoga</div>
+          <div class="t-sub">LEVE · 4 RITMOS</div>
+        </div>
+        <div class="tcard">
+          <div class="t-ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div class="t-name">Dia corrida</div>
+          <div class="t-sub">PESADO · 5 RITMOS</div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:22px;font-family:var(--font-mono);font-size:9.5px;color:var(--muted);letter-spacing:.6px">SEQUÊNCIA DE ABERTURAS: 6 DIAS</div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Rito da manhã — toque das 5h30</div>
+    <h3>Abertura — a primeira moeda do dia</h3>
+    <ul>
+      <li><b>O estado sem template já é quase isto no código</b> (<span class="mono">Abertura.tsx:366-397</span>: “como é o dia de hoje? um toque e o dia fica gravado”). A ruptura é dar à escolha o peso que ela tem: duas cartas gigantes, não dois botões de formulário.</li>
+      <li><b>Cada carta anuncia a carga:</b> “leve · 4 ritmos” / “pesado · 5 ritmos” — ele escolhe o dia sabendo o tamanho do compromisso. Decisão informada em 1 segundo, sem letra miúda.</li>
+      <li><b>“Vale +10”</b> transforma o primeiro toque do dia na primeira moeda: o jogo começa às 5h30, não às 21h.</li>
+      <li><b>Depois do toque,</b> a tela segue a estrutura atual (rotinas da manhã, temas da semana, agenda, check-in) — mas as rotinas usam a mesma <span class="mono">QuestRow</span> do fechamento, com “+20” visível. Uma gramática só, manhã e noite (P6).</li>
+      <li><b>Check-in das 8h20</b> (energia/clareza/prioridade) permanece pills + uma linha — já é bom; ganha apenas o estilo físico do sistema.</li>
+    </ul>
+    <div class="delta">mesma lógica, outra tensão: hoje a escolha parece configuração; aqui parece <b>seleção de personagem do dia</b>.</div>
+  </div>
+</div>
+
+<!-- ========== CAPTURA ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>14:07</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div style="display:flex;gap:5px;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:4px;margin-top:2px">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--volt);border-bottom:3px solid var(--volt-press);border-radius:9px;min-height:40px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#131A05" stroke-width="2.5" stroke-linecap="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <span style="font-weight:700;font-size:12.5px;color:#131A05">Captura rápida</span>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;min-height:40px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          <span style="font-weight:600;font-size:12.5px;color:var(--muted)">Leitura</span>
+        </div>
+      </div>
+
+      <div style="padding:22px 2px 14px">
+        <div class="scr-crumb">tire da cabeça</div>
+        <div class="scr-title" style="font-size:24px">Uma caixa de entrada,<br>zero atrito.</div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden">
+        <div style="padding:16px;min-height:110px;font-size:14px;line-height:1.5;color:var(--text)">cobrar a Ana pelo relatório na sexta<span class="caret">▌</span></div>
+        <div style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding:10px">
+          <div style="display:flex;align-items:center;gap:7px;height:44px;padding:0 16px;border-radius:999px;background:var(--volt-soft);border:1px solid rgba(200,240,75,0.35)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C8F04B" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+            <span style="font-weight:700;font-size:12.5px;color:var(--volt)">ditar</span>
+          </div>
+          <div style="flex:1"></div>
+          <div class="bigact small" style="min-height:44px;padding:0 18px">
+            <span>Enviar</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#131A05" stroke-width="2.5" stroke-linecap="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="achv" style="margin-top:14px">
+        <div class="a-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#131A05" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1">
+          <div class="a-main">Capturado — vai para a triagem.</div>
+          <div class="a-sub">+5 PTS · 1.245 NO SALDO</div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:12px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <div style="flex:1"><div style="font-size:12.5px;font-weight:600">Conteúdo sensível</div><div style="font-size:10.5px;color:var(--muted);margin-top:1px">O preview das notificações fica neutro.</div></div>
+      </div>
+
+      <div class="qgroup" style="margin-top:20px"><span>FUNCIONA BEM PARA</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">
+        <span class="fchip">tarefas e prazos</span>
+        <span class="fchip">ideias soltas</span>
+        <span class="fchip">cobranças</span>
+        <span class="fchip">algo para guardar</span>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Captura universal</div>
+    <h3>A mesma caixa, com recibo de pontos</h3>
+    <ul>
+      <li><b>A tela atual já é boa</b> — modo captura/leitura, ditado, conteúdo sensível, fila offline (<span class="mono">captureQueue</span>). A ruptura aqui é fina e deliberada: não se mexe no que funciona.</li>
+      <li><b>O “Enviar” ganha corpo físico</b> (44px, sombra dura) e para de competir com o botão “ditar”: ditar é ghost volt, enviar é volt cheio. Um primário (P3).</li>
+      <li><b>A confirmação vira conquista:</b> o retorno do BFF (“capturado — vai para a triagem”) aparece como <span class="mono">AchievementToast</span> com “+5 pts · novo saldo”. Toda ação do app fecha o loop de recompensa, não só os ritos (P5 generalizado).</li>
+      <li><b>Offline continua honesto:</b> “sem conexão — guardado no aparelho” permanece, agora com o mesmo padrão visual de toast, em cyan (info), nunca em vermelho — nada se perdeu.</li>
+      <li><b>O modo Leitura</b> (sessões, buffer, compilar no vault) mantém a estrutura; herda QuestRow para os registros e o mesmo toast ao compilar (“nota gravada · N candidatos Anki”).</li>
+    </ul>
+    <div class="delta">captura é a ação mais frequente do app inteiro — cada uma delas agora <b>paga +5 e mostra o saldo subindo</b>.</div>
+  </div>
+</div>
+
+<!-- ========== PLACAR (REVISÃO) ========== -->
+<div class="mockrow">
+  <div class="phone"><div class="notch"></div><div class="scr">
+    <div class="statusbar"><span>22:10</span><span class="sicons">●●●○ 5G ▮</span></div>
+    <div class="scr-scroll">
+      <div class="scr-head">
+        <div class="scr-crumb">revisão · placar</div>
+        <div class="scr-title">Placar</div>
+      </div>
+
+      <div style="text-align:center;padding:14px 0 20px">
+        <div style="font-size:56px;font-weight:700;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums">1.380</div>
+        <div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:2px;color:var(--muted);margin-top:8px">PONTOS ACUMULADOS</div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:14px">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--volt);letter-spacing:1px">N4</span>
+          <div class="diams"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">vitalício · não regride</span>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.4px;color:var(--muted)">CICLO 3 · SEMANA 4/12</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--volt)">580/800</span>
+        </div>
+        <div style="margin-top:10px"><div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px">
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--mint)">semana +210</span>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--coral)">−40 descontos</span>
+          <span style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">N5 em 220</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="stat"><div class="s-label">FECHAMENTOS</div><div class="s-value">5</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">esta semana</div></div>
+        <div class="stat"><div class="s-label">CAPTURAS</div><div class="s-value">23</div><div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">esta semana</div></div>
+        <div class="stat"><div class="s-label">LEITURA</div><div class="s-value">94<small>m</small></div><div style="font-family:var(--font-mono);font-size:9px;color:var(--muted)">esta semana</div></div>
+      </div>
+
+      <div class="qgroup" style="margin-top:20px"><span>SEMANA 4 · SCORECARD 71%</span></div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">
+          <span style="font-size:12.5px;color:#C6CBD2">padrão: dias de corrida fecham mais ritmos</span>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--volt)">4×</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-top:1px dashed var(--line)">
+          <span style="font-size:12.5px;color:#C6CBD2">padrão: staging cresce nas quintas</span>
+          <span style="font-family:var(--font-mono);font-size:9px;color:var(--cyan)">3×</span>
+        </div>
+      </div>
+      <div style="height:24px"></div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <div class="tag">Extra · Revisão promovida</div>
+    <h3>Placar — o jogo que já existia</h3>
+    <ul>
+      <li><b>Todos estes dados já existem</b> em <span class="mono">Revisao.tsx</span>: saldo, nível com diamantes, ciclo pontos/meta, semana +ganho/−desconto, padrões, scorecard %, fechamentos/capturas/leitura. Nada aqui é endpoint novo.</li>
+      <li><b>O que muda é a escala:</b> o saldo deixa de ser uma linha “1.380 pts” entre outras e vira o maior número do app. O HUD inteiro aponta para esta tela — e ela finalmente parece o destino.</li>
+      <li><b>Lei nº 4 do código respeitada:</b> o placar informa, não julga. Ganho em mint, desconto em coral, sem textos motivacionais. Se não houve padrão na semana, a seção some — como já acontece hoje.</li>
+      <li><b>Por que mostrar aqui:</b> na direção “HUD de jogo”, esta tela deixa de ser apêndice e vira o lugar para onde toda recompensa aponta (“ver placar” na tela de recompensa do fechamento).</li>
+    </ul>
+    <div class="delta">zero lógica nova, 100% restyling de dados reais — a tela mais barata e mais transformadora do pacote.</div>
+  </div>
+</div>
+
+<!-- ================= 3. ANTES → DEPOIS ================= -->
+<h2 class="sec"><span class="n">03</span>Antes → depois</h2>
+<p class="sec-sub">Descrição honesta do que existe hoje (lida no código), ao lado do proposto.</p>
+
+<div class="bd">
+  <div class="col before">
+    <div class="col-tag">Antes · Fechar o dia (Fechar.tsx)</div>
+    <div class="mini">
+      <div class="old-line" style="color:#5A626B;font-family:var(--font-mono);font-size:10px">dia corrida</div>
+      <div class="old-line" style="color:#5A626B;font-size:11px">rotinas de hoje</div>
+      <div class="old-line">☑ Corrida 5k</div>
+      <div class="old-line">☐ Inbox zero (staging)</div>
+      <div class="old-line">☐ Desligar telas 23h</div>
+      <div class="old-line" style="color:#5A626B;font-size:11px;margin-top:6px">como foi o dia?</div>
+      <div class="old-line" style="border:1px solid var(--line);border-radius:6px;padding:8px;color:#4A515A">despeja aqui — 1 linha já vale</div>
+      <div class="old-line link">estruturar com o Hermes →</div>
+      <div class="old-line" style="color:#5A626B">fechar sem escrever</div>
+      <div class="old-line" style="color:#5A626B;margin-top:8px;font-style:italic">(após gravar: “✓ dia fechado — 4 de 7 ritmos hoje · 1.380 pts · nível 4” em texto de 13px)</div>
+    </div>
+    <ul>
+      <li>Dois links de texto, nenhum botão primário: a ação mais importante do dia é a menos clicável da tela.</li>
+      <li>“Fechar sem escrever” tem nome de derrota — o modo mínimo parece trapaça, então o dia ruim vira dia não-registrado.</li>
+      <li>Checkbox é um glifo “☐” numa linha de texto de ~34px — alvo pequeno demais para a última ação do dia.</li>
+      <li>A recompensa existe nos dados e morre num parágrafo cinza.</li>
+    </ul>
+  </div>
+  <div class="col after">
+    <div class="col-tag">Depois · proposto</div>
+    <div class="mini" style="background:#0D1206;border-color:rgba(200,240,75,0.25)">
+      <div class="old-line" style="color:var(--volt);font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px">NOITE · 0/2</div>
+      <div class="old-line" style="color:var(--text)">[ &nbsp; ] Desligar telas 23h &nbsp; <span style="color:var(--volt);font-family:var(--font-mono)">+20</span></div>
+      <div class="old-line" style="color:var(--text)">[ &nbsp; ] Preparar mesa de amanhã &nbsp; <span style="color:var(--volt);font-family:var(--font-mono)">+20</span></div>
+      <div class="old-line" style="border:1px solid var(--line);border-radius:6px;padding:8px;color:#4A515A;margin-top:8px">como foi o dia? — opcional, vale bônus</div>
+      <div class="old-line" style="background:var(--volt);color:var(--volt-text);border-radius:8px;padding:11px;text-align:center;font-weight:700;margin-top:8px;border-bottom:3px solid var(--volt-press)">FECHAR O DIA · GARANTE +80</div>
+      <div class="old-line" style="color:var(--muted);text-align:center;font-size:10px;font-family:var(--font-mono)">estruturar com o Hermes · +40 bônus</div>
+    </div>
+    <ul>
+      <li>Um BigAction de 64px, sempre habilitado, com a recompensa escrita no botão.</li>
+      <li>Escrever virou bônus pontuado; o modo mínimo é o caminho padrão, sem nome pejorativo.</li>
+      <li>Checkbox físico de 40px dentro de uma linha de 62px — um toque resolve, até com sono.</li>
+      <li>Fechar abre a tela de recompensa: +140 em 64px, barra de nível enchendo, diamantes.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="bd">
+  <div class="col before">
+    <div class="col-tag">Antes · “Ferramentas” (Home.tsx:260-287)</div>
+    <div class="mini">
+      <div class="old-line" style="color:#5A626B;font-family:var(--font-mono);font-size:10px">SISTEMA — FERRAMENTAS</div>
+      <div class="old-line">[◌ Agenda] &nbsp; [◌ Abertura]</div>
+      <div class="old-line">[◌ Triagem] &nbsp; [◌ Ritmos]</div>
+      <div class="old-line">[◌ Reduzir] &nbsp; [◌ Revisão]</div>
+      <div class="old-line">[◌ Edificação] &nbsp; [◌ Shutdown]</div>
+      <div class="old-line">[◌ Fechar dia] &nbsp; [◌ Ajustes]</div>
+    </div>
+    <ul>
+      <li>10 botões idênticos, 2 colunas, no fim da Home: mesma cor, mesmo tamanho, mesma cara.</li>
+      <li>Nenhum indica pendência: abrir a Triagem para descobrir que está vazia é o passeio diário.</li>
+      <li>Mora atrás de um scroll longo — a segunda navegação do app exige procurar.</li>
+      <li>Sem regra de ordenação: Ajustes e Fechar o dia têm o mesmo peso visual.</li>
+    </ul>
+  </div>
+  <div class="col after">
+    <div class="col-tag">Depois · A Mesa (5ª aba)</div>
+    <div class="mini" style="background:#0D1206;border-color:rgba(200,240,75,0.25)">
+      <div class="old-line" style="color:var(--volt);font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px">PRECISA DE VOCÊ</div>
+      <div class="old-line" style="color:var(--text)">◈ Triagem — mais velho há 4d &nbsp; <span style="color:var(--cyan);font-family:var(--font-mono)">3</span></div>
+      <div class="old-line" style="color:var(--text)">◈ Revisão — anki sugeridos &nbsp; <span style="color:var(--grape);font-family:var(--font-mono)">5</span></div>
+      <div class="old-line" style="color:var(--text)">◈ Fechar o dia — vale +80 &nbsp; <span style="color:var(--volt);font-family:var(--font-mono)">21h</span></div>
+      <div class="old-line" style="color:var(--muted);font-family:var(--font-mono);font-size:10px;letter-spacing:1.5px;margin-top:6px">ARQUIVO</div>
+      <div class="old-line" style="color:#4A515A">◈ Agenda · sem horários extras</div>
+      <div class="old-line" style="color:#4A515A">◈ Ajustes · servidor, notificações</div>
+    </div>
+    <ul>
+      <li>Lista única ordenada por pendência: quem precisa dele tem número e cor; quem não precisa fica apagado no arquivo.</li>
+      <li>5ª aba da tabbar: qualquer ferramenta a 1 toque de qualquer tela.</li>
+      <li>Estado antes do toque: “feito ✓”, “5/8”, “3 pendentes” — nenhuma tela aberta à toa.</li>
+      <li>Regra de ordenação explícita e estável (pendência &gt; rito &gt; arquivo) — previsível para o detalhista.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ================= 4. SISTEMA ================= -->
+<h2 class="sec"><span class="n">04</span>Sistema</h2>
+<p class="sec-sub">Tokens novos (todos propostos, nenhum herdado por acidente) e as peças que a proposta exige — renderizadas, não descritas.</p>
+
+<h3 style="font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin:26px 0 4px">Cores</h3>
+<table class="tokens">
+  <tr><th>token</th><th>valor</th><th>defesa</th></tr>
+  <tr><td>bg</td><td><span class="sw" style="background:#07090C"></span><span class="mono">#07090C</span></td><td class="why">Mais preto que o #080A0D atual: o volt precisa de contraste máximo. Leo é noturno — fundo profundo às 21h.</td></tr>
+  <tr><td>card / card2</td><td><span class="sw" style="background:#12161D"></span><span class="mono">#12161D</span> / <span class="mono">#0E1219</span></td><td class="why">Quase os mesmos degraus de hoje (#15191F/#11151A), levemente mais frios para a paleta saturada não brigar com o bronze residual.</td></tr>
+  <tr><td>volt (primary)</td><td><span class="sw" style="background:#C8F04B"></span><span class="mono">#C8F04B</span></td><td class="why">A ruptura inteira cabe aqui: verde-elétrico de HUD, cor de “ponto ganho”. Substitui o bronze #DEB878 da variação A — aprovada, enterrada com honra.</td></tr>
+  <tr><td>volt-press</td><td><span class="sw" style="background:#8FAE2E"></span><span class="mono">#8FAE2E</span></td><td class="why">Sombra dura de 4px sob todo primário: o botão parece tecla, afunda no toque. É o “peso físico” que tira a ação do abstrato.</td></tr>
+  <tr><td>volt-text</td><td><span class="sw" style="background:#131A05"></span><span class="mono">#131A05</span></td><td class="why">Texto sobre o volt: quase-preto esverdeado, contraste &gt; 10:1.</td></tr>
+  <tr><td>mint (success)</td><td><span class="sw" style="background:#5BD9A3"></span><span class="mono">#5BD9A3</span></td><td class="why">Feito/confirmado. Mais saturado que o #71B49A atual para se ler como “ganho” ao lado do volt.</td></tr>
+  <tr><td>cyan (info)</td><td><span class="sw" style="background:#4ED0E8"></span><span class="mono">#4ED0E8</span></td><td class="why">Filas, agenda, estados offline. Substitui o azul apagado #7D9FD0.</td></tr>
+  <tr><td>grape</td><td><span class="sw" style="background:#B18CFF"></span><span class="mono">#B18CFF</span></td><td class="why">Revisão/Anki — mantém o papel do lilac #A99ACB, em voltagem de HUD.</td></tr>
+  <tr><td>coral (danger)</td><td><span class="sw" style="background:#FF6B5E"></span><span class="mono">#FF6B5E</span></td><td class="why">Erros e descontos do placar. Uso raro: neste sistema, vermelho nunca pune — só informa (lei nº 4 do código).</td></tr>
+  <tr><td>text / muted</td><td><span class="sw" style="background:#F2F5F0"></span><span class="mono">#F2F5F0</span> / <span class="mono">#878F98</span></td><td class="why">Texto esverdeia 2% para combinar com o volt; muted escurece um passo (#9A9BA3 → #878F98) porque o fundo ficou mais preto.</td></tr>
+  <tr><td>AREA_COLORS</td><td colspan="2" class="why"><b>Inalteradas.</b> As 10 cores de área de vida já são um sistema aprovado e aparecem em Tasks/Abertura/Shutdown. Mexer nelas seria churn, não ruptura.</td></tr>
+</table>
+
+<h3 style="font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin:30px 0 4px">Tipografia, espaço, forma</h3>
+<table class="tokens">
+  <tr><th>token</th><th>valor</th><th>defesa</th></tr>
+  <tr><td>display</td><td class="mono">Space Grotesk 700 · caixa alta · números 56–64px</td><td class="why">Números de placar precisam de peso geométrico, não de serif. Já está carregada no app (<span class="mono">SpaceGrotesk_700Bold</span>).</td></tr>
+  <tr><td>hud / eyebrows</td><td class="mono">IBM Plex Mono 500 · caps · tracking 1.4–2px</td><td class="why">Vira a voz dominante (contadores, labels, pontos) — é a textura visual de “console”. Já carregada.</td></tr>
+  <tr><td>corpo</td><td class="mono">Space Grotesk 500</td><td class="why">Inalterada.</td></tr>
+  <tr><td><s>serif</s></td><td class="mono">Fraunces — removida</td><td class="why">Custo explícito da ruptura: a serif era a alma “escritório” da variação A. Aqui ela quebraria a ilusão de HUD. Um pacote de fonte a menos para carregar.</td></tr>
+  <tr><td>radius</td><td class="mono">sm 6 · md 10 · lg 14 · xl 18</td><td class="why">2px mais fechado em cada degrau: interfaces de jogo são mais “chapadas” e densas que as de editorial.</td></tr>
+  <tr><td>sombra</td><td class="mono">border-bottom dura (3–4px) em vez de blur</td><td class="why">Troca a sombra suave atual (shadowRadius 18) pela sombra sólida de tecla. Mais barata de renderizar e mais legível como “pressionável”.</td></tr>
+  <tr><td>spacing</td><td class="mono">inalterado (4/8/12/16/24/32/40)</td><td class="why">O ritmo de espaçamento atual é bom; a ruptura não precisa dele.</td></tr>
+</table>
+
+<h3 style="font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin:30px 0 4px">Componentes</h3>
+<div class="comp-grid">
+  <div class="comp">
+    <div class="c-head"><span class="c-name">BigAction</span><span class="c-new">novo</span></div>
+    <div class="c-body">
+      <div class="bigact"><span>Fechar o dia</span><span class="sub">garante +80</span></div>
+      <div style="height:10px"></div>
+      <div class="bigact small"><span>Enviar</span><span class="sub">+5</span></div>
+    </div>
+    <div class="c-note">O único primário de cada tela. 64px (rito) ou 52px (inline), label + sublabel com a recompensa. Afunda 2px no <span class="mono">pressed</span> — <span class="mono">Animated.timing</span> de 80ms.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">QuestRow</span><span class="c-new">novo</span></div>
+    <div class="c-body">
+      <div class="quest done" style="margin-bottom:8px">
+        <div class="box"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#131A05" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="q-name">Corrida 5k</div><div class="q-steps">1. tênis na porta · 2. alongar 2min</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+      <div class="quest" style="margin-bottom:0">
+        <div class="box"></div>
+        <div style="flex:1"><div class="q-name">Desligar telas 23h</div></div>
+        <div class="q-pts">+20</div>
+      </div>
+    </div>
+    <div class="c-note">Rotina como missão: checkbox físico de 40px, passos em mono (roteiro, sem check próprio — regra do código), pontos à direita. Usada em Abertura, Fechar e Ritmos.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">RewardSheet</span><span class="c-new">novo</span></div>
+    <div class="c-body" style="text-align:center">
+      <div style="font-size:44px;font-weight:700;letter-spacing:-1.5px;color:var(--volt)">+140</div>
+      <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:2px;color:var(--muted);margin:6px 0 12px">PONTOS DE HOJE</div>
+      <div class="seg"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+      <div style="display:flex;justify-content:center;margin-top:12px"><div class="diams"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div></div>
+    </div>
+    <div class="c-note">O fim de todo rito. Número conta de 0 ao total (600ms), barra segmentada preenche, diamantes acendem. Alimentado pelo <span class="mono">getPontos()</span> que o approve já chama.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">SegmentBar</span><span class="c-new">novo</span></div>
+    <div class="c-body">
+      <div class="seg" style="margin-bottom:12px"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+      <div class="seg mint" style="margin-bottom:12px"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+      <div class="seg cyan"><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="c-note">Substitui a <span class="mono">ProgressBar</span> fina de 5px onde o progresso é o conteúdo (nível, ritmos, ciclo). Segmentos discretos leem-se como “vidas/fases” — e contam-se de relance.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">StatBlock</span><span class="c-new">novo</span></div>
+    <div class="c-body" style="display:flex;gap:8px">
+      <div class="stat"><div class="s-label">RITMOS</div><div class="s-value">5<small>/8</small></div></div>
+      <div class="stat"><div class="s-label">COBRANÇAS</div><div class="s-value">4</div></div>
+    </div>
+    <div class="c-note">Número grande + label mono + micro-contexto. Evolução direta do <span class="mono">.metric</span> da Home atual.</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">PendRow</span><span class="c-new">novo</span></div>
+    <div class="c-body">
+      <div class="pend" style="margin-bottom:8px">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4ED0E8" stroke-width="2" stroke-linecap="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+        <div style="flex:1"><div class="p-name">Triagem</div><div class="p-sub">mais velho há 4 dias</div></div>
+        <span class="p-count cyan">3</span>
+      </div>
+      <div class="pend idle" style="margin-bottom:0">
+        <div class="p-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#878F98" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+        <div style="flex:1"><div class="p-name">Ajustes</div><div class="p-sub">servidor, notificações</div></div>
+      </div>
+    </div>
+    <div class="c-note">A unidade da Mesa: nome + estado + contador. Sem pendência, apaga para 50% (estado “arquivo”).</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">AchievementToast</span><span class="c-new">novo</span></div>
+    <div class="c-body">
+      <div class="achv">
+        <div class="a-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#131A05" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <div style="flex:1"><div class="a-main">Capturado — vai para a triagem.</div><div class="a-sub">+5 PTS · 1.245 NO SALDO</div></div>
+      </div>
+    </div>
+    <div class="c-note">Fecha o loop de recompensa fora dos ritos: captura, tarefa concluída, cartão Anki revisado. Some sozinho em 2.5s (<span class="mono">Animated</span> de opacidade + translateY).</div>
+  </div>
+  <div class="comp">
+    <div class="c-head"><span class="c-name">AppButton / Card / Field / Badge</span><span class="c-new exists">existentes · reestilizar</span></div>
+    <div class="c-body">
+      <div class="ghostact" style="margin-bottom:10px">ver tarefas</div>
+      <span class="fchip volt"><b>2</b> leituras</span>
+    </div>
+    <div class="c-note">Os componentes atuais de <span class="mono">ui.tsx</span> sobrevivem: recebem os tokens novos e a sombra dura. <span class="mono">AppButton variant="primary"</span> passa a delegar ao BigAction.</div>
+  </div>
+</div>
+
+<!-- ================= 5. O QUE SE SACRIFICA ================= -->
+<h2 class="sec"><span class="n">05</span>O que esta variação sacrifica</h2>
+<p class="sec-sub">Toda ruptura troca algo por algo. Em relação à variação A, perde-se:</p>
+<div class="sac">
+  <h4>A elegância editorial</h4>
+  <p>A dupla Fraunces + bronze do “midnight desk” é adulta, calma e atemporal. O HUD é barulhento por definição: caixa alta, números gigantes, cor saturada. Se o Leo quiser o app como objeto de contemplação, A ganha. Esta variação aposta que ele precisa de empurrão, não de contemplação.</p>
+</div>
+<div class="sac">
+  <h4>A discrição às 21h</h4>
+  <p>O rito da noite acontece com sono, no escuro. Um “+140” verde-elétrico de 64px é estimulante — exatamente o oposto do que se recomenda antes de dormir. Mitigação proposta: a RewardSheet é a única tela de alto brilho e dura um gesto; se incomodar, um “modo noturno” reduz o volt para âmbar após as 20h. É um risco real, nomeado.</p>
+</div>
+<div class="sac">
+  <h4>A neutralidade dos dados</h4>
+  <p>Transformar tudo em pontos muda o incentivo: há o risco de ele começar a otimizar o placar em vez da vida (Goodhart de bolso). A defesa já existe no código — o placar “informa, não julga”, sem ranking e sem punição — e esta proposta mantém: pontos nunca descem por falta, só sobem por feito. Mas a tentação de farmar capturas fáceis é um custo honesto desta direção.</p>
+</div>
+<div class="sac">
+  <h4>O envelhecimento do tema</h4>
+  <p>Premium mono sobrio dura anos; estética de jogo pode cansar em meses. O sistema foi desenhado para “destemar”: todos os tokens de HUD vivem em <span class="mono">theme.ts</span> e os componentes novos são 6 — trocar a pele depois é uma tarde, não um projeto.</p>
+</div>
+
+<!-- ================= 6. ONDAS ================= -->
+<h2 class="sec"><span class="n">06</span>Plano de implementação em ondas</h2>
+<p class="sec-sub">Ordenado por ganho ÷ custo. Nenhuma onda exige dependência nova: Feather, <span class="mono">Animated</span> puro e <span class="mono">expo-linear-gradient</span> (já usado na Home) bastam.</p>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 1</span><span class="w-title">O fechamento paga</span><span class="w-cost">1–2 dias · maior ganho do pacote</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/ui.tsx</td><td>Criar <span class="mono">BigAction</span>, <span class="mono">QuestRow</span>, <span class="mono">SegmentBar</span>, <span class="mono">RewardSheet</span> (4 componentes, ~250 linhas, puro <span class="mono">Animated</span>).</td></tr>
+    <tr><td class="f">app/src/screens/Fechar.tsx</td><td>Trocar os dois links de texto por BigAction sempre habilitado (label “Fechar o dia · garante +N”); rotinas viram QuestRows; estado <span class="mono">done</span> vira RewardSheet com os dados de <span class="mono">getPontos()</span> que já chegam. Nenhuma chamada de API nova.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que primeiro:</b> é a tela de maior frequência e o pior momento do app hoje. Sozinha, esta onda resolve os problemas nº 1 e nº 3 da auditoria — sem tocar em mais nada.</div>
+</div>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 2</span><span class="w-title">A pele do HUD</span><span class="w-cost">1 dia · mecânico</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/theme.ts</td><td>Nova paleta dark (volt/mint/cyan/grape/coral), radius −2px, sombra dura; <span class="mono">AREA_COLORS</span> intactas. Manter a paleta antiga exportada como <span class="mono">classic</span> para rollback de um arquivo.</td></tr>
+    <tr><td class="f">app/src/ui.tsx</td><td>Reestilizar <span class="mono">AppButton</span> (sombra dura, altura 56), <span class="mono">Card</span>, <span class="mono">Field</span>, <span class="mono">Badge</span> com os tokens novos.</td></tr>
+    <tr><td class="f">app/App.tsx</td><td>Remover Fraunces do <span class="mono">useFonts</span>; ajustar header/tabbar para o tom novo (labels da tabbar em mono caps).</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que depois da 1:</b> a Onda 1 prova a direção na tela que importa usando estilos locais; a 2 generaliza. Se o Leo rejeitar o HUD, só Fechar.tsx carrega vestígio.</div>
+</div>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 3</span><span class="w-title">A Mesa substitui Ferramentas</span><span class="w-cost">2 dias · o problema nº 2</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/screens/Mesa.tsx <span style="color:var(--muted)">(novo)</span></td><td>Lista de PendRows com a regra pendência &gt; rito &gt; arquivo. Dados: os mesmos <span class="mono">HomeSignals</span> + <span class="mono">getAbertura</span>/<span class="mono">getShutdown</span> que a Home já chama.</td></tr>
+    <tr><td class="f">app/App.tsx</td><td>Tabbar ganha 5ª aba “Mesa”; <span class="mono">SUBSCREENS</span> passa a abrir pela Mesa (voltar = Mesa, não Home — mudar o <span class="mono">setTab</span> do chevron).</td></tr>
+    <tr><td class="f">app/src/screens/Home.tsx</td><td>Apagar a seção “Ferramentas” inteira; promover saldo + SegmentBar de ciclo ao topo; hero vira heroquest com “vale +N”.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que aqui:</b> precisa das peças das ondas 1–2 e resolve a “gaveta” — o problema estrutural que resta.</div>
+</div>
+
+<div class="wave">
+  <div class="w-head"><span class="w-n">ONDA 4</span><span class="w-title">O resto do jogo</span><span class="w-cost">2–3 dias · polimento</span></div>
+  <div class="w-body"><table>
+    <tr><td class="f">app/src/screens/Abertura.tsx</td><td>Toque das 5h30 vira duas TemplateCards; rotinas da manhã viram QuestRows (mesmo componente do Fechar — P6).</td></tr>
+    <tr><td class="f">app/src/screens/Capture.tsx</td><td>Enviar vira BigAction small; confirmação vira AchievementToast (“+5 pts · saldo”). Modo leitura só reestiliza.</td></tr>
+    <tr><td class="f">app/src/screens/Revisao.tsx</td><td>Placar em escala HUD: saldo 56px, SegmentBar de ciclo, stats da semana. Dados 100% existentes.</td></tr>
+    <tr><td class="f">BFF (fora do app)</td><td><b>Custo explícito, opcional:</b> expor “sequência de fechamentos” (streak) e pontos por tipo de ação. Sem isso, os rótulos “+N” usam uma tabela de pontos local em <span class="mono">theme.ts</span> — declarada, não mágica.</td></tr>
+  </table></div>
+  <div class="w-why"><b>Por que por último:</b> é polimento sobre telas que já funcionam. A sequência/streak é o único item que pede trabalho de backend — por isso é bônus, nunca dependência das ondas 1–3.</div>
+</div>
+
+<div class="footer">
+  AETERNUM · VARIAÇÃO C (RUPTURA) — “HUD DE JOGO” · proposta autocontida, sem recursos externos além do Google Fonts (fallbacks declarados) ·
+  desenhada sobre o código real de app/src · pt-BR
+</div>
+
+</div>
+</body>
+</html>

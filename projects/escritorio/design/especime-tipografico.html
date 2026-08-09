@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Espécime tipográfico — Aeternum</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Inter:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Archivo:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Syne:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080A0D;
+    --card: #15191F;
+    --card2: #11151A;
+    --line: rgba(235,222,202,0.11);
+    --text: #F4EFE7;
+    --muted: #9A9BA3;
+    --accent: #DEB878; /* usado só em micro-rótulos; o julgamento é do tipo, não da cor */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    padding: 56px 24px 120px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  /* ---------- chrome da página (micro-rótulos) ---------- */
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 1.8px; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  h1 { font-weight: 500; font-size: 26px; letter-spacing: -0.4px; }
+  .lede { color: var(--muted); font-size: 13.5px; line-height: 1.6; max-width: 72ch; margin-top: 10px; }
+  .lede code, .note code, td code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.92em; color: var(--text); }
+  section { margin-top: 72px; }
+  .sec-head { border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 28px; }
+  .sec-head h2 { font-weight: 500; font-size: 19px; letter-spacing: -0.3px; }
+  .sec-head p { color: var(--muted); font-size: 12.5px; margin-top: 6px; max-width: 78ch; line-height: 1.6; }
+  .note { color: var(--muted); font-size: 12px; line-height: 1.65; margin-top: 14px; max-width: 78ch; }
+
+  /* ---------- Seção 1: prova Fraunces ---------- */
+  .proof { display: grid; grid-template-columns: 64px 1fr 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .proof > div { background: var(--card); padding: 18px 20px; }
+  .proof .phead { background: var(--card2); }
+  .proof .phead span { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); display: block; line-height: 1.7; }
+  .proof .sz { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+  .f-fixed { font-family: "Fraunces", Georgia, serif; font-weight: 500; font-optical-sizing: none; font-variation-settings: "opsz" 14; }
+  .f-auto  { font-family: "Fraunces", Georgia, serif; font-weight: 500; font-optical-sizing: auto; }
+  .f-inst  { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; }
+
+  /* ---------- cards de conjunto ---------- */
+  .set { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px 28px 24px; margin-bottom: 28px; }
+  .set.recommended { border-color: rgba(222,184,120,0.45); }
+  .set-top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .set-top h3 { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 500; font-size: 13px; letter-spacing: 0.4px; }
+  .chip {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9px; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--accent); border: 1px solid rgba(222,184,120,0.35);
+    border-radius: 999px; padding: 3px 9px;
+  }
+  .chip.gray { color: var(--muted); border-color: var(--line); }
+  .set-pkgs { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; color: var(--muted); line-height: 1.8; margin-bottom: 22px; }
+  .spec { border-top: 1px solid var(--line); padding-top: 20px; }
+  .row { display: flex; align-items: baseline; gap: 18px; margin-bottom: 14px; }
+  .tag { width: 130px; flex: none; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); text-align: right; padding-top: 2px; }
+  .tag i { font-style: normal; opacity: 0.6; }
+  .eyebrow { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent); }
+  .greet { font-size: 30px; letter-spacing: -0.5px; line-height: 1.15; }
+  .sect  { font-size: 21px; letter-spacing: -0.3px; }
+  .body  { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  .task  { display: flex; justify-content: space-between; align-items: baseline; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; max-width: 460px; }
+  .task .t { font-size: 14.5px; }
+  .task .p { font-size: 11.5px; color: var(--muted); }
+  .hero { display: flex; align-items: baseline; gap: 34px; flex-wrap: wrap; }
+  .hero .big { font-size: 56px; letter-spacing: -0.5px; line-height: 1; }
+  .hero .plus { font-size: 40px; color: var(--text); }
+  .minis { display: flex; gap: 26px; flex-wrap: wrap; }
+  .minis span { font-size: 12.5px; color: var(--muted); }
+  .minis b { font-weight: inherit; color: var(--text); }
+  .set-notes { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+
+  /* papéis tipográficos por conjunto */
+  .voz-fraunces { font-family: "Fraunces", Georgia, serif; font-weight: 500; }
+  .voz-instrument { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; }
+  .voz-sg-caps { font-family: "Space Grotesk", system-ui, sans-serif; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+  .voz-news { font-family: "Newsreader", Georgia, serif; font-weight: 500; }
+  .voz-bric { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 600; }
+  .voz-dm { font-family: "DM Serif Display", Georgia, serif; font-weight: 400; }
+  .voz-syne { font-family: "Syne", system-ui, sans-serif; font-weight: 700; letter-spacing: 0; }
+  .voz-inter { font-family: "Inter", system-ui, sans-serif; font-weight: 600; letter-spacing: -0.6px; }
+  .ui-sg { font-family: "Space Grotesk", system-ui, sans-serif; }
+  .ui-inter { font-family: "Inter", system-ui, sans-serif; }
+  .ui-arch { font-family: "Archivo", system-ui, sans-serif; }
+  .ui-sg .t, .ui-inter .t, .ui-arch .t { font-weight: 600; }
+  .num-plex { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 500; }
+  .num-jb { font-family: "JetBrains Mono", ui-monospace, monospace; font-weight: 500; }
+  .num-sg { font-family: "Space Grotesk", system-ui, sans-serif; font-weight: 700; }
+  .num-inter { font-family: "Inter", system-ui, sans-serif; font-weight: 600; }
+  .num-fraunces { font-family: "Fraunces", Georgia, serif; font-weight: 500; }
+  .num-news { font-family: "Newsreader", Georgia, serif; font-weight: 500; }
+  .num-bric { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 600; }
+  .num-dm { font-family: "DM Serif Display", Georgia, serif; font-weight: 400; }
+  .num-syne { font-family: "Syne", system-ui, sans-serif; font-weight: 600; }
+  .num-arch { font-family: "Archivo", system-ui, sans-serif; font-weight: 600; }
+  .num-instrument { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; }
+
+  /* ---------- Seção 3: prova tabular ---------- */
+  .tab-proof { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+  .tcol { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .tcol h4 { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 500; font-size: 11px; margin-bottom: 2px; }
+  .tcol .status { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; display: block; margin-bottom: 12px; }
+  .tcol .status.ok { color: var(--accent); }
+  .tcol .status.warn { color: var(--muted); }
+  .stack { text-align: right; font-size: 24px; line-height: 1.5; }
+  .stack.small { font-size: 16px; opacity: 0.85; margin-top: 8px; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .tcol .lbl { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); text-align: right; margin-top: 10px; }
+
+  /* ---------- veredito + custo ---------- */
+  .verdict { background: var(--card); border: 1px solid rgba(222,184,120,0.45); border-radius: 14px; padding: 26px 28px; }
+  .verdict h3 { font-weight: 500; font-size: 17px; margin-bottom: 8px; }
+  .verdict p { color: var(--muted); font-size: 13px; line-height: 1.65; max-width: 80ch; }
+  table.pick { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 12.5px; }
+  table.pick th { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 500; font-size: 9.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
+  table.pick td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); color: var(--muted); vertical-align: top; line-height: 1.5; }
+  table.pick td:first-child { color: var(--text); }
+  pre { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; line-height: 1.7; color: var(--text); margin-top: 12px; }
+  pre .dim { color: var(--muted); }
+  .cost-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) {
+    .proof { grid-template-columns: 48px 1fr; }
+    .cost-grid { grid-template-columns: 1fr; }
+    .tag { width: 96px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="kicker">Aeternum — escritório · decisão tipográfica</p>
+  <h1>Espécime tipográfico</h1>
+  <p class="lede">
+    Só tipografia. Oito conjuntos (voz + UI + número), dois deles controles, todos renderizados no
+    mesmo texto e nos mesmos números, nos tamanhos reais do app: voz a 21/27/30px, UI a 11.5–16px,
+    número herói a 40–64px e ponto miúdo a 11.5px. Fundo <code>#080A0D</code>, cards
+    <code>#15191F</code>, texto <code>#F4EFE7</code> — a cor está quase ausente de propósito.
+    Tamanhos medidos em <code>app/src/theme.ts</code>, <code>Home.tsx</code> e
+    <code>Revisao.tsx</code>. Todas as famílias existem no Google Fonts e têm pacote
+    <code>@expo-google-fonts</code> confirmado.
+  </p>
+
+  <!-- ============ 1. PROVA FRAUNCES ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="kicker">01 — a prova do problema</p>
+      <h2>Fraunces: o diagnóstico da D3 está certo</h2>
+      <p>
+        A Fraunces tem eixo óptico (<code>opsz</code> 9–144). O app carrega uma instância
+        <em>estática</em> (<code>Fraunces_500Medium</code>): o <code>opsz</code> fica travado no
+        default do eixo (~14, calibrado para texto corrido) e não há API no
+        <code>@expo-google-fonts</code> para movê-lo — o pacote entrega um TTF por peso, sem eixos.
+        Abaixo, a mesma frase em três colunas: <strong>como o app a renderiza</strong> (opsz fixo),
+        <strong>o que o eixo faria</strong> (opsz automático, só possível no navegador) e a
+        alternativa. Onde a coluna do app engrossa e perde o desenho, é onde o app a usa: 18–34px
+        (<code>greeting</code> 30, <code>heroTitle</code> 27, <code>metricValue</code> 21,
+        <code>reviewTitle</code> 18, <code>nivel</code> 34).
+      </p>
+    </div>
+    <div class="proof">
+      <div class="phead"><span>tam</span></div>
+      <div class="phead"><span>Fraunces 500 · opsz travado ≈14<br>— como o app renderiza</span></div>
+      <div class="phead"><span>Fraunces 500 · opsz automático<br>— o que o eixo faria (impossível no Expo)</span></div>
+      <div class="phead"><span>Instrument Serif 400<br>— corte único, sem eixo para ajustar</span></div>
+
+      <div class="sz">18px</div>
+      <div class="f-fixed" style="font-size:18px">Boa noite, Leo. Hoje o dia rendeu.</div>
+      <div class="f-auto" style="font-size:18px">Boa noite, Leo. Hoje o dia rendeu.</div>
+      <div class="f-inst" style="font-size:18px">Boa noite, Leo. Hoje o dia rendeu.</div>
+
+      <div class="sz">24px</div>
+      <div class="f-fixed" style="font-size:24px">Boa noite, Leo. Hoje o dia rendeu.</div>
+      <div class="f-auto" style="font-size:24px">Boa noite, Leo. Hoje o dia rendeu.</div>
+      <div class="f-inst" style="font-size:24px">Boa noite, Leo. Hoje o dia rendeu.</div>
+
+      <div class="sz">30px</div>
+      <div class="f-fixed" style="font-size:30px">Boa noite, Leo. Hoje o dia rendeu.</div>
+      <div class="f-auto" style="font-size:30px">Boa noite, Leo. Hoje o dia rendeu.</div>
+      <div class="f-inst" style="font-size:30px">Boa noite, Leo. Hoje o dia rendeu.</div>
+
+      <div class="sz">60px</div>
+      <div class="f-fixed" style="font-size:60px; line-height:1.1">Boa noite, Leo.</div>
+      <div class="f-auto" style="font-size:60px; line-height:1.1">Boa noite, Leo.</div>
+      <div class="f-inst" style="font-size:60px; line-height:1.1">Boa noite, Leo.</div>
+    </div>
+    <p class="note">
+      Leitura: a 18–24px a coluna do app fica com traço grosso e apertado — o "fofa" que o Leo
+      nomeou. A coluna do meio mostra que a Fraunces <em>sabe</em> se resolver nesses tamanhos, mas
+      só via <code>opsz</code>, que o stack Expo não expõe. A 60px as duas Fraunces voltam a brilhar
+      — e o app nunca a usa aí (o maior tamanho real da serifa é 34px, em <code>nivel</code>).
+      Conclusão: não é a fonte errada, é a faixa de tamanho errada para um corte que não podemos
+      ajustar. A saída é uma serifa cujo corte único já nasça certo a 18–34px.
+    </p>
+  </section>
+
+  <!-- ============ 2. CONJUNTOS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="kicker">02 — os conjuntos</p>
+      <h2>Oito conjuntos, mesmo texto, mesmos números</h2>
+      <p>
+        Cada cartão = voz + UI + número. Os textos são os reais: saudação 30px, título de seção
+        21px, corpo 13.5px, eyebrow mono, herói <code>1.240</code> / <code>+140</code>, metadados e
+        a linha de tarefa com o ponto discreto. Ordem: recomendação primeiro, controles em seguida.
+      </p>
+    </div>
+
+    <!-- S1 — RECOMENDADO -->
+    <article class="set recommended">
+      <div class="set-top">
+        <h3>01 · Instrument Serif + Space Grotesk + IBM Plex Mono</h3>
+        <span class="chip">recomendado</span>
+        <span class="chip gray">serifa moderna de contraste contido</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/instrument-serif · @expo-google-fonts/space-grotesk · @expo-google-fonts/ibm-plex-mono — 3 famílias, 7 arquivos (hoje: 3 famílias, 6)</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-plex">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-instrument">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-instrument">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-sg">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-sg"><span class="t">Enviar proposta da Litoral</span><span class="p num-plex">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-plex">1.240</span><span class="plus num-plex">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-sg"><span>nível <b class="num-plex">3</b></span><span><b class="num-plex">4/6</b> ritmos</span><span>sequência <b class="num-plex">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        Número tabular <strong>por construção</strong> (mono): o saldo contando não dança em
+        nenhuma plataforma, sem depender de <code>font-variant-numeric</code>. O <code>+10</code> em
+        mono miúdo usa o mesmo desenho dos metadados — some na linha, que é o que o Leo pediu.
+        Instrument Serif tem corte único (só 400 + itálico): não há eixo para ajustar nem para
+        errar; o contraste é contido e a altura-x generosa, então segura 18–34px sem engrossar.
+      </p>
+    </article>
+
+    <!-- CONTROLE A -->
+    <article class="set">
+      <div class="set-top">
+        <h3>02 · Fraunces + Space Grotesk + IBM Plex Mono</h3>
+        <span class="chip gray">controle — conjunto atual do app (variação A)</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/fraunces · @expo-google-fonts/space-grotesk · @expo-google-fonts/ibm-plex-mono — 3 famílias, 6 arquivos</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-plex">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-fraunces">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-fraunces">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-sg">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-sg"><span class="t">Enviar proposta da Litoral</span><span class="p num-plex">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-fraunces">1.240</span><span class="plus num-fraunces">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-sg"><span>nível <b class="num-fraunces">3</b></span><span><b class="num-fraunces">4/6</b> ritmos</span><span>sequência <b class="num-fraunces">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        É o que roda hoje: no app, os heróis (<code>metricValue</code>, <code>nivel</code>,
+        <code>reviewPct</code>) saem em Fraunces — figuras <strong>proporcionais</strong>, ou seja,
+        o saldo dança ao atualizar. Repare na largura instável do <code>1.240</code> vs. o do
+        conjunto 01.
+      </p>
+    </article>
+
+    <!-- CONTROLE C -->
+    <article class="set">
+      <div class="set-top">
+        <h3>03 · Space Grotesk 700 caixa alta + IBM Plex Mono</h3>
+        <span class="chip gray">controle — conjunto da variação C (base escolhida)</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/space-grotesk · @expo-google-fonts/ibm-plex-mono — 2 famílias, 5 arquivos</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-plex">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-sg-caps">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-sg-caps">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-sg">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-sg"><span class="t">Enviar proposta da Litoral</span><span class="p num-plex">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-sg">1.240</span><span class="plus num-sg">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-sg"><span>nível <b class="num-sg">3</b></span><span><b class="num-sg">4/6</b> ritmos</span><span>sequência <b class="num-sg">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        Honesto e barato (2 famílias), mas o herói em Space Grotesk tem figuras
+        <strong>proporcionais</strong> — dança ao contar — e o 700 caixa alta a 21–30px puxa para o
+        "placar de academia". Foi o "melhor, mas não muito bom" do Leo.
+      </p>
+    </article>
+
+    <!-- S2 NEWSREADER -->
+    <article class="set">
+      <div class="set-top">
+        <h3>04 · Newsreader + Inter + IBM Plex Mono</h3>
+        <span class="chip gray">serifa editorial</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/newsreader · @expo-google-fonts/inter · @expo-google-fonts/ibm-plex-mono — 3 famílias</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-plex">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-news">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-news">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-inter">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-inter"><span class="t">Enviar proposta da Litoral</span><span class="p num-plex">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-plex">1.240</span><span class="plus num-plex">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-inter"><span>nível <b class="num-plex">3</b></span><span><b class="num-plex">4/6</b> ritmos</span><span>sequência <b class="num-plex">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        Newsreader nasceu para texto corrido: altura-x alta, aberturas largas — a mais confortável
+        das serifa a 18–21px. Temperamento de revista, mais "jornal" que "comando pessoal". Mesmo
+        número mono do conjunto 01.
+      </p>
+    </article>
+
+    <!-- S3 BRICOLAGE -->
+    <article class="set">
+      <div class="set-top">
+        <h3>05 · Bricolage Grotesque + Archivo + JetBrains Mono</h3>
+        <span class="chip gray">grotesca com caráter</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/bricolage-grotesque · @expo-google-fonts/archivo · @expo-google-fonts/jetbrains-mono — 3 famílias</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-jb">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-bric">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-bric">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-arch">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-arch"><span class="t">Enviar proposta da Litoral</span><span class="p num-jb">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-jb">1.240</span><span class="plus num-jb">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-arch"><span>nível <b class="num-jb">3</b></span><span><b class="num-jb">4/6</b> ritmos</span><span>sequência <b class="num-jb">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        Bricolage dá personalidade sem serifa; o risco é cruzar a linha do "chamativo" que o Leo já
+        rejeitou. JetBrains Mono: tabular por construção, desenho mais técnico/estreito que a Plex.
+      </p>
+    </article>
+
+    <!-- S4 DM SERIF -->
+    <article class="set">
+      <div class="set-top">
+        <h3>06 · DM Serif Display + Archivo + IBM Plex Mono</h3>
+        <span class="chip gray">serifa de alto contraste clássico</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/dm-serif-display · @expo-google-fonts/archivo · @expo-google-fonts/ibm-plex-mono — 3 famílias</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-plex">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-dm">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-dm">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-arch">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-arch"><span class="t">Enviar proposta da Litoral</span><span class="p num-plex">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-plex">1.240</span><span class="plus num-plex">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-arch"><span>nível <b class="num-plex">3</b></span><span><b class="num-plex">4/6</b> ritmos</span><span>sequência <b class="num-plex">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        Bonita a 30px, mas é fonte de <em>display</em>: a 18–21px os hairlines somem em OLED escuro
+        e o contraste vira ruído. Mesmo problema de faixa da Fraunces, sem o eixo como desculpa.
+      </p>
+    </article>
+
+    <!-- S5 SYNE -->
+    <article class="set">
+      <div class="set-top">
+        <h3>07 · Syne + Inter + JetBrains Mono</h3>
+        <span class="chip gray">expandida de mostrador</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/syne · @expo-google-fonts/inter · @expo-google-fonts/jetbrains-mono — 3 famílias</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-jb">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-syne">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-syne">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-inter">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-inter"><span class="t">Enviar proposta da Litoral</span><span class="p num-jb">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-jb">1.240</span><span class="plus num-jb">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-inter"><span>nível <b class="num-jb">3</b></span><span><b class="num-jb">4/6</b> ritmos</span><span>sequência <b class="num-jb">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        A voz mais "estúdio de design" do painel. A 21px já ocupa muita largura e chama atenção —
+        sofisticada, porém barulhenta para um app aberto 20 vezes ao dia.
+      </p>
+    </article>
+
+    <!-- S6 INTER -->
+    <article class="set">
+      <div class="set-top">
+        <h3>08 · Inter + JetBrains Mono</h3>
+        <span class="chip gray">grotesca neutra · só 2 famílias</span>
+      </div>
+      <p class="set-pkgs">@expo-google-fonts/inter · @expo-google-fonts/jetbrains-mono — 2 famílias</p>
+      <div class="spec">
+        <div class="row"><span class="tag">eyebrow <i>10px</i></span><span class="eyebrow num-jb">Encerrar o dia</span></div>
+        <div class="row"><span class="tag">voz <i>30px</i></span><span class="greet voz-inter">Boa noite, Leo.</span></div>
+        <div class="row"><span class="tag">seção <i>21px</i></span><span class="sect voz-inter">Ritmos da semana</span></div>
+        <div class="row"><span class="tag">corpo <i>13.5px</i></span><span class="body ui-inter">Três ritmos concluídos hoje; a revisão fecha às 23h.</span></div>
+        <div class="row"><span class="tag">tarefa <i>14.5 / 11.5</i></span>
+          <span class="task ui-inter"><span class="t">Enviar proposta da Litoral</span><span class="p num-jb">+10</span></span></div>
+        <div class="row"><span class="tag">herói <i>56 / 40</i></span>
+          <span class="hero"><span class="big num-jb">1.240</span><span class="plus num-jb">+140</span></span></div>
+        <div class="row"><span class="tag">metadados</span>
+          <span class="minis ui-inter"><span>nível <b class="num-jb">3</b></span><span><b class="num-jb">4/6</b> ritmos</span><span>sequência <b class="num-jb">21 dias</b></span></span></div>
+      </div>
+      <p class="set-notes">
+        O conjunto mais barato que resolve o número (JetBrains tabular por construção). Custo: a
+        voz some — a 30px a Inter 600 vira "dashboard SaaS", sem nenhuma cerimônia.
+      </p>
+    </article>
+  </section>
+
+  <!-- ============ 3. PROVA TABULAR ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="kicker">03 — o teste dos números</p>
+      <h2>Figuras tabulares: o dígito dança ou fica na coluna?</h2>
+      <p>
+        O mesmo saldo mudando — <code>1.240 → 1.305 → 1.190</code> — empilhado e alinhado à direita.
+        Se os dígitos se alinham verticalmente, a fonte é segura para número que atualiza ao vivo.
+        Em React Native, <code>fontVariant: ["tabular-nums"]</code> funciona no iOS mas é
+        inconsistente no Android — <strong>não dá para confiar</strong>. Por isso o status pesa:
+        "por construção" (mono) é garantia; "depende de tnum" é risco. Onde o tnum existe, a segunda
+        pilha mostra o que o navegador faz — e o RN Android não garante.
+      </p>
+    </div>
+    <div class="tab-proof">
+
+      <div class="tcol">
+        <h4>IBM Plex Mono</h4>
+        <span class="status ok">tabular por construção</span>
+        <div class="stack num-plex">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">sem nenhum ajuste</div>
+      </div>
+
+      <div class="tcol">
+        <h4>JetBrains Mono</h4>
+        <span class="status ok">tabular por construção</span>
+        <div class="stack num-jb">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">sem nenhum ajuste</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Space Grotesk</h4>
+        <span class="status warn">proporcional · sem tnum</span>
+        <div class="stack num-sg">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">não tem conserto no RN</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Fraunces</h4>
+        <span class="status warn">proporcional · tnum existe</span>
+        <div class="stack num-fraunces">1.240<br>1.305<br>1.190</div>
+        <div class="stack small num-fraunces tnum">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">pilha pequena = tnum · iOS apenas</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Inter</h4>
+        <span class="status warn">proporcional · tnum existe</span>
+        <div class="stack num-inter">1.240<br>1.305<br>1.190</div>
+        <div class="stack small num-inter tnum">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">pilha pequena = tnum · iOS apenas</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Archivo</h4>
+        <span class="status warn">proporcional · tnum existe</span>
+        <div class="stack num-arch">1.240<br>1.305<br>1.190</div>
+        <div class="stack small num-arch tnum">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">pilha pequena = tnum · iOS apenas</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Instrument Serif</h4>
+        <span class="status warn">proporcional</span>
+        <div class="stack num-instrument">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">só para número que não conta ao vivo</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Newsreader</h4>
+        <span class="status warn">proporcional</span>
+        <div class="stack num-news">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">só para número que não conta ao vivo</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Bricolage Grotesque</h4>
+        <span class="status warn">proporcional</span>
+        <div class="stack num-bric">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">só para número que não conta ao vivo</div>
+      </div>
+
+      <div class="tcol">
+        <h4>DM Serif Display</h4>
+        <span class="status warn">proporcional</span>
+        <div class="stack num-dm">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">só para número que não conta ao vivo</div>
+      </div>
+
+      <div class="tcol">
+        <h4>Syne</h4>
+        <span class="status warn">proporcional</span>
+        <div class="stack num-syne">1.240<br>1.305<br>1.190</div>
+        <div class="lbl">só para número que não conta ao vivo</div>
+      </div>
+
+    </div>
+    <p class="note">
+      Consequência direta: como a base C é um placar e o saldo conta ao vivo, o papel
+      <strong>número</strong> deve ser uma mono (Plex ou JetBrains). Isso também resolve o ponto
+      miúdo: <code>+10</code> em mono 11.5px muted é discreto por desenho, não por esforço de cor.
+      Nenhuma candidata não-mono oferece tabular confiável nas duas plataformas.
+    </p>
+  </section>
+
+  <!-- ============ 4. VEREDITO ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="kicker">04 — veredito</p>
+      <h2>Recomendação</h2>
+    </div>
+    <div class="verdict">
+      <h3>Conjunto 01 — Instrument Serif + Space Grotesk + IBM Plex Mono</h3>
+      <p>
+        O número fica em IBM Plex Mono: tabular por construção, saldo imóvel ao contar nas duas
+        plataformas, e o <code>+10</code> miúdo some na linha da tarefa. A voz sai da Fraunces para
+        a Instrument Serif: corte único desenhado já certo para 18–34px (altura-x ~30% maior que a
+        Fraunces no mesmo corpo, contraste contido), e a troca custa exatamente uma família no
+        <code>theme.ts</code> — UI e mono não mudam.
+      </p>
+      <table class="pick">
+        <tr><th>Se você quer a sensação…</th><th>Escolha</th></tr>
+        <tr><td>Sofisticação quieta, troca mínima, número garantido</td><td>01 · Instrument Serif + Space Grotesk + IBM Plex Mono (recomendado)</td></tr>
+        <tr><td>HUD puro, só 2 famílias, aceita o herói dançando</td><td>03 · controle C (manter como está)</td></tr>
+        <tr><td>Editorial, de revista, leitura longa</td><td>04 · Newsreader + Inter + IBM Plex Mono</td></tr>
+        <tr><td>Estúdio de design, voz larga e presente</td><td>07 · Syne + Inter + JetBrains Mono</td></tr>
+        <tr><td>Neutralidade total, mínimo de famílias, número garantido</td><td>08 · Inter + JetBrains Mono</td></tr>
+        <tr><td>Contraste clássico de capa</td><td>06 · DM Serif Display + Archivo + IBM Plex Mono</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 5. CUSTO DA TROCA ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="kicker">05 — custo da troca</p>
+      <h2>O que muda no código (conjunto 01)</h2>
+      <p>
+        Hoje o app carrega 3 famílias / 6 arquivos (Fraunces 500; Space Grotesk 400/500/600/700;
+        IBM Plex Mono 500). Com a recomendação: 3 famílias / 7 arquivos — sai
+        <code>Fraunces_500Medium</code>, entram <code>InstrumentSerif_400Regular</code> e seu
+        itálico (opcional, para ênfase na voz). Nenhum estilo de tela muda: os apelidos
+        <code>fonts.serif</code>, <code>fonts.ui*</code> e <code>fonts.mono</code> continuam os
+        mesmos.
+      </p>
+    </div>
+    <div class="cost-grid">
+      <div>
+        <p class="kicker" style="color:var(--muted)">app/src/theme.ts</p>
+        <pre><span class="dim">// objeto fonts — troca de 1 linha (+1 opcional)</span>
+export const fonts = {
+  ui: "SpaceGrotesk_500Medium",
+  uiSemi: "SpaceGrotesk_600SemiBold",
+  uiBold: "SpaceGrotesk_700Bold",
+  <span class="dim">// era: serif: "Fraunces_500Medium",</span>
+  serif: "InstrumentSerif_400Regular",
+  serifItalic: "InstrumentSerif_400Regular_Italic", <span class="dim">// opcional</span>
+  mono: "IBMPlexMono_500Medium",
+};</pre>
+      </div>
+      <div>
+        <p class="kicker" style="color:var(--muted)">app/App.tsx</p>
+        <pre><span class="dim">// sai:</span>
+<span class="dim">import { useFonts, Fraunces_500Medium }
+  from "@expo-google-fonts/fraunces";</span>
+
+<span class="dim">// entra:</span>
+import {
+  useFonts,
+  InstrumentSerif_400Regular,
+  InstrumentSerif_400Regular_Italic,
+} from "@expo-google-fonts/instrument-serif";
+
+const [fontsLoaded] = useFonts({
+  InstrumentSerif_400Regular,
+  InstrumentSerif_400Regular_Italic, <span class="dim">// opcional</span>
+  SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+  IBMPlexMono_500Medium,
+});</pre>
+      </div>
+    </div>
+    <p class="note">
+      Heróis: onde hoje <code>metricValue</code> / <code>nivel</code> / <code>reviewPct</code> usam
+      <code>fonts.serif</code>, passam a <code>fonts.mono</code> — é aí que o algarismo-herói ganha
+      o tabular por construção. São 5 estilos em 2 arquivos (<code>Home.tsx</code>,
+      <code>Revisao.tsx</code>), mudança de uma palavra cada. Instalação:
+      <code>npx expo install @expo-google-fonts/instrument-serif</code> e remoção do pacote
+      <code>fraunces</code>.
+    </p>
+  </section>
+
+</div>
+</body>
+</html>
