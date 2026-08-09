@@ -5,12 +5,12 @@ furar desconta POUCO". Estes testes travam exatamente isso: furo isolado NUNCA
 desconta, padrão desconta uma vez só, o teto semanal segura o tranco, e o nível é
 VITALÍCIO (jamais streak-reset, lei 4).
 """
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import pontos, store, tasks
+from app import pontos, store, tasks, tz
 from app.config import settings
 from app.main import app, require_auth
 
@@ -22,12 +22,48 @@ def db(tmp_path, monkeypatch):
     return store
 
 
+# A TARIFA de produção é a tabela da proposta C2 (rotina 20, fechamento 80, ...),
+# e ela existe para o app parar de prometer o que o BFF não paga. Mas os testes
+# ABAIXO são sobre a REGRA — furo isolado não desconta, padrão desconta uma vez,
+# o teto segura, o nível é vitalício —, e a regra não muda com o preço.
+#
+# Então esta fixture fixa uma escala didática (rotina = 1, resto = 0) para os
+# testes de regra ficarem legíveis: "12 checks = 12 pontos" se lê de cabeça,
+# "12 checks = 240 pontos" não. A tarifa REAL é travada por testes próprios, na
+# seção "tarifa de produção" no fim do arquivo — se alguém mexer nos números da
+# config, é lá que fica vermelho, e o vermelho aponta para a decisão certa.
+@pytest.fixture(autouse=True)
+def tarifa_didatica(monkeypatch):
+    monkeypatch.setattr(settings, "pontos_por_rotina", 1)
+    monkeypatch.setattr(settings, "desconto_padrao", 3)
+    monkeypatch.setattr(settings, "teto_desconto_semanal", 10)
+    for campo in pontos._EVENTOS_PAGOS.values():
+        if campo != "pontos_por_rotina":
+            monkeypatch.setattr(settings, campo, 0)
+
+
 # Semana ISO de referência dos testes: 2026-07-06 (segunda) .. 2026-07-12 (domingo).
 SEG = date(2026, 7, 6)
 
 
 def _dia(offset: int) -> str:
     return (SEG + timedelta(days=offset)).isoformat()
+
+
+def _evento_no_dia(evento: str, ref: str, offset: int = 0) -> None:
+    """Grava um evento ao meio-dia local do dia SEG+offset.
+
+    Meio-dia, e não 00:00, para o teste não depender da fronteira do fuso: um
+    evento à meia-noite local vira D-1 em UTC e cairia na semana anterior — que
+    é justamente o bug que `_REF_E_DATA` evita nos eventos com data na ref.
+    """
+    quando = datetime.combine(SEG + timedelta(days=offset), time(12, 0), tz.TZ)
+    with store._connect() as con:
+        con.execute(
+            "INSERT INTO telemetry (ts, evento, ref, meta_json) VALUES (?, ?, ?, '{}')",
+            (quando.timestamp(), evento, ref),
+        )
+        con.commit()
 
 
 def _feito(rotina: str, *offsets: int) -> None:
@@ -304,3 +340,202 @@ def test_pontos_shape_do_contrato(client):
 def test_pontos_exige_auth():
     r = TestClient(app).get("/pontos")
     assert r.status_code in (401, 403)
+
+
+# --- os atos que não são rotina também pagam ---------------------------------
+#
+# Antes disto o BFF tinha UMA forma de ganhar ponto (rotina marcada no
+# fechamento) e o app prometia seis. O ganho continua DERIVADO — agora do log de
+# telemetria, que já registrava todos estes atos antes de valerem ponto.
+
+
+def test_tarefa_concluida_paga(db, monkeypatch):
+    monkeypatch.setattr(settings, "pontos_por_tarefa", 10)
+    _evento_no_dia("task_completed", "abc123", 0)
+    _evento_no_dia("task_completed", "def456", 2)
+    assert pontos.resumo(hoje=SEG + timedelta(days=3))["semana"]["ganho"] == 20
+
+
+def test_a_mesma_tarefa_registrada_duas_vezes_paga_uma(db, monkeypatch):
+    """Reabrir e reconcluir é o mesmo ato. O log é append-only; a dedupe é por ref."""
+    monkeypatch.setattr(settings, "pontos_por_tarefa", 10)
+    _evento_no_dia("task_completed", "abc123", 0)
+    _evento_no_dia("task_completed", "abc123", 1)
+    assert pontos.resumo(hoje=SEG + timedelta(days=3))["semana"]["ganho"] == 10
+
+
+def test_fechamento_shutdown_e_despejo_pagam_pela_data_da_ref(db, monkeypatch):
+    """Estes três gravam `hoje_local()` na ref, e é a ref que manda.
+
+    Sem isso, um fechamento das 21h num VPS em UTC já está em D+1 — e num domingo
+    o dia inteiro pularia para a semana seguinte, tirando o ponto da semana vivida.
+    """
+    monkeypatch.setattr(settings, "pontos_por_fechamento", 80)
+    monkeypatch.setattr(settings, "pontos_por_shutdown", 30)
+    monkeypatch.setattr(settings, "pontos_por_despejo", 40)
+    # ts propositalmente na semana ERRADA (10 dias depois): a ref tem que vencer.
+    _evento_no_dia("closing_approved", _dia(0), 10)
+    _evento_no_dia("shutdown", _dia(0), 10)
+    _evento_no_dia("despejo_escrito", _dia(0), 10)
+    assert pontos.resumo(hoje=SEG + timedelta(days=6))["semana"]["ganho"] == 150
+
+
+def test_fechar_sem_texto_nao_leva_o_bonus_do_despejo(db, monkeypatch):
+    monkeypatch.setattr(settings, "pontos_por_fechamento", 80)
+    monkeypatch.setattr(settings, "pontos_por_despejo", 40)
+    _evento_no_dia("closing_approved", _dia(0), 0)      # fechou, mas não escreveu
+    assert pontos.resumo(hoje=SEG + timedelta(days=1))["semana"]["ganho"] == 80
+
+
+def test_captura_paga_quando_materializa_nao_quando_enfileira(db, monkeypatch):
+    """`capture_done` é o evento do worker; `capture_in` é só o enfileiramento.
+
+    Pagar no enfileiramento pagaria por captura que morre na fila com erro.
+    """
+    monkeypatch.setattr(settings, "pontos_por_captura", 5)
+    _evento_no_dia("capture_in", "1", 0)
+    _evento_no_dia("capture_done", "1", 0)
+    assert pontos.resumo(hoje=SEG + timedelta(days=1))["semana"]["ganho"] == 5
+
+
+def test_evento_sem_ref_nao_paga(db, monkeypatch):
+    """Sem chave não há dedupe. Evento assim é contador agregado, não ato."""
+    monkeypatch.setattr(settings, "pontos_por_tarefa", 10)
+    _evento_no_dia("task_completed", "", 0)
+    assert pontos.resumo(hoje=SEG + timedelta(days=1))["semana"]["ganho"] == 0
+
+
+def test_ganho_de_evento_soma_com_o_de_rotina(db, monkeypatch):
+    monkeypatch.setattr(settings, "pontos_por_rotina", 20)
+    monkeypatch.setattr(settings, "pontos_por_fechamento", 80)
+    _feito("academia", 0)
+    _feito("pesagem", 0)
+    _evento_no_dia("closing_approved", _dia(0), 0)
+    assert pontos.resumo(hoje=SEG + timedelta(days=1))["semana"]["ganho"] == 120
+
+
+def test_evento_conta_para_nivel_e_ciclo_como_qualquer_ganho(db, monkeypatch):
+    monkeypatch.setattr(settings, "nivel_limiares", [100, 200, 300, 400])
+    monkeypatch.setattr(settings, "ciclo_inicio", "2026-07-06")
+    monkeypatch.setattr(settings, "pontos_por_fechamento", 80)
+    for o in range(3):
+        _evento_no_dia("closing_approved", _dia(o), o)
+    r = pontos.resumo(hoje=SEG + timedelta(days=6))
+    assert r["pico_total"] == 240
+    assert r["nivel"] == 2
+    assert r["ciclo"]["pontos"] == 240
+
+
+def test_semana_de_evento_sozinho_aparece_no_periodo(db, monkeypatch):
+    """A semana existe no cálculo mesmo sem NENHUM check de rotina.
+
+    Os laços iteram `checks | reduções | eventos`; sem a união, uma semana em que
+    ele só fechou o dia (sem marcar rotina) sumiria do saldo inteiro.
+    """
+    monkeypatch.setattr(settings, "pontos_por_fechamento", 80)
+    _evento_no_dia("closing_approved", _dia(0), 0)
+    assert pontos.resumo_periodo(SEG, SEG)["ganho"] == 80
+    assert pontos.semana(ref=SEG)["ganho"] == 80
+
+
+def test_desconto_ainda_morde_um_ganho_que_veio_de_evento(db, monkeypatch):
+    monkeypatch.setattr(settings, "pontos_por_fechamento", 80)
+    _evento_no_dia("closing_approved", _dia(0), 0)
+    _furo("academia", 0, 1, 2)
+    r = pontos.resumo(hoje=SEG + timedelta(days=6))["semana"]
+    assert (r["ganho"], r["desconto"], r["saldo"]) == (80, 3, 77)
+
+
+# --- a tarifa de produção ----------------------------------------------------
+#
+# Os testes acima provam a REGRA com números didáticos. Estes travam os NÚMEROS
+# que vão para o aparelho — se alguém mexer na config, é aqui que fica vermelho.
+
+
+@pytest.fixture
+def tarifa_real(tarifa_didatica, monkeypatch):
+    """Desfaz a `tarifa_didatica` e devolve a tarifa da proposta C2.
+
+    Depende dela de propósito: sem a dependência explícita, a ordem entre uma
+    fixture autouse e uma pedida pelo teste é implícita, e o dia em que ela
+    mudasse estes testes passariam a medir a escala errada em silêncio.
+    """
+    real = {
+        "pontos_por_rotina": 20,
+        "pontos_por_tarefa": 10,
+        "pontos_por_captura": 5,
+        "pontos_por_fechamento": 80,
+        "pontos_por_shutdown": 30,
+        "pontos_por_despejo": 40,
+        "desconto_padrao": 60,
+        "teto_desconto_semanal": 200,
+    }
+    for campo, valor in real.items():
+        monkeypatch.setattr(settings, campo, valor)
+    return real
+
+
+def test_a_tarifa_do_bff_e_a_tabela_que_o_app_exibe(db, tarifa_real):
+    """`app/src/theme.ts` (POINTS) e a config do BFF têm que dizer o mesmo.
+
+    Este teste é a trava do contrato. A tabela do app era display-only e o BFF
+    não pagava nada disso: o botão prometia "+80" e o servidor creditava 0.
+    """
+    from app.config import Settings
+
+    padrao = Settings.model_fields
+    for campo, valor in tarifa_real.items():
+        assert padrao[campo].default == valor, campo
+
+
+def test_um_dia_executado_inteiro_vale_duzentos(db, tarifa_real):
+    """O dia cheio da proposta: 6 rotinas + fechamento + shutdown, sem despejo."""
+    for rotina in ("academia", "pesagem", "skincare", "diario", "yoga", "leitura"):
+        _feito(rotina, 0)
+    _evento_no_dia("closing_approved", _dia(0), 0)
+    _evento_no_dia("shutdown", _dia(0), 0)
+    assert pontos.resumo(hoje=SEG)["semana"]["ganho"] == 6 * 20 + 80 + 30
+
+
+def test_n1_chega_em_dias_e_nao_em_meses(db, tarifa_real):
+    """A prova de que os limiares foram calibrados para ESTA escala.
+
+    A 1 ponto por rotina (o que o BFF pagava), N1=700 levaria uns 4 meses de
+    execução perfeita. Na tarifa da C2, chega na primeira semana.
+    """
+    assert sorted(settings.nivel_limiares)[0] == 700
+    for o in range(4):
+        for rotina in ("academia", "pesagem", "skincare", "diario", "yoga", "leitura"):
+            _feito(rotina, o)
+        _evento_no_dia("closing_approved", _dia(o), o)
+        _evento_no_dia("shutdown", _dia(o), o)
+    r = pontos.resumo(hoje=SEG + timedelta(days=4))
+    assert r["pico_total"] == 4 * 230
+    assert r["nivel"] >= 1
+
+
+def test_o_desconto_continua_significativo_na_escala_nova(db, tarifa_real):
+    """Escalar o ganho sem escalar o desconto mataria a punição em silêncio.
+
+    Um padrão custa 3 rotinas (60), como o Leo travou — não 3 pontos soltos, que
+    numa semana de milhares seriam ruído.
+    """
+    _furo("academia", 0, 1, 2)
+    r = pontos.resumo(hoje=SEG + timedelta(days=6))["semana"]
+    assert r["desconto"] == 60
+    assert r["teto_desconto"] == 200
+
+
+def test_a_meta_do_ciclo_inclui_os_ritos_diarios(db, tarifa_real, monkeypatch):
+    """Sem os ritos no denominador a barra viveria cravada em 100%.
+
+    Fechamento + shutdown + despejo somam 150/dia — mais que as rotinas. Tarefa e
+    captura ficam FORA de propósito: não têm cadência, e estimá-las moveria o alvo.
+    """
+    monkeypatch.setattr(settings, "ciclo_semanas", 12)
+    for r in store.list_routines():
+        store.delete_routine(r["id"])
+    store.create_routine("todo dia", "manha", dias="*", templates="*")
+
+    meta = pontos.resumo(hoje=SEG)["ciclo"]["meta"]
+    assert meta == (7 * 20 + 7 * (80 + 30 + 40)) * 12

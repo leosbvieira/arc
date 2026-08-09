@@ -20,6 +20,21 @@ def client(tmp_path, monkeypatch):
     app.dependency_overrides.clear()
 
 
+# Mesma razão da fixture homônima em `test_pontos.py`: estes testes são sobre a
+# REGRA (o teto é compartilhado entre padrões de rotina e hábitos a reduzir, uma
+# ocorrência não regride nível), e a regra não muda com o preço. A escala
+# didática — rotina 1, desconto 3, teto 10 — mantém as contas legíveis; a tarifa
+# de produção é travada em `test_pontos.py`, na seção "tarifa de produção".
+@pytest.fixture(autouse=True)
+def tarifa_didatica(monkeypatch):
+    monkeypatch.setattr(settings, "pontos_por_rotina", 1)
+    monkeypatch.setattr(settings, "desconto_padrao", 3)
+    monkeypatch.setattr(settings, "teto_desconto_semanal", 10)
+    for campo in pontos._EVENTOS_PAGOS.values():
+        if campo != "pontos_por_rotina":
+            monkeypatch.setattr(settings, campo, 0)
+
+
 def _create_habit(client, nome="Cafe depois das 18h", penalidade=1):
     response = client.post(
         "/habitos-reduzir",

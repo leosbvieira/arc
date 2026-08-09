@@ -43,6 +43,34 @@ from .config import settings
 _INICIO_DOS_TEMPOS = "0001-01-01"
 _LOCAL_TZ = tz.TZ          # mantido pelo nome antigo; a definicao mora em tz.py
 
+# --- o que paga, além da rotina ----------------------------------------------
+#
+# Rotina é o único ganho que vem de tabela própria (`routine_checks`). O resto
+# vem do log de telemetria, que já registrava todos estes atos muito antes de
+# valerem ponto — nenhum evento novo foi inventado para isto, exceto
+# `despejo_escrito` (o fechamento não distinguia "com texto" de "sem texto").
+#
+# Isto preserva a invariante 1 do módulo: continua tudo DERIVADO, função pura de
+# fatos persistidos + config. O log é append-only e local, e `distinct_events`
+# deduplica por (evento, ref) — recalcular o passado segue dando o mesmo número.
+_EVENTOS_PAGOS: dict[str, str] = {
+    "task_completed": "pontos_por_tarefa",
+    "capture_done": "pontos_por_captura",
+    "closing_approved": "pontos_por_fechamento",
+    "shutdown": "pontos_por_shutdown",
+    "despejo_escrito": "pontos_por_despejo",
+}
+
+# Eventos cuja `ref` JÁ É a data local do Leo (todos gravam `hoje_local()`).
+# Para esses a `ref` é a verdade e o `ts` nem é consultado: reconverter um ts de
+# 21h num VPS em UTC cairia em D+1 e jogaria o fechamento para a semana seguinte
+# — exatamente o bug que `closing_approve` comenta ao usar `hoje_local()`.
+#
+# A lista é explícita de propósito. Tentar adivinhar ("a ref parece uma data?")
+# seria pior: `date.fromisoformat` aceita o formato básico, então um id de tarefa
+# de 8 dígitos viraria uma data de 2026 sem ninguém perceber.
+_REF_E_DATA = frozenset({"closing_approved", "shutdown", "despejo_escrito"})
+
 
 def hoje_local() -> date:
     return tz.hoje_local()
@@ -91,6 +119,35 @@ def _por_semana(checks: list[dict]) -> dict[date, dict]:
             slug = row["rotina"]
             semana["furos"][slug] = semana["furos"].get(slug, 0) + 1
     return semanas
+
+
+def _semana_do_evento(evento: str, ref: str, ts) -> date | None:
+    """A segunda-feira da semana a que o evento pertence, ou None se indatável."""
+    if evento in _REF_E_DATA:
+        d = _data(ref)
+        return segunda_da_semana(d) if d is not None else None
+    try:
+        local = datetime.fromtimestamp(float(ts), _LOCAL_TZ).date()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+    return segunda_da_semana(local)
+
+
+def _eventos_por_semana() -> dict[date, dict[str, int]]:
+    """{segunda: {evento: n}} dos atos que pagam, já deduplicados por (evento, ref).
+
+    Evento indatável não vira ganho e não vira erro: some do cálculo, do mesmo
+    jeito que um dia sem fechamento some (ver docstring do módulo). Placar não é
+    lugar de chutar em cima de dado torto.
+    """
+    por_semana: dict[date, dict[str, int]] = {}
+    for row in store.distinct_events(list(_EVENTOS_PAGOS)):
+        seg = _semana_do_evento(row["evento"], row["ref"] or "", row["ts"])
+        if seg is None:
+            continue
+        bucket = por_semana.setdefault(seg, {})
+        bucket[row["evento"]] = bucket.get(row["evento"], 0) + 1
+    return por_semana
 
 
 def _padroes(furos: dict[str, int], nomes: dict[str, str]) -> list[dict]:
@@ -185,14 +242,30 @@ def _reducoes(rows: list[dict], limite: int) -> list[dict]:
     )
 
 
+def _ganho_dos_eventos(eventos: dict[str, int] | None) -> int:
+    """O que os atos fora da rotina pagaram na semana, pela tarifa da config."""
+    if not eventos:
+        return 0
+    return sum(
+        n * max(0, int(getattr(settings, campo)))
+        for evento, campo in _EVENTOS_PAGOS.items()
+        for n in (eventos.get(evento, 0),)
+        if n
+    )
+
+
 def _semana(
     dados: dict | None,
     nomes: dict[str, str],
     reduction_rows: list[dict] | None = None,
+    eventos: dict[str, int] | None = None,
 ) -> dict:
     """Resumo de uma semana com um unico teto para padroes e reducoes."""
     dados = dados or {"feitos": 0, "furos": {}}
-    ganho = dados["feitos"] * max(0, settings.pontos_por_rotina)
+    ganho = (
+        dados["feitos"] * max(0, settings.pontos_por_rotina)
+        + _ganho_dos_eventos(eventos)
+    )
     padroes = _padroes(dados["furos"], nomes)
     desconto_padroes = -sum(p["delta"] for p in padroes)
     reducoes = _reducoes(
@@ -216,8 +289,14 @@ def semana(ref: date | None = None) -> dict:
     reducoes = _reducoes_por_semana(
         store.list_reduction_occurrences(incluir_desfeitas=False)
     )
+    eventos = _eventos_por_semana()
     current = segunda_da_semana(ref or hoje_local())
-    return _semana(semanas.get(current), nomes, reducoes.get(current))
+    return _semana(
+        semanas.get(current),
+        nomes,
+        reducoes.get(current),
+        eventos.get(current),
+    )
 
 
 def resumo_periodo(inicio: date, fim: date) -> dict:
@@ -230,11 +309,14 @@ def resumo_periodo(inicio: date, fim: date) -> dict:
     reducoes = _reducoes_por_semana(
         store.list_reduction_occurrences(incluir_desfeitas=False)
     )
+    eventos = _eventos_por_semana()
     totais = {"ganho": 0, "desconto": 0, "saldo": 0}
 
-    for seg in sorted(set(semanas) | set(reducoes)):
+    for seg in sorted(set(semanas) | set(reducoes) | set(eventos)):
         if inicio <= seg <= fim:
-            dados = _semana(semanas.get(seg), nomes, reducoes.get(seg))
+            dados = _semana(
+                semanas.get(seg), nomes, reducoes.get(seg), eventos.get(seg)
+            )
             totais["ganho"] += dados["ganho"]
             totais["desconto"] += dados["desconto"]
             totais["saldo"] = max(
@@ -272,6 +354,15 @@ def meta_do_ciclo() -> int:
     calendário de templates, assumimos os templates equiprováveis e a ponderamos por
     `nº de templates dela / nº de templates`. É uma ESTIMATIVA da barra, não um contrato:
     o placar real vem sempre dos checks.
+
+    Os RITOS diários entram junto — fechamento, shutdown e despejo têm cadência
+    conhecida (7×/semana cada) e hoje pesam mais que as rotinas. Deixá-los de fora
+    faria a meta caber num terço da semana e a barra viveria cravada em 100%.
+
+    TAREFA e CAPTURA ficam de fora de propósito: não têm cadência prevista, e
+    estimá-las seria transformar a barra num alvo que o volume do dia move. Elas
+    entram no numerador (o ganho real) sem inflar o denominador — a barra
+    sub-promete, que é o lado certo de errar.
     """
     n_templates = len(routines.TEMPLATES) or 1
     por_semana = 0.0
@@ -286,7 +377,12 @@ def meta_do_ciclo() -> int:
             len([t for t in templates.split(",") if t.strip()]) / n_templates,
         )
         por_semana += n_dias * peso * max(0, settings.pontos_por_rotina)
-    return round(por_semana * _ciclo_semanas())
+    ritos = 7 * (
+        max(0, settings.pontos_por_fechamento)
+        + max(0, settings.pontos_por_shutdown)
+        + max(0, settings.pontos_por_despejo)
+    )
+    return round((por_semana + ritos) * _ciclo_semanas())
 
 
 # --- níveis vitalícios -------------------------------------------------------
@@ -312,6 +408,7 @@ def resumo(hoje: date | None = None) -> dict:
     reducoes = _reducoes_por_semana(
         store.list_reduction_occurrences(incluir_desfeitas=False)
     )
+    eventos = _eventos_por_semana()
 
     de = _ciclo_semanas()
     ancora = segunda_da_semana(_data(settings.ciclo_inicio) or ref)
@@ -325,13 +422,14 @@ def resumo(hoje: date | None = None) -> dict:
     saldo_total = 0
     pico_total = 0
     pontos_do_ciclo = 0
-    for seg in sorted(set(semanas) | set(reducoes)):
+    for seg in sorted(set(semanas) | set(reducoes) | set(eventos)):
         if seg > corrente:
             continue
         week = _semana(
             semanas.get(seg),
             nomes,
             reducoes.get(seg),
+            eventos.get(seg),
         )
         delta = week["ganho"] - week["desconto"]
         saldo_total = max(0, saldo_total + delta)
@@ -358,6 +456,11 @@ def resumo(hoje: date | None = None) -> dict:
             "pontos": pontos_do_ciclo,
             "meta": meta_do_ciclo(),
         },
-        "semana": _semana(semanas.get(corrente), nomes, reducoes.get(corrente)),
+        "semana": _semana(
+            semanas.get(corrente),
+            nomes,
+            reducoes.get(corrente),
+            eventos.get(corrente),
+        ),
         "proximo_nivel": proximo,
     }

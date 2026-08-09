@@ -71,9 +71,26 @@ class Settings(BaseSettings):
     # "fazer ganha, furar desconta POUCO": o ganho é diário e o desconto é raro
     # (só em padrão), uma vez por semana por rotina, e ainda passa por um teto.
     # `routine_miss_threshold` (acima) é o limiar do padrão — NÃO se duplica aqui.
-    pontos_por_rotina: int = 1        # cada rotina marcada como feita no fechamento
-    desconto_padrao: int = 3          # por rotina EM PADRÃO, 1x/semana (não por furo)
-    teto_desconto_semanal: int = 10   # o desconto de uma semana nunca passa disso
+    #
+    # A TARIFA é a tabela da proposta C2, a mesma que o app exibe em `theme.ts`.
+    # Antes daqui o BFF pagava só `pontos_por_rotina: 1` e mais nada: o app
+    # prometia "+80" no botão de fechar o dia e o servidor creditava zero. Os
+    # limiares de nível abaixo (700/1700/3400/6800) são a prova de qual lado
+    # estava errado — a 1 ponto por rotina, N4 levaria mais de três anos; na
+    # tarifa da C2, um dia executado inteiro vale ~200 e N1 chega em 4 dias.
+    # Cada tarifa tem um evento que a paga; o mapa mora em `pontos._EVENTOS_PAGOS`.
+    pontos_por_rotina: int = 20       # cada rotina marcada como feita no fechamento
+    pontos_por_tarefa: int = 10       # `task_completed`
+    pontos_por_captura: int = 5       # `capture_done` (a captura MATERIALIZADA)
+    pontos_por_fechamento: int = 80   # `closing_approved`
+    pontos_por_shutdown: int = 30     # `shutdown`
+    pontos_por_despejo: int = 40      # `despejo_escrito` (fechou COM texto bruto)
+    # O desconto acompanha a rotina na mesma razão que o Leo travou: um padrão
+    # custa 3 rotinas, e a semana inteira nunca passa de 10. Escalar o ganho sem
+    # escalar isto mataria a punição em silêncio — 10 pontos numa semana de ~1700
+    # é ruído, e a punição foi a peça que ele sustentou duas vezes contra a IA.
+    desconto_padrao: int = 60         # 3 × rotina — por rotina EM PADRÃO, 1x/semana
+    teto_desconto_semanal: int = 200  # 10 × rotina — o teto de desconto da semana
     ciclo_semanas: int = 12           # 12 Week Year
     ciclo_inicio: str = "2026-07-06"  # segunda-feira âncora do 1º ciclo
     # Limiares VITALÍCIOS de N1, N2, N3, N4 (abaixo do 1º = N0). Ver pontos.py:

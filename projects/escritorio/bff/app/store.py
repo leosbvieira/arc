@@ -1508,6 +1508,35 @@ def count_events_since(
     return int(row[0])
 
 
+def distinct_events(eventos: list[str]) -> list[dict]:
+    """{evento, ref, ts} de cada par (evento, ref) DISTINTO, com o ts do PRIMEIRO
+    registro do par.
+
+    Existe para `pontos.py` derivar ganho do log de telemetria sem ledger. Duas
+    escolhas que são contrato, não detalhe:
+
+    * **Distinto por (evento, ref)**, não por linha. O log é append-only e o mesmo
+      fato pode entrar duas vezes — retry de rede, ou uma tarefa reaberta e
+      concluída de novo. Pontuar por linha pagaria duas vezes pelo mesmo ato.
+    * **MIN(ts)**, não MAX. É quando o fato aconteceu; um reprocessamento tardio
+      não pode mudar a semana em que ele conta e reescrever um placar já fechado.
+
+    `ref` vazio é descartado: sem chave não há como deduplicar, e evento sem ref
+    nunca é um ato pontuável (é contador agregado, tipo `push_device_expirado`).
+    """
+    if not eventos:
+        return []
+    marcas = ",".join("?" for _ in eventos)
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT evento, ref, MIN(ts) AS ts FROM telemetry "
+            f"WHERE evento IN ({marcas}) AND ref <> '' "
+            "GROUP BY evento, ref",
+            list(eventos),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # --- notif_log (dedupe por dia) ---------------------------------------------
 
 

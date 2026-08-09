@@ -2595,6 +2595,12 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
         [(c.rotina, c.feito) for c in body.checks],
     )
     store.log_event("closing_approved", ref=today)
+    # O despejo é bônus SEPARADO do fechamento (o app promete "garante +80 ·
+    # bônus até +140"), e `closing_approved` sozinho não distingue quem escreveu
+    # de quem só marcou as caixinhas. Evento próprio, ref = a data local: um
+    # fechamento por dia, um bônus por dia, e reaprovar não paga duas vezes.
+    if body.raw_text.strip():
+        store.log_event("despejo_escrito", ref=today)
     return {"ok": True, "daily_path": daily_path, "raw_path": raw_path}
 
 
