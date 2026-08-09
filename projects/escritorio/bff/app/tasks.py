@@ -35,6 +35,7 @@ class Task(BaseModel):
     days_overdue: int | None = None   # positivo = atrasada; negativo = dias restantes (futura); None = sem due
     severity: str = "no_prazo"        # fonte única no back (cadence.tone_name)
     sensivel: bool = False            # marca por item (lei 7) — complementa a regra por área
+    recorrente: bool = False          # tag `recorrente` no ClickUp — ver `_Task.recorrente`
 
 
 @dataclass
@@ -50,6 +51,18 @@ class _Task:
     last_done: str | None = None       # rótulo de recência (hábitos), só exibição
     assignee: str | None = None
     sensivel: bool = False             # tag `sensivel` no ClickUp (lei 7)
+    # Tag `recorrente` no ClickUp. É uma marca PARALELA à recorrência nativa, e não
+    # por preguiça: a API v2 não devolve recorrência em lugar nenhum — nem em
+    # `GET /list/{id}/task`, nem em `GET /task/{id}` (schema conferido em 09/ago).
+    # O campo existe na UI web e não sai pela porta. Sem uma tag, o app não tem
+    # como saber que a tarefa volta mês que vem, e "Unimed" concluída somes da
+    # tela como se fosse uma tarefa qualquer.
+    #
+    # O preço é que as duas verdades podem descolar (desligar o recurring e
+    # esquecer a tag deixa o app mentindo). Aceito: são 5 obrigações e o Leo é
+    # dono dos dois lados. Se um dia for o BFF a gerar a próxima ocorrência, esta
+    # tag vira a fonte única e o descolamento acaba junto.
+    recorrente: bool = False
 
     # interface que cadence.py espera (mesma semântica do Task do cutuca)
     @property
@@ -106,6 +119,7 @@ def _display(t: _Task) -> Task:
         days_overdue=days_overdue,
         severity=cadence.tone_name(days_overdue),
         sensivel=t.sensivel,
+        recorrente=t.recorrente,
     )
 
 
@@ -126,15 +140,12 @@ def _from_clickup(t: dict) -> _Task:
     """
     status = (t.get("status") or {}).get("status")
     assignees = t.get("assignees") or []
-    # A tag é normalizada com _norm: `sensivel` e `sensível` contam igual (lei 7).
-    sensivel = any(
-        _norm(
-            tag.get("name", "")
-            if isinstance(tag, dict)
-            else str(tag)
-        ) == "sensivel"
+    # As tags são normalizadas com _norm: `sensivel` e `sensível` contam igual (lei 7),
+    # e o mesmo vale pra `recorrente`.
+    marcas = {
+        _norm(tag.get("name", "") if isinstance(tag, dict) else str(tag))
         for tag in (t.get("tags") or [])
-    )
+    }
     return _Task(
         id=str(t["id"]),
         name=t.get("name", ""),
@@ -143,7 +154,8 @@ def _from_clickup(t: dict) -> _Task:
         due_offset=clickup_client.days_from_ms(t.get("due_date")),
         update_offset=None,
         assignee=(assignees[0].get("username") if assignees else None),
-        sensivel=sensivel,
+        sensivel="sensivel" in marcas,
+        recorrente="recorrente" in marcas,
     )
 
 
