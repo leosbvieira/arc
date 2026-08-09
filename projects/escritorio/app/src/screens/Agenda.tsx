@@ -153,9 +153,9 @@ const styles = StyleSheet.create({
   diaAtivo: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   diaRotulo: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, textTransform: "uppercase" },
   diaRotuloAtivo: { color: colors.primary },
-  diaNumero: { fontFamily: fonts.serif, fontSize: 18, color: colors.textMuted },
+  diaNumero: { fontFamily: fonts.mono, fontSize: 18, color: colors.textMuted },
   diaNumeroAtivo: { color: colors.text },
-  titulo: { fontFamily: fonts.serif, fontSize: 20, color: colors.text, marginTop: spacing.xs },
+  titulo: { fontFamily: fonts.display, fontSize: 20, color: colors.text, marginTop: spacing.xs },
   secao: {
     fontFamily: fonts.mono,
     fontSize: 9.5,

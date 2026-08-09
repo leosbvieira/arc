@@ -631,7 +631,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.lg,
   },
-  emptyTitle: { fontFamily: fonts.serif, fontSize: 17, color: colors.text },
+  emptyTitle: { fontFamily: fonts.uiSemi, fontSize: 17, color: colors.text },
   emptyHint: {
     fontFamily: fonts.ui,
     fontSize: 13,
@@ -642,7 +642,7 @@ const styles = StyleSheet.create({
 
   dock: { paddingVertical: spacing.md },
 
-  editorTitle: { fontFamily: fonts.serif, fontSize: 20, color: colors.text },
+  editorTitle: { fontFamily: fonts.uiSemi, fontSize: 20, color: colors.text },
   label: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, letterSpacing: 1 },
   hint: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted, lineHeight: 18 },
   pills: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },

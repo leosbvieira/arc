@@ -777,12 +777,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   toqueTitulo: {
-    fontFamily: fonts.serif,
+    fontFamily: fonts.display,
     fontSize: 28,
     color: colors.text,
     textAlign: "center",
     marginTop: spacing.sm,
-    letterSpacing: -0.3,
+    letterSpacing: -0.15,
   },
   toqueHint: { fontFamily: fonts.ui, fontSize: 13, color: colors.textMuted },
   toqueBotoes: {
@@ -924,7 +924,7 @@ const styles = StyleSheet.create({
   estadoLabel: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted },
   estadoVal: { fontFamily: fonts.mono, fontSize: 11, color: colors.primary },
   estadoDot: { color: colors.textMuted, fontSize: 11 },
-  prioridade1: { fontFamily: fonts.serif, fontSize: 17, color: colors.text, lineHeight: 24 },
+  prioridade1: { fontFamily: fonts.ui, fontSize: 17, color: colors.text, lineHeight: 24 },
 
   pills: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.md },
   pill: {

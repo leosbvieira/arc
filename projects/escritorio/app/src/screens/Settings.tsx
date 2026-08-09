@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
   card: { gap: spacing.md },
   heading: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   icon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft },
-  title: { fontFamily: fonts.serif, fontSize: 19, color: colors.text },
+  title: { fontFamily: fonts.uiSemi, fontSize: 19, color: colors.text },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   status: { fontFamily: fonts.mono, fontSize: 9.5 },

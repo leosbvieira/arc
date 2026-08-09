@@ -1,3 +1,4 @@
+import { Feather } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
@@ -14,7 +15,9 @@ import {
   setTemplateDia,
 } from "../api";
 import { buildClosingChecks, seedDecisions } from "../closingChecks";
-import { colors, fonts, spacing } from "../theme";
+import { closingLabel, closingReward } from "../closingPoints";
+import { POINTS, colors, fonts, spacing } from "../theme";
+import { BigAction, QuestRow, RewardSheet } from "../ui";
 
 // As rotinas já vêm filtradas pelo BFF (dia da semana + template). Não filtre aqui.
 // Os passos são roteiro: aparecem numerados em cinza, SEM checkbox próprio — quem
@@ -30,6 +33,63 @@ const BLOCOS: { key: Bloco; label: string }[] = [
   { key: "noite", label: "Noite" },
 ];
 
+// Ação secundária do rito (design: ghostact) — nunca compete com o bronze do
+// BigAction: borda fina, mono miúdo, muted.
+function GhostAction({
+  title,
+  icon,
+  onPress,
+  disabled,
+  loading,
+}: {
+  title: string;
+  icon?: React.ComponentProps<typeof Feather>["name"];
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={({ pressed }) => [
+        {
+          minHeight: 44,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          borderWidth: 1,
+          borderColor: colors.border,
+          borderRadius: 12,
+        },
+        (disabled || loading) && { opacity: 0.45 },
+        pressed && { opacity: 0.7 },
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={colors.textMuted} size="small" />
+      ) : (
+        <>
+          {icon ? <Feather name={icon} size={13} color={colors.textMuted} /> : null}
+          <Text
+            style={{
+              fontFamily: fonts.mono,
+              fontSize: 10.5,
+              letterSpacing: 0.5,
+              color: colors.textMuted,
+            }}
+          >
+            {title}
+          </Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
 export default function Fechar() {
   const [template, setTemplate] = useState<Template | null>(null);
   const [loadingDia, setLoadingDia] = useState(true);
@@ -38,7 +98,9 @@ export default function Fechar() {
   const [dump, setDump] = useState("");
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [gerando, setGerando] = useState(false);
   const [done, setDone] = useState(false);
+  const [pontosFecho, setPontosFecho] = useState(0);
   const [err, setErr] = useState("");
   const [loadingRoutines, setLoadingRoutines] = useState(false);
   const [routinesErr, setRoutinesErr] = useState("");
@@ -123,16 +185,21 @@ export default function Fechar() {
 
   const gerar = async () => {
     if (!template) return;
-    setBusy(true);
+    setGerando(true);
     setErr("");
     try {
       setDraft(await closingDraft(dump, template));
     } catch {
       setErr("não consegui estruturar — tenta de novo ou grava direto");
     } finally {
-      setBusy(false);
+      setGerando(false);
     }
   };
+
+  // UMA regra para "tem texto": o despejo preenchido OU um rascunho existente.
+  // A mesma constante alimenta o rótulo do BigAction (a promessa) e o cálculo da
+  // RewardSheet (o pagamento) — divergir aqui é prometer +40 e pagar 40 a menos.
+  const temTexto = !!dump.trim() || draft !== null;
 
   const aprovar = async (md: string) => {
     if (!template) return;
@@ -145,6 +212,10 @@ export default function Fechar() {
         template,
         checks: buildClosingChecks(routines, checks),
       });
+      // O número que a RewardSheet mostra é o que o botão prometeu (tabela
+      // POINTS, display-only) — o saldo oficial chega pelo getPontos() abaixo.
+      const marcadas = routines.filter((r) => checks[r.slug]).length;
+      setPontosFecho(closingReward(marcadas, routines.length, temTexto, POINTS).garantido);
       setDone(true);
       getPontos().then(setPlacar).catch(() => {/* o placar é bônus, não trava o fecho */});
     } catch {
@@ -172,30 +243,28 @@ export default function Fechar() {
   // o que trava o fechamento é não ter conseguido carregar, não ter zero rotinas.
   const routinesUnavailable =
     loadingDia || template === null || loadingRoutines || !!routinesErr;
-  const dumpActionsDisabled = busy || routinesUnavailable || !dump.trim();
+  const dumpActionsDisabled = busy || gerando || routinesUnavailable || !dump.trim();
   // O modo mínimo fecha o dia mesmo sem diário: as rotinas já foram gravadas por
   // toque, e obrigar a escrever é o que fazia o dia ruim virar dia não-registrado.
-  const fecharDisabled = busy || routinesUnavailable;
+  // Escrever nunca é portão — o despejo é bônus opcional abaixo do botão.
+  const fecharDisabled = busy || gerando || routinesUnavailable;
+
+  // O rótulo do BigAction: o que o toque garante agora e o máximo do dia.
+  const marcadas = routines.filter((r) => checks[r.slug]).length;
 
   if (done) {
     // O único momento de dopamina do dia era uma linha de texto. Se o design declara
     // "check visível" como lei, o fim do rito tem que devolver o que ele produziu.
     const feitas = routines.filter((r) => checks[r.slug]).length;
     return (
-      <View style={{ padding: 24, gap: spacing.sm }}>
-        <Text style={{ color: colors.text, fontSize: 20, fontFamily: fonts.serif }}>
-          ✓ dia fechado
-        </Text>
-        <Text style={{ color: colors.textMuted, fontFamily: fonts.ui, fontSize: 13 }}>
-          {feitas} de {routines.length} ritmos hoje
-          {placar ? ` · ${placar.saldo_total} pts · nível ${placar.nivel}` : ""}
-        </Text>
-        {placar ? (
-          <Text style={{ color: colors.textMuted, fontFamily: fonts.mono, fontSize: 11 }}>
-            ciclo {placar.ciclo.indice} · semana {placar.ciclo.semana}/{placar.ciclo.de}
-          </Text>
-        ) : null}
-      </View>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
+        <RewardSheet
+          pontosHoje={pontosFecho}
+          placar={placar}
+          ritmosFeitos={feitas}
+          ritmosTotal={routines.length}
+        />
+      </ScrollView>
     );
   }
 
@@ -226,72 +295,61 @@ export default function Fechar() {
         </Text>
       )}
 
-      <Text style={{ color: colors.textMuted, marginTop: 16 }}>
-        rotinas de hoje
-      </Text>
       {loadingRoutines ? (
         <ActivityIndicator
           color={colors.primary}
-          style={{ alignSelf: "flex-start", marginTop: 8 }}
+          style={{ alignSelf: "flex-start", marginTop: 16 }}
         />
       ) : template === null ? (
-        <Text style={{ color: colors.textMuted, marginTop: 8, fontFamily: fonts.ui }}>
+        <Text style={{ color: colors.textMuted, marginTop: 16, fontFamily: fonts.ui }}>
           marca o dia acima pra ver as rotinas.
         </Text>
       ) : routines.length === 0 && !routinesErr ? (
-        <Text style={{ color: colors.textMuted, marginTop: 8, fontFamily: fonts.ui }}>
+        <Text style={{ color: colors.textMuted, marginTop: 16, fontFamily: fonts.ui }}>
           nenhuma rotina vale hoje — dá pra criar as tuas em Rotinas.
         </Text>
       ) : (
         BLOCOS.map((b) => {
           const doBloco = routines.filter((r) => r.bloco === b.key);
           if (doBloco.length === 0) return null;
+          const feitas = doBloco.filter((r) => checks[r.slug]).length;
           return (
             <View key={b.key} style={{ marginTop: spacing.md }}>
-              <Text
+              <View
                 style={{
-                  fontFamily: fonts.mono,
-                  fontSize: 11,
-                  color: colors.textMuted,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.2,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  marginHorizontal: 2,
+                  marginBottom: spacing.sm,
                 }}
               >
-                {b.label}
-              </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.mono,
+                    fontSize: 9,
+                    color: colors.textMuted,
+                    textTransform: "uppercase",
+                    letterSpacing: 1.8,
+                  }}
+                >
+                  {b.label}
+                </Text>
+                <Text style={{ fontFamily: fonts.mono, fontSize: 9, color: colors.faint }}>
+                  {feitas}/{doBloco.length}
+                  {feitas > 0 ? ` · +${feitas * POINTS.rotina}` : ""}
+                </Text>
+              </View>
 
-              {doBloco.map((r) => {
-                const on = !!checks[r.slug];
-                return (
-                  <Pressable
-                    key={r.slug}
-                    onPress={() => marcar(r.slug)}
-                    style={{ paddingVertical: 8 }}
-                  >
-                    <Text style={{ color: on ? colors.primary : colors.textMuted }}>
-                      {on ? "☑" : "☐"} {r.nome}
-                    </Text>
-
-                    {r.passos.length > 0 && (
-                      <View style={{ marginTop: 4, marginLeft: 20 }}>
-                        {r.passos.map((p, i) => (
-                          <Text
-                            key={`${r.slug}-${i}`}
-                            style={{
-                              color: colors.textMuted,
-                              fontFamily: fonts.ui,
-                              fontSize: 12.5,
-                              lineHeight: 18,
-                            }}
-                          >
-                            {i + 1}. {p}
-                          </Text>
-                        ))}
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
+              {doBloco.map((r) => (
+                <QuestRow
+                  key={r.slug}
+                  name={r.nome}
+                  done={!!checks[r.slug]}
+                  points={POINTS.rotina}
+                  steps={r.passos}
+                  onPress={() => marcar(r.slug)}
+                />
+              ))}
             </View>
           );
         })
@@ -315,7 +373,8 @@ export default function Fechar() {
       {draft === null ? (
         <>
           <Text style={{ color: colors.textMuted, marginTop: 16 }}>
-            como foi o dia?
+            como foi o dia?{" "}
+            <Text style={{ color: colors.faint }}>— opcional, vale bônus</Text>
           </Text>
           <TextInput
             multiline
@@ -327,43 +386,31 @@ export default function Fechar() {
               minHeight: 120,
               color: colors.text,
               backgroundColor: colors.card,
-              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 12,
               padding: 12,
               marginTop: 8,
             }}
           />
-          <Pressable
-            onPress={gerar}
-            disabled={dumpActionsDisabled}
-            style={{ marginTop: 12 }}
-          >
-            {busy ? (
-              <ActivityIndicator />
-            ) : (
-              <Text
-                style={{
-                  color: colors.primary,
-                  opacity: dumpActionsDisabled ? 0.45 : 1,
-                }}
-              >
-                estruturar com o Hermes →
-              </Text>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => aprovar(dump)}
-            disabled={fecharDisabled}
-            style={{ marginTop: 8 }}
-          >
-            <Text
-              style={{
-                color: colors.textMuted,
-                opacity: fecharDisabled ? 0.45 : 1,
-              }}
-            >
-              {dump.trim() ? "gravar direto (modo mínimo)" : "fechar sem escrever"}
-            </Text>
-          </Pressable>
+          <View style={{ marginTop: 10 }}>
+            <GhostAction
+              title={`estruturar com o Hermes · +${POINTS.despejoBonus} bônus`}
+              icon="star"
+              onPress={gerar}
+              disabled={dumpActionsDisabled}
+              loading={gerando}
+            />
+          </View>
+          <View style={{ marginTop: 12 }}>
+            <BigAction
+              title="Fechar o dia"
+              sub={closingLabel(marcadas, routines.length, temTexto, POINTS)}
+              onPress={() => aprovar(dump)}
+              disabled={fecharDisabled}
+              loading={busy}
+            />
+          </View>
         </>
       ) : (
         <>
@@ -378,33 +425,29 @@ export default function Fechar() {
               minHeight: 200,
               color: colors.text,
               backgroundColor: colors.card,
-              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 12,
               padding: 12,
               marginTop: 8,
             }}
           />
-          <Pressable
-            onPress={() => aprovar(draft)}
-            disabled={busy}
-            style={{ marginTop: 12 }}
-          >
-            {busy ? (
-              <ActivityIndicator />
-            ) : (
-              <Text style={{ color: colors.primary }}>
-                aprovar e gravar ✓
-              </Text>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => setDraft(null)}
-            disabled={busy}
-            style={{ marginTop: 8 }}
-          >
-            <Text style={{ color: colors.textMuted }}>
-              ← voltar ao despejo
-            </Text>
-          </Pressable>
+          <View style={{ marginTop: 12 }}>
+            <BigAction
+              title="Aprovar e gravar"
+              sub={closingLabel(marcadas, routines.length, temTexto, POINTS)}
+              onPress={() => aprovar(draft)}
+              disabled={busy}
+              loading={busy}
+            />
+          </View>
+          <View style={{ marginTop: 10 }}>
+            <GhostAction
+              title="← voltar ao despejo"
+              onPress={() => setDraft(null)}
+              disabled={busy}
+            />
+          </View>
         </>
       )}
       {!!err && (

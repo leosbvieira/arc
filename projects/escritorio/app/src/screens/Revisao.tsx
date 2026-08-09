@@ -37,8 +37,9 @@ import {
 } from "../api";
 import { TaskDetailModal } from "../TaskDetailModal";
 import { ReadingSession, listPendingReadingSessions } from "../readingApi";
+import { milhar } from "../format";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
-import { AppButton, Card, ErrorState, Field, Skeleton } from "../ui";
+import { AppButton, Card, ErrorState, Field, SegmentBar, Skeleton } from "../ui";
 
 // Exibição pura: a severidade vem pronta do back (Task.severity). O front só mapeia
 // nível -> cor/ícone; não parseia mais a string `due` (fonte única no BFF, P0.2).
@@ -56,17 +57,13 @@ const SEVERITY_STYLE: Record<string, { color: string; icon: FeatherName }> = {
 
 const styleFor = (t: Task) => SEVERITY_STYLE[t.severity ?? "no_prazo"];
 
-// ---------------------------------------------------------------- Conquistas
+// ------------------------------------------------------------------- Placar
 // Lei nº4: 100% factual. O placar informa, não julga. Ganho em cor de sucesso;
-// desconto em MUTED (nunca danger) — desconto não é erro, é fato. Sem streak-reset,
-// sem elogio: se não houve padrão na semana, a seção some (não escrevemos "nenhum
-// furo!", isso seria elogio).
+// desconto NUNCA em danger — desconto não é erro, é fato. A onda 4 desceu de muted
+// para `faint`, um degrau mais quieto, que é o token criado pela proposta C2 para
+// metadado em repouso. Sem streak-reset, sem elogio: se não houve padrão na semana,
+// a seção some (não escrevemos "nenhum furo!", isso seria elogio).
 const NIVEIS = [1, 2, 3, 4];
-
-// 1553 -> "1.553" (sem depender de Intl no Hermes)
-function num(n: number): string {
-  return Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-}
 
 function Diamantes({ nivel }: { nivel: number }) {
   return (
@@ -78,65 +75,63 @@ function Diamantes({ nivel }: { nivel: number }) {
   );
 }
 
-function ConquistasCard({ p }: { p: Pontos }) {
+function Placar({ p }: { p: Pontos }) {
   const { ciclo, semana, proximo_nivel } = p;
   const pct = ciclo.meta > 0 ? Math.max(0, Math.min(1, ciclo.pontos / ciclo.meta)) : 0;
 
   return (
-    <Card style={styles.conqCard}>
-      <View style={styles.conqHead}>
-        <Text style={styles.conqLabel}>conquistas</Text>
-        <Text style={styles.conqSaldo}>{num(p.saldo_total)} pts</Text>
-      </View>
-
-      <View style={styles.nivelRow}>
-        <Text style={styles.nivel}>{p.nivel > 0 ? `N${p.nivel}` : "—"}</Text>
-        <View style={{ flex: 1, gap: 4 }}>
+    <>
+      {/* Herói no fundo nu: o tamanho é a ênfase, não a cor. Sem lineHeight
+          declarado — no Android um lineHeight menor que a altura natural da
+          Syne corta glifo; o RN calcula. */}
+      <View style={styles.hero}>
+        <Text style={styles.heroSaldo}>{milhar(p.saldo_total)}</Text>
+        <Text style={styles.heroLabel}>PONTOS ACUMULADOS</Text>
+        <View style={styles.nivelRow}>
+          <Text style={styles.nivelTag}>{p.nivel > 0 ? `N${p.nivel}` : "—"}</Text>
           <Diamantes nivel={p.nivel} />
-          <Text style={styles.vitalicio}>
-            {p.nivel > 0 ? "vitalício · nível não regride" : "a caminho do N1"}
+          <Text style={styles.nivelHint}>
+            {p.nivel > 0 ? "vitalício · não regride" : "a caminho do N1"}
           </Text>
         </View>
       </View>
 
-      <View style={styles.barTrack}>
-        <View style={[styles.barFill, { width: `${pct * 100}%` }]} />
-      </View>
-      <View style={styles.cicloRow}>
-        <Text style={styles.meta}>
-          ciclo {ciclo.indice} · semana {ciclo.semana}/{ciclo.de}
-        </Text>
-        <Text style={styles.meta}>
-          {num(ciclo.pontos)}/{num(ciclo.meta)}
-        </Text>
-      </View>
-
-      <View style={styles.semanaRow}>
-        <Text style={styles.semanaLabel}>semana</Text>
-        <Text style={styles.ganho}>+{num(semana.ganho)}</Text>
-        {semana.desconto > 0 ? (
-          <Text style={styles.desconto}>−{num(semana.desconto)}</Text>
-        ) : null}
-      </View>
-
-      {semana.padroes.length > 0 ? (
-        <View style={styles.padroes}>
-          {semana.padroes.map((pd) => (
-            <Text key={pd.slug} style={styles.padrao}>
-              {pd.nome} · {pd.furos} furos em 7d · −{num(pd.delta)}
-            </Text>
-          ))}
+      <Card style={styles.conqCard}>
+        <View style={styles.cicloRow}>
+          <Text style={styles.cicloLabel}>
+            CICLO {ciclo.indice} · SEMANA {ciclo.semana}/{ciclo.de}
+          </Text>
+          <Text style={styles.cicloPontos}>
+            {milhar(ciclo.pontos)}/{milhar(ciclo.meta)}
+          </Text>
         </View>
-      ) : null}
-
-      <View style={styles.proximo}>
-        <Text style={styles.meta}>
-          {proximo_nivel
-            ? `N${proximo_nivel.n} em ${num(proximo_nivel.faltam)} pts`
-            : "N4 — topo"}
-        </Text>
-      </View>
-    </Card>
+        {/* 10 segmentos padrão: a barra é alimentada por pontos, não por
+            semanas — 12 sob o rótulo "SEMANA x/12" mentiria (decisão nº 2). */}
+        <View style={{ marginTop: 10 }}>
+          <SegmentBar value={pct} />
+        </View>
+        <View style={styles.semanaRow}>
+          <Text style={styles.ganho}>semana +{milhar(semana.ganho)}</Text>
+          {semana.desconto > 0 ? (
+            <Text style={styles.desconto}>−{milhar(semana.desconto)} descontos</Text>
+          ) : null}
+          <Text style={styles.proximoNivel}>
+            {proximo_nivel
+              ? `N${proximo_nivel.n} em ${milhar(proximo_nivel.faltam)}`
+              : "N4 — topo"}
+          </Text>
+        </View>
+        {semana.padroes.length > 0 ? (
+          <View style={styles.padroes}>
+            {semana.padroes.map((pd) => (
+              <Text key={pd.slug} style={styles.padrao}>
+                {pd.nome} · {pd.furos} furos em 7d · −{milhar(pd.delta)}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+      </Card>
+    </>
   );
 }
 
@@ -568,25 +563,17 @@ export default function Revisao({
 
   return (
     <View style={{ flex: 1, paddingTop: spacing.sm }}>
-      <View style={styles.head}>
-        <Text style={styles.title}>Revisão</Text>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{d?.count ?? 0}</Text>
-        </View>
-      </View>
-
       <ScrollView
-        style={{ marginTop: spacing.md }}
         contentContainerStyle={{ paddingBottom: spacing.xl }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} />}
       >
         {pontosLoading && !pontos ? (
           <Skeleton height={150} style={{ marginBottom: spacing.md }} />
         ) : pontos ? (
-          <ConquistasCard p={pontos} />
+          <Placar p={pontos} />
         ) : pontosErr ? (
           <Card style={styles.conqOff}>
-            <Text style={styles.conqOffText}>conquistas · sem dados agora</Text>
+            <Text style={styles.conqOffText}>placar · sem dados agora</Text>
           </Card>
         ) : null}
 
@@ -681,7 +668,7 @@ export default function Revisao({
         ) : readingPending.length > 0 ? (
           <>
             <View style={styles.pendingHead}>
-              <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>sessões por compilar</Text>
+              <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 0 }]}>sessões por compilar</Text>
               <View style={styles.pendingBadge}>
                 <Text style={styles.pendingBadgeText}>{readingPending.length}</Text>
               </View>
@@ -711,7 +698,7 @@ export default function Revisao({
         ) : null}
 
         <View style={styles.ankiSectionHead}>
-          <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>cards Anki</Text>
+          <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 0 }]}>cards Anki</Text>
           <Pressable
             onPress={exportarAnki}
             disabled={ankiBusy !== null}
@@ -800,7 +787,10 @@ export default function Revisao({
           ))
         )}
 
-        <Text style={styles.sectionLabel}>cobranças de hoje</Text>
+        <View style={styles.sectionHead}>
+          <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 0 }]}>cobranças de hoje</Text>
+          <Text style={styles.sectionCount}>{d?.count ?? 0}</Text>
+        </View>
 
         {loading ? (
           <View>
@@ -856,56 +846,49 @@ export default function Revisao({
 }
 
 const styles = StyleSheet.create({
-  head: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  title: { fontFamily: fonts.serif, fontSize: 21, color: colors.text },
-  badge: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    minWidth: 26,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    alignItems: "center",
+  // ---- Placar ----
+  hero: { alignItems: "center", paddingTop: spacing.sm, paddingBottom: spacing.lg },
+  heroSaldo: {
+    fontFamily: fonts.displayBold,
+    fontSize: 54,
+    color: colors.text,
+    letterSpacing: -1.5,
   },
-  badgeText: { fontFamily: fonts.uiBold, color: colors.primaryText, fontSize: 13 },
-
-  // ---- Conquistas ----
-  conqCard: { marginBottom: spacing.md, gap: spacing.sm },
-  conqHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  conqLabel: {
+  heroLabel: {
     fontFamily: fonts.mono,
-    fontSize: 10,
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    fontSize: 9,
+    letterSpacing: 2,
     color: colors.textMuted,
+    marginTop: 8,
   },
-  conqSaldo: { fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted },
-  nivelRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  nivel: { fontFamily: fonts.serif, fontSize: 34, color: colors.text, lineHeight: 38 },
+  nivelRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 13,
+  },
+  nivelTag: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.text, letterSpacing: 1 },
+  nivelHint: { fontFamily: fonts.mono, fontSize: 8.5, color: colors.faint },
   diamonds: { flexDirection: "row", gap: 6 },
   diamond: {
-    width: 9,
-    height: 9,
+    width: 8,
+    height: 8,
+    borderRadius: 2,
     borderWidth: 1,
     borderColor: colors.textMuted,
     backgroundColor: "transparent",
     transform: [{ rotate: "45deg" }],
   },
   diamondOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  vitalicio: { fontFamily: fonts.ui, fontSize: 11.5, color: colors.textMuted },
-  barTrack: {
-    height: 5,
-    borderRadius: radius.pill,
-    backgroundColor: colors.card2,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-  },
-  barFill: { height: "100%", backgroundColor: colors.primary, borderRadius: radius.pill },
-  cicloRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  semanaRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm },
-  semanaLabel: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted, flex: 1 },
-  ganho: { fontFamily: fonts.mono, fontSize: 15, color: colors.success },
-  desconto: { fontFamily: fonts.mono, fontSize: 15, color: colors.textMuted },
+  conqCard: { marginBottom: spacing.md, gap: spacing.sm },
+  cicloRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
+  cicloLabel: { fontFamily: fonts.mono, fontSize: 9, letterSpacing: 1.4, color: colors.textMuted },
+  cicloPontos: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.text },
+  semanaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
+  ganho: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.success, flexShrink: 1 },
+  desconto: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.faint, flexShrink: 1 },
+  proximoNivel: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, flexShrink: 1 },
   padroes: {
     gap: 3,
     paddingTop: spacing.sm,
@@ -913,7 +896,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   padrao: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textMuted },
-  proximo: { paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
   conqOff: { marginBottom: spacing.md, paddingVertical: spacing.md },
   conqOffText: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textMuted },
 
@@ -926,13 +908,21 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  sectionCount: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.faint, letterSpacing: 1.4 },
   reviewCard: { gap: spacing.md, marginBottom: spacing.sm },
   monthCard: { gap: spacing.sm, marginBottom: spacing.md, backgroundColor: colors.card2 },
   reviewHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.md },
   reviewEyebrow: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1 },
-  reviewTitle: { fontFamily: fonts.serif, fontSize: 18, color: colors.text, marginTop: 3 },
-  reviewPct: { fontFamily: fonts.serif, fontSize: 30, color: colors.primary },
-  monthPct: { fontFamily: fonts.serif, fontSize: 26, color: colors.text },
+  reviewTitle: { fontFamily: fonts.uiSemi, fontSize: 18, color: colors.text, marginTop: 3 },
+  reviewPct: { fontFamily: fonts.display, fontSize: 30, color: colors.primary },
+  monthPct: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   metricas: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   metrica: { minWidth: "21%", flexGrow: 1, backgroundColor: colors.card2, borderRadius: radius.md, padding: spacing.sm },
   metricaValor: { fontFamily: fonts.mono, fontSize: 15, color: colors.text },

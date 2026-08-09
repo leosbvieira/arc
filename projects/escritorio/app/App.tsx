@@ -1,14 +1,18 @@
 import { Feather } from "@expo/vector-icons";
-import { useFonts, Fraunces_500Medium } from "@expo-google-fonts/fraunces";
+import {
+  useFonts,
+  BricolageGrotesque_400Regular,
+  BricolageGrotesque_500Medium,
+  BricolageGrotesque_600SemiBold,
+  BricolageGrotesque_700Bold,
+} from "@expo-google-fonts/bricolage-grotesque";
 import {
   IBMPlexMono_500Medium,
 } from "@expo-google-fonts/ibm-plex-mono";
 import {
-  SpaceGrotesk_400Regular,
-  SpaceGrotesk_500Medium,
-  SpaceGrotesk_600SemiBold,
-  SpaceGrotesk_700Bold,
-} from "@expo-google-fonts/space-grotesk";
+  Syne_600SemiBold,
+  Syne_700Bold,
+} from "@expo-google-fonts/syne";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -37,6 +41,7 @@ import Fechar from "./src/screens/Fechar";
 import Habitos from "./src/screens/Habitos";
 import Home from "./src/screens/Home";
 import Melhorias from "./src/screens/Melhorias";
+import Mesa from "./src/screens/Mesa";
 import Revisao from "./src/screens/Revisao";
 import Rotinas from "./src/screens/Rotinas";
 import Shutdown from "./src/screens/Shutdown";
@@ -48,6 +53,7 @@ import { AppButton, Card, Field } from "./src/ui";
 
 type Tab =
   | "home"
+  | "mesa"
   | "capturar"
   | "tarefas"
   | "chat"
@@ -63,10 +69,12 @@ type Tab =
   | "habitos"
   | "settings";
 
-// A tabbar fica só com 4 — revisão/abertura/shutdown/fechar/rotinas entram pela
-// Home e voltam pelo chevron.
+// A Mesa é a 5ª aba e substitui a gaveta "Ferramentas" que saiu da Home —
+// por isso fica em segundo. Revisão/abertura/shutdown/fechar/rotinas seguem
+// subtelas e voltam pelo chevron.
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: "home", label: "Hoje", icon: "circle" },
+  { key: "mesa", label: "Mesa", icon: "grid" },
   { key: "capturar", label: "Capturar", icon: "feather" },
   { key: "tarefas", label: "Tarefas", icon: "check-square" },
   { key: "chat", label: "Mentor", icon: "message-circle" },
@@ -120,11 +128,12 @@ async function syncPushDevice() {
 
 export default function App() {
   const [fontsLoaded] = useFonts({
-    Fraunces_500Medium,
-    SpaceGrotesk_400Regular,
-    SpaceGrotesk_500Medium,
-    SpaceGrotesk_600SemiBold,
-    SpaceGrotesk_700Bold,
+    BricolageGrotesque_400Regular,
+    BricolageGrotesque_500Medium,
+    BricolageGrotesque_600SemiBold,
+    BricolageGrotesque_700Bold,
+    Syne_600SemiBold,
+    Syne_700Bold,
     IBMPlexMono_500Medium,
   });
   const [ready, setReady] = useState(false);
@@ -133,6 +142,9 @@ export default function App() {
   const [server, setServer] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
+  // De onde a subtela veio — gravado antes de trocar de aba. Entrou pela Mesa,
+  // volta para a Mesa; entrou por notificação das 21h, volta para Hoje.
+  const [origem, setOrigem] = useState<Tab>("home");
   const [captureMode, setCaptureMode] = useState<"captura" | "leitura">("captura");
   const [captureRequestId, setCaptureRequestId] = useState(0);
   const [initialTaskId, setInitialTaskId] = useState<string | null>(null);
@@ -160,6 +172,9 @@ export default function App() {
       setCaptureMode("captura");
       setCaptureRequestId((current) => current + 1);
     }
+    // Guarda de onde veio ANTES de trocar de aba quando o destino for subtela —
+    // o chevron e o botão físico voltam para lá, não para um literal "home".
+    if (SUBSCREENS.includes(destination as Tab)) setOrigem(tab);
     setTab(destination as Tab);
   }
 
@@ -195,11 +210,13 @@ export default function App() {
     if (!authed) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
       if (tab === "home") return false;
-      setTab("home");
+      // Subtela volta para a origem; aba volta para Hoje. Sem isso, origem
+      // sozinha criaria armadilha (Mesa → Mesa e o Android nunca sai do app).
+      setTab(SUBSCREENS.includes(tab) ? origem : "home");
       return true;
     });
     return () => subscription.remove();
-  }, [authed, tab]);
+  }, [authed, tab, origem]);
 
   useEffect(() => {
     if (!authed) return;
@@ -295,7 +312,10 @@ export default function App() {
     );
   }
 
-  const isFull = tab === "home" || tab === "chat";
+  // A Mesa tem cabeçalho próprio (eyebrow + título em display): com o header
+  // do App seriam dois títulos empilhados. Por isso isFull inclui mesa e o
+  // header some nela, como já acontece na Home.
+  const isFull = tab === "home" || tab === "chat" || tab === "mesa";
   const isSub = SUBSCREENS.includes(tab);
   const title = TITLES[tab] ?? TABS.find((t) => t.key === tab)?.label ?? "";
 
@@ -303,13 +323,13 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
-      {tab !== "home" && (
+      {tab !== "home" && tab !== "mesa" && (
         <View style={styles.header}>
           {isSub ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Voltar para Hoje"
-              onPress={() => setTab("home")}
+              accessibilityLabel="Voltar"
+              onPress={() => setTab(origem)}
               hitSlop={8}
               style={styles.back}
             >
@@ -318,7 +338,7 @@ export default function App() {
           ) : (
             <Text style={styles.brandSmall}>AETERNUM</Text>
           )}
-          <Text style={styles.section}>{title}</Text>
+          <Text style={styles.section} numberOfLines={1}>{title}</Text>
           {isSub ? <Text style={styles.brandSmall}>AETERNUM</Text> : <View style={{ width: 72 }} />}
         </View>
       )}
@@ -338,6 +358,8 @@ export default function App() {
         </View>
         {tab === "capturar" || tab === "chat" ? null : tab === "home" ? (
           <Home onOpenTab={openDestination} />
+        ) : tab === "mesa" ? (
+          <Mesa onOpenTab={openDestination} />
         ) : tab === "tarefas" ? (
           <Tasks initialTaskId={initialTaskId} onInitialTaskConsumed={() => setInitialTaskId(null)} />
         ) : tab === "agenda" ? (
@@ -409,7 +431,7 @@ const styles = StyleSheet.create({
   mountedScreen: { flex: 1 },
   hiddenScreen: { display: "none" },
   brand: { fontFamily: fonts.uiBold, fontSize: 24, color: colors.text, letterSpacing: -0.5 },
-  tagline: { fontFamily: fonts.serif, color: colors.textMuted, marginTop: 6, fontSize: 15 },
+  tagline: { fontFamily: fonts.ui, color: colors.textMuted, marginTop: 6, fontSize: 15 },
   label: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, letterSpacing: 1 },
   header: {
     paddingHorizontal: spacing.lg,
@@ -421,7 +443,9 @@ const styles = StyleSheet.create({
   },
   back: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border },
   brandSmall: { width: 72, fontFamily: fonts.mono, fontSize: 8, color: colors.textMuted, letterSpacing: 1.2 },
-  section: { fontFamily: fonts.serif, color: colors.text, fontSize: 20, letterSpacing: -0.35 },
+  // Syne é expandida e o Yoga tem flexShrink padrão 0: sem encolher, um título
+  // longo ("Hábitos a reduzir") estoura a linha entre os dois blocos de 72px.
+  section: { fontFamily: fonts.display, color: colors.text, fontSize: 20, letterSpacing: -0.2, flexShrink: 1 },
   content: { flex: 1, paddingHorizontal: spacing.lg },
   tabbar: {
     flexDirection: "row",

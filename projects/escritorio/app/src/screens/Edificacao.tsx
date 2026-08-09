@@ -218,7 +218,7 @@ export default function Edificacao() {
 }
 
 const styles = StyleSheet.create({
-  lead: { fontFamily: fonts.serif, fontSize: 18, lineHeight: 25, color: colors.text, marginBottom: spacing.md },
+  lead: { fontFamily: fonts.ui, fontSize: 18, lineHeight: 25, color: colors.text, marginBottom: spacing.md },
   novoCard: { gap: spacing.sm },
   label: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textMuted, letterSpacing: 1.1 },
   sensivelRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.xs },

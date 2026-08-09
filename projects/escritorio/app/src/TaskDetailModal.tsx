@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  name: { fontFamily: fonts.serif, fontSize: 22, color: colors.text, marginTop: 8, lineHeight: 28 },
+  name: { fontFamily: fonts.uiSemi, fontSize: 22, color: colors.text, marginTop: 8, lineHeight: 28 },
   meta: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.md },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   metaText: { fontFamily: fonts.ui, fontSize: 13, color: colors.text },

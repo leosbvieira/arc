@@ -23,8 +23,10 @@ import {
 } from "../api";
 import { listPendingReadingSessions } from "../readingApi";
 import { actionForAt, HomeSignals, nextAgendaAt } from "../homeAction";
-import { areaColor, colors, fonts, radius, spacing } from "../theme";
-import { Badge, ProgressBar, SectionHeader, Skeleton } from "../ui";
+import { milhar } from "../format";
+import { valorDaAcao } from "../mesaView";
+import { areaColor, colors, fonts, POINTS, radius, spacing } from "../theme";
+import { Badge, ProgressBar, SectionHeader, SegmentBar, Skeleton } from "../ui";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -110,6 +112,8 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
 
   const partial = failures.size > 0;
   const action = actionForAt(abertura, signals);
+  // Preço do hero (tabela POINTS, display-only). null = não desenha nada.
+  const valorHero = valorDaAcao(action.target, POINTS);
   const focus = (digest?.tasks ?? []).slice(0, 3);
   const routineDone = abertura?.rotinas_manha.filter((routine) => routine.feito).length ?? 0;
   const routineTotal = abertura?.rotinas_manha.length ?? 0;
@@ -151,6 +155,26 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
           </Pressable>
         ) : null}
 
+        {/* Saldo do placar: só aparece quando o points carregou de verdade —
+            falha de rede nunca vira saldo zero. Mono porque o número re-soma
+            à vista quando a Home recarrega no AppState "active". */}
+        {loaded.has("points") && points ? (
+          <View style={styles.saldoCard}>
+            <View style={styles.saldoRow}>
+              <Text style={styles.saldo}>
+                {milhar(points.saldo_total)}
+                <Text style={styles.saldoPts}> PTS</Text>
+              </Text>
+              <Text style={styles.saldoCiclo}>
+                CICLO {points.ciclo.indice} · S{points.ciclo.semana}/{points.ciclo.de}
+              </Text>
+            </View>
+            <View style={{ marginTop: spacing.md }}>
+              <SegmentBar value={cycleProgress} />
+            </View>
+          </View>
+        ) : null}
+
         {loading ? (
           <>
             <Skeleton height={176} />
@@ -166,7 +190,10 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
                 <Text style={styles.heroTitle}>{action.title}</Text>
                 <Text style={styles.heroSubtitle}>{action.subtitle}</Text>
                 <View style={styles.heroFoot}>
-                  <Text style={styles.heroAction}>abrir agora</Text>
+                  <View style={styles.heroActionWrap}>
+                    <Text style={styles.heroAction}>abrir agora</Text>
+                    {valorHero !== null ? <Text style={styles.heroValue}>vale +{valorHero}</Text> : null}
+                  </View>
                   <View style={styles.arrow}><Feather name="arrow-up-right" size={18} color={colors.primaryText} /></View>
                 </View>
               </LinearGradient>
@@ -178,10 +205,26 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
                 <Text style={styles.metricValue}>{loaded.has("abertura") ? routineDone : "—"}<Text style={styles.metricMuted}>/{loaded.has("abertura") ? routineTotal : "—"}</Text></Text>
                 <ProgressBar value={routineTotal ? routineDone / routineTotal : 0} color={colors.success} />
               </Pressable>
-              <Pressable onPress={() => onOpenTab?.("revisao")} style={styles.metric}>
-                <Text style={styles.metricLabel}>CICLO</Text>
-                <Text style={styles.metricValue}>{loaded.has("points") ? `S${points?.ciclo.semana ?? 1}` : "—"}<Text style={styles.metricMuted}>/{loaded.has("points") ? points?.ciclo.de ?? 12 : "—"}</Text></Text>
-                <ProgressBar value={cycleProgress} />
+              <Pressable
+                onPress={() =>
+                  focus[0] ? onOpenTab?.(`tarefa:${focus[0].id}`) : onOpenTab?.("tarefas")
+                }
+                style={styles.metric}
+              >
+                <Text style={styles.metricLabel}>FOCO</Text>
+                {focus[0] ? (
+                  <>
+                    <Text style={styles.metricFocus} numberOfLines={2}>{focus[0].name}</Text>
+                    <Text style={[styles.metricFocusMeta, { color: areaColor(focus[0].area) }]}>
+                      {focus[0].area} · {focus[0].due ?? focus[0].status}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.metricValue}>—</Text>
+                    <Text style={styles.metricHint}>nada no radar</Text>
+                  </>
+                )}
               </Pressable>
               <Pressable onPress={() => onOpenTab?.("tarefas")} style={styles.metric}>
                 <Text style={styles.metricLabel}>COBRANÇAS</Text>
@@ -256,36 +299,6 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
                 </View>
               </View>
             ) : null}
-
-            <View style={styles.section}>
-              <SectionHeader eyebrow="sistema" title="Ferramentas" />
-              <View style={styles.tools}>
-                {[
-                  // "Agenda" abria a Abertura: o rótulo mentia. Não existe tela de
-                  // calendário ainda (GET /agenda segue órfão) — até existir, o nome
-                  // diz o que o botão faz.
-                  ["calendar", "Agenda", "agenda", colors.info],
-                  ["sunrise", "Abertura", "abertura", colors.lilac],
-                  ["inbox", "Triagem", "triagem", colors.amber],
-                  ["repeat", "Ritmos", "rotinas", colors.success],
-                  ["trending-down", "Reduzir", "habitos", colors.info],
-                  ["compass", "Revisão", "revisao", colors.primary],
-                  ["layers", "Edificação", "edificacao", colors.lilac],
-                  ["zap", "Melhorias", "melhorias", colors.amber],
-                  ["sunset", "Shutdown", "shutdown", colors.primary],
-                  ["moon", "Fechar dia", "fechar", colors.info],
-                  ["settings", "Ajustes", "settings", colors.textMuted],
-                ].map(([icon, label, target, color]) => (
-                  <Pressable key={label} onPress={() => onOpenTab?.(target)} style={styles.tool}>
-                    <View style={[styles.toolIcon, { backgroundColor: `${color}19` }]}>
-                      <Feather name={icon as keyof typeof Feather.glyphMap} size={18} color={color} />
-                    </View>
-                    <Text style={styles.toolLabel}>{label}</Text>
-                    <Feather name="arrow-up-right" size={14} color={colors.textMuted} />
-                  </Pressable>
-                ))}
-              </View>
-            </View>
           </>
         )}
       </ScrollView>
@@ -308,27 +321,34 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 128 },
   topline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
   date: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1.2 },
-  greeting: { fontFamily: fonts.serif, fontSize: 30, color: colors.text, letterSpacing: -0.7, marginTop: 4 },
+  greeting: { fontFamily: fonts.display, fontSize: 30, color: colors.text, letterSpacing: -0.35, marginTop: 4 },
   name: { color: colors.primary },
   levelSeal: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: "rgba(222,184,120,0.35)", backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
   levelSmall: { fontFamily: fonts.mono, fontSize: 7, color: colors.primary, letterSpacing: 1 },
-  levelNumber: { fontFamily: fonts.serif, fontSize: 18, color: colors.text, lineHeight: 20 },
+  levelNumber: { fontFamily: fonts.display, fontSize: 18, color: colors.text, lineHeight: 20 },
   partial: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
   partialText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
   hero: { minHeight: 188, borderRadius: radius.xl, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(222,184,120,0.19)", overflow: "hidden" },
   heroIcon: { position: "absolute", top: 16, right: 16, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(222,184,120,0.1)", borderWidth: 1, borderColor: "rgba(222,184,120,0.18)" },
   heroEyebrow: { fontFamily: fonts.mono, fontSize: 10, color: colors.primary, letterSpacing: 1.6, textTransform: "uppercase" },
-  heroTitle: { fontFamily: fonts.serif, fontSize: 27, lineHeight: 31, color: colors.text, letterSpacing: -0.6, marginTop: spacing.lg, maxWidth: "82%" },
+  heroTitle: { fontFamily: fonts.display, fontSize: 27, lineHeight: 31, color: colors.text, letterSpacing: -0.3, marginTop: spacing.lg, maxWidth: "82%" },
   heroSubtitle: { fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 19, color: colors.textMuted, marginTop: 6, maxWidth: "88%" },
   heroFoot: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: "auto" },
+  heroActionWrap: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, flexShrink: 1 },
   heroAction: { fontFamily: fonts.uiSemi, fontSize: 12.5, color: colors.primary },
+  heroValue: { fontFamily: fonts.mono, fontSize: 10, color: colors.faint },
   arrow: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
   metricsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   metric: { flex: 1, minHeight: 92, borderRadius: radius.lg, padding: spacing.md, backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border },
   metricLabel: { fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 1.1, color: colors.textMuted },
-  metricValue: { fontFamily: fonts.serif, fontSize: 21, color: colors.text, marginTop: 8, marginBottom: 8 },
+  metricValue: { fontFamily: fonts.display, fontSize: 21, color: colors.text, marginTop: 8, marginBottom: 8 },
   metricMuted: { color: colors.textMuted, fontSize: 13 },
   metricHint: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 10.5 },
+  // Coluna FOCO: nome de tarefa é uiSemi ~13px, NUNCA metricValue (display 21px
+  // é tamanho de número-herói — o erro que a onda 2 evitou). O rodapé é mono
+  // miúdo na cor da área, caixa alta.
+  metricFocus: { fontFamily: fonts.uiSemi, fontSize: 13, lineHeight: 17, color: colors.text, marginTop: 8, marginBottom: 8 },
+  metricFocusMeta: { fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 1, textTransform: "uppercase" },
   section: { marginTop: spacing.xl },
   focusRow: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.sm },
   focusIndex: { width: 22, fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted },
@@ -349,10 +369,19 @@ const styles = StyleSheet.create({
   agendaSource: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, marginTop: 3, textTransform: "uppercase" },
   agendaEmpty: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted },
   badges: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  tools: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  tool: { width: "48.5%", minHeight: 66, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: colors.card2, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
-  toolIcon: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  toolLabel: { flex: 1, fontFamily: fonts.uiSemi, color: colors.text, fontSize: 12.5 },
+  saldoCard: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.card2,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+  },
+  saldoRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  saldo: { fontFamily: fonts.mono, fontSize: 15, color: colors.text },
+  saldoPts: { fontFamily: fonts.mono, fontSize: 9, color: colors.faint, letterSpacing: 0.8 },
+  saldoCiclo: { fontFamily: fonts.mono, fontSize: 9, color: colors.faint, letterSpacing: 0.8 },
   captureDock: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: spacing.md, minHeight: 62, flexDirection: "row", alignItems: "center", gap: 11, backgroundColor: "#191D22", borderWidth: 1, borderColor: "rgba(222,184,120,0.23)", borderRadius: radius.xl, padding: 9, paddingRight: spacing.lg },
   capturePlus: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
   captureLabel: { fontFamily: fonts.mono, color: colors.primary, fontSize: 9, letterSpacing: 1, textTransform: "uppercase" },

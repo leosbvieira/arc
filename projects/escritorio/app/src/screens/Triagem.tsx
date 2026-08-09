@@ -208,10 +208,10 @@ export default function Triagem() {
 }
 
 const styles = StyleSheet.create({
-  lead: { fontFamily: fonts.serif, fontSize: 18, lineHeight: 25, color: colors.text, marginBottom: spacing.md },
+  lead: { fontFamily: fonts.ui, fontSize: 18, lineHeight: 25, color: colors.text, marginBottom: spacing.md },
   summary: { flexDirection: "row", alignItems: "baseline", gap: 7, marginBottom: spacing.md },
   summaryLabel: { fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, letterSpacing: 1.2 },
-  summaryCount: { fontFamily: fonts.serif, fontSize: 25, color: colors.text },
+  summaryCount: { fontFamily: fonts.display, fontSize: 25, color: colors.text },
   summaryDot: { color: colors.textMuted },
   summaryApproved: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.primary },
   itemCard: { gap: spacing.sm, marginBottom: spacing.sm },
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
   areaPill: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 6 },
   areaText: { fontFamily: fonts.ui, fontSize: 11, color: colors.textMuted },
   emptyCard: { alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xl },
-  emptyTitle: { fontFamily: fonts.serif, fontSize: 18, color: colors.text },
+  emptyTitle: { fontFamily: fonts.uiSemi, fontSize: 18, color: colors.text },
   emptyText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted },
   footer: { paddingTop: spacing.sm, paddingBottom: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg },
 });

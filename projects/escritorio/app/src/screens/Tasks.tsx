@@ -18,8 +18,8 @@ import { enqueue } from "../captureQueue";
 import { ehFalhaDeRede } from "../offlineError";
 import { DueChoice, dueFromChoice, horaValida } from "../taskDue";
 import { TaskDetailModal } from "../TaskDetailModal";
-import { areaColor, colors, fonts, radius, spacing } from "../theme";
-import { AppButton, ErrorState, Field, SectionHeader, Skeleton } from "../ui";
+import { areaColor, colors, fonts, POINTS, radius, spacing } from "../theme";
+import { AppButton, ErrorState, Field, PointTag, SectionHeader, Skeleton } from "../ui";
 
 const AREAS = [
   "Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
@@ -50,6 +50,7 @@ function TaskRow({
   onComplete,
   confirmando,
   concluindo,
+  aceso,
   onCancelar,
 }: {
   task: Task;
@@ -57,6 +58,7 @@ function TaskRow({
   onComplete: () => void;
   confirmando: boolean;
   concluindo: boolean;
+  aceso: boolean;
   onCancelar: () => void;
 }) {
   const color = severityColor(task);
@@ -67,6 +69,7 @@ function TaskRow({
           <Text style={styles.confirmLabel}>CONCLUIR?</Text>
           <Text style={styles.taskName} numberOfLines={1}>{task.name}</Text>
         </View>
+        <PointTag pontos={POINTS.tarefa} />
         <Pressable onPress={onCancelar} hitSlop={8} disabled={concluindo}>
           <Text style={styles.confirmCancel}>cancelar</Text>
         </Pressable>
@@ -88,8 +91,8 @@ function TaskRow({
   }
   return (
     <View style={styles.taskRow}>
-      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={5} style={[styles.check, { borderColor: `${color}AA` }]}>
-        <View style={[styles.checkCore, { backgroundColor: `${color}20` }]} />
+      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={5} style={[styles.check, { borderColor: aceso ? colors.success : `${color}AA` }]}>
+        <View style={[styles.checkCore, { backgroundColor: aceso ? colors.success : `${color}20` }]} />
       </Pressable>
       <Pressable style={styles.taskBody} onPress={onOpen}>
         <View style={styles.taskTopline}>
@@ -99,6 +102,7 @@ function TaskRow({
         <Text style={styles.taskName} numberOfLines={2}>{task.name}</Text>
         {task.assignee ? <Text style={styles.assignee}>com {task.assignee}</Text> : null}
       </Pressable>
+      <PointTag pontos={POINTS.tarefa} aceso={aceso} />
       <Pressable accessibilityLabel={`Abrir ${task.name}`} onPress={onOpen} hitSlop={8}>
         <Feather name="arrow-up-right" size={16} color={colors.textMuted} />
       </Pressable>
@@ -129,6 +133,7 @@ export default function Tasks({
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
   const [pendingCompletion, setPendingCompletion] = useState<Task | null>(null);
   const [statusFila, setStatusFila] = useState("");
 
@@ -181,6 +186,14 @@ export default function Tasks({
   async function completeById(id: string): Promise<boolean> {
     if (completingId) return false;
     setCompletingId(id);
+    // O flash dispara NO TOQUE, imediatamente — não ao voltar do servidor:
+    // esperar a rede reintroduziria o silêncio que a confirmação na linha
+    // nasceu para matar. Se a conclusão falhar de verdade, o Alert abaixo
+    // corrige; no caso offline ela foi enfileirada, então o flash disse a
+    // verdade. Apaga depois da animação do PointTag (350ms).
+    setFlashId(id);
+    setPendingCompletion(null);
+    setTimeout(() => setFlashId(null), 400);
     try {
       await completeTask(id);
     } catch (error) {
@@ -231,6 +244,7 @@ export default function Tasks({
         onOpen={() => setDetailId(task.id)}
         confirmando={pendingCompletion?.id === task.id}
         concluindo={completingId === task.id}
+        aceso={flashId === task.id}
         onCancelar={() => setPendingCompletion(null)}
         onComplete={() =>
           pendingCompletion?.id === task.id
@@ -355,7 +369,7 @@ export default function Tasks({
 
           {grouped.agora.length ? (
             <View style={styles.group}>
-              <SectionHeader eyebrow="execução" title="Agora" />
+              <SectionHeader eyebrow="execução" title="Agora" meta={`+${grouped.agora.length * POINTS.tarefa} na mesa`} />
               {renderRows(grouped.agora)}
             </View>
           ) : null}
@@ -409,7 +423,7 @@ const styles = StyleSheet.create({
   addButton: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
   addButtonOpen: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
   createPanel: { gap: spacing.md, backgroundColor: colors.card2, borderWidth: 1, borderColor: "rgba(222,184,120,0.23)", borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
-  createTitle: { fontFamily: fonts.serif, fontSize: 20, color: colors.text },
+  createTitle: { fontFamily: fonts.uiSemi, fontSize: 20, color: colors.text },
   fieldLabel: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 1.2 },
   dueRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.xs },
   duePill: {
@@ -439,7 +453,7 @@ const styles = StyleSheet.create({
   completionDoText: { fontFamily: fonts.uiSemi, fontSize: 10.5, color: colors.primaryText },
   signalRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
   signal: { flex: 1, backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
-  signalNumber: { fontFamily: fonts.serif, color: colors.text, fontSize: 20 },
+  signalNumber: { fontFamily: fonts.display, color: colors.text, fontSize: 20 },
   signalLabel: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 9.5, marginTop: 2 },
   group: { marginBottom: spacing.xl },
   filaAviso: {
@@ -478,6 +492,6 @@ const styles = StyleSheet.create({
   scheduledKicker: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 8.5, letterSpacing: 1.3 },
   scheduledTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 13.5, marginTop: 3 },
   empty: { alignItems: "center", paddingVertical: spacing.xxl, gap: spacing.sm },
-  emptyTitle: { fontFamily: fonts.serif, color: colors.text, fontSize: 18 },
+  emptyTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 18 },
   emptyText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12 },
 });
