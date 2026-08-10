@@ -112,7 +112,71 @@ que "puxa trabalho do VPS" conserta o **assíncrono** — `classify`, `compile_r
 `hermes_client.chat` → `_oneshot`): com o PC desligado não há o que puxar, e o Leo fica
 olhando o spinner. **Mentor 24/7 só existe com o Hermes fora do PC.**
 
-### Recomendação revisada
+### DECISÃO (10/ago/2026): opção B — Hermes no VPS com o OAuth atual
+
+O Leo escolheu **B**, contra a recomendação C abaixo. O que B entrega: **Mentor 24/7**,
+**custo novo zero** e o Mentor **continua no `gpt-5.4`** — o modelo a que ele se
+acostumou, que era um custo real da opção C e não aparecia em nenhuma planilha.
+
+O que ele aceita junto, registrado para não virar surpresa: a colisão de refresh token,
+a manutenção da credencial num servidor, e uma zona cinzenta que pode mudar sem aviso.
+
+**O risco que é só do B — e que decide se B é viável:** o único problema técnico
+documentado com esta configuração exata (VPS + IP de datacenter + OAuth do ChatGPT) é
+[openai/codex#11743](https://github.com/openai/codex/issues/11743) — *stream disconnected
+before completion*. O issue está fechado sem resolução visível. Não é bloqueio de conta,
+mas **quebra o Mentor do mesmo jeito**. Por isso ele vira o **primeiro passo**, e não uma
+descoberta no meio da migração (ver "Ordem de execução do B").
+
+#### O achado que barateia o B
+
+`hermes_cli/auth.py` mostra que o Hermes tem **device-code OAuth para `openai-codex`**
+(`hermes auth add openai-codex`, fonte `manual:device_code`) e **suporta credenciais
+independentes**:
+
+> *"Manual entries whose tokens never matched the singleton represent INDEPENDENT
+> accounts added via `hermes auth add openai-codex` and must not be overwritten by a
+> re-auth that targeted a different account (regression for #39236)."*
+
+Duas consequências práticas:
+
+1. **Login headless não precisa de SSH port-forward.** O device code imprime um código,
+   ele aprova no navegador do celular. O `_print_loopback_ssh_hint` é para provedores de
+   redirect em loopback (xAI, Spotify) — não para o codex.
+2. **NÃO copiar `auth.json` para o VPS.** `config.yaml`, `SOUL.md` e as personalities
+   vão; **tokens não**. Uma autorização device-code nova no VPS gera a própria cadeia de
+   refresh, e é assim que a colisão com o `codex` CLI do PC deixa de existir — a colisão
+   acontece quando dois clientes dividem o **mesmo** token, não quando usam a mesma
+   conta por autorizações separadas.
+
+O ponto 2 é **provável, não provado**: o texto do Hermes fala de "contas independentes",
+e a inferência para "mesma conta, autorizações separadas" vem de como a rotação de
+refresh token funciona em OAuth, não de um teste. Está na ordem de execução como gate.
+
+#### Ordem de execução do B
+
+Os dois primeiros passos são baratos e podem **matar a opção B antes** de qualquer
+migração — que é exatamente o que se quer deles.
+
+1. **Provisionar o VPS e instalar só o Hermes.** Mandar um prompt. Se der *stream
+   disconnected* (#11743), B está bloqueado e a decisão volta para a mesa com um fato
+   novo, não com uma teoria.
+2. **`hermes auth add openai-codex` no VPS, via device code.** Sem copiar `auth.json`.
+   Depois: usar o `codex` CLI no PC e, em seguida, falar com o Mentor pelo celular.
+   Repetir por alguns dias. Se os dois continuarem vivos, as cadeias são independentes e
+   a colisão está resolvida por construção.
+3. Config do Hermes (`config.yaml`, `SOUL.md`, personalities) + MCP ClickUp headless
+   (token `pk_`) + MCP do vault (token igual).
+4. BFF + banco (Estágio C), Caddy/HTTPS (Estágio D), crons (Estágio F).
+
+**Nota técnica:** o `VPS-DEPLOY.md` manda ligar o API server do Hermes (`API_SERVER_ENABLED`)
+para o BFF falar com ele. **Isso está obsoleto:** o `hermes_client` de hoje não usa HTTP,
+ele sobe `hermes -z` como subprocesso. Com BFF e Hermes na mesma máquina, isso continua
+valendo — e `_hermes_python()` já procura `python.exe` **e** `python`, então o caminho é
+Linux-ready. O que importa é `hermes` estar no PATH do usuário que roda o BFF.
+`HERMES_BASE_URL` e `HERMES_API_KEY` viraram vestígio.
+
+### Recomendação revisada (histórico — não escolhida)
 
 Levar o Hermes na fase 1 com o OAuth atual **não é imprudente** — as opções voltam à
 mesa. Mas se o objetivo inclui o Mentor de qualquer lugar, o caminho é **Hermes no VPS
@@ -201,14 +265,11 @@ instalado, só desabilitado. E o banco tem backup diário desde hoje.
 3. **Rotacionar os segredos agora?** `APP_PASSWORD` e `JWT_SECRET` ficaram expostos
    em terminal em 06/08, e o PAT do vault é emprestado. A migração é o momento
    natural de trocar os três de uma vez.
-4. **O Hermes vai junto, e com qual provider?** (nova, 10/ago) Três saídas:
-   **(A)** Hermes fica no PC — Mentor só com o PC ligado, custo zero;
-   **(B)** Hermes no VPS com o OAuth atual — Mentor 24/7, sem custo novo, mas herda a
-   colisão de refresh token com o `codex` CLI dele e a manutenção fica por SSH;
-   **(C)** Hermes no VPS com `ANTHROPIC_API_KEY` — Mentor 24/7, quota isolada, sem
-   refresh para colidir; paga por token e o Mentor troca de modelo.
-   O que decide é se ele aceita pagar por token e trocar o modelo — **não** risco de
-   bloqueio, que foi verificado e não se sustentou.
+4. ~~**O Hermes vai junto, e com qual provider?**~~ **DECIDIDO (10/ago): opção B** —
+   Hermes no VPS com o OAuth atual. Mentor 24/7, custo novo zero, `gpt-5.4` preservado.
+   Detalhe, riscos e ordem de execução na seção "DECISÃO (10/ago/2026)" acima.
+   Fica **um gate**: o #11743 (*stream disconnected* em VPS com OAuth) tem que ser
+   testado antes de migrar qualquer coisa. Se falhar, a decisão volta com um fato novo.
 
 ## Aceite da fase 1
 
