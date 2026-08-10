@@ -233,6 +233,7 @@ class ReadingSessionIn(BaseModel):
     livro: str
     pagina_inicial: int | None = None
     inicio: float | None = None
+    book_id: int | None = None
 
     @field_validator("client_key", "livro")
     @classmethod
@@ -1027,17 +1028,75 @@ async def _suggest_anki_once(session_id: int, notas: str) -> list[dict]:
         raise
 
 
+class BookCreateIn(BaseModel):
+    titulo: str
+
+
+@app.get("/reading/books")
+def listar_books(
+    status: Literal["lendo", "terminado"] = "lendo",
+    _auth: None = Depends(require_auth),
+) -> dict:
+    return {"books": store.list_books(status)}
+
+
+@app.post("/reading/books")
+def criar_book(
+    body: BookCreateIn,
+    _auth: None = Depends(require_auth),
+) -> dict:
+    try:
+        book, created = store.create_book(body.titulo)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return {"book": book, "created": created}
+
+
+@app.post("/reading/books/{book_id}/terminar")
+def terminar_book(
+    book_id: int,
+    _auth: None = Depends(require_auth),
+) -> dict:
+    estado, payload = store.terminar_book(book_id)
+    if estado == "missing":
+        raise HTTPException(404, "book_nao_encontrado")
+    if estado == "sessao_aberta":
+        raise HTTPException(409, "book_com_sessao_aberta")
+    if estado == "ja_terminado":
+        raise HTTPException(409, "book_ja_terminado")
+    return {"book": payload}
+
+
+@app.post("/reading/books/{book_id}/reabrir")
+def reabrir_book(
+    book_id: int,
+    _auth: None = Depends(require_auth),
+) -> dict:
+    estado, payload = store.reabrir_book(book_id)
+    if estado == "missing":
+        raise HTTPException(404, "book_nao_encontrado")
+    if estado == "ja_lendo":
+        raise HTTPException(409, "book_ja_lendo")
+    return {"book": payload}
+
+
 @app.post("/reading/sessions")
 async def create_reading_session(
     body: ReadingSessionIn,
     _auth: None = Depends(require_auth),
 ):
-    session, created = store.create_reading_session(
-        body.client_key,
-        body.livro,
-        pagina_inicial=body.pagina_inicial,
-        inicio=body.inicio,
-    )
+    try:
+        session, created = store.create_reading_session(
+            body.client_key,
+            body.livro,
+            body.pagina_inicial,
+            body.inicio,
+            book_id=body.book_id,
+        )
+    except store.BookIndisponivel:
+        raise HTTPException(409, "book_nao_aceita_sessao") from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     if created:
         store.log_event("reading_started", ref=str(session["id"]))
     return {"session": session, "created": created}
