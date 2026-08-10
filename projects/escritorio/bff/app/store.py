@@ -297,6 +297,9 @@ def init_db() -> None:
                 "ALTER TABLE capture_queue ADD COLUMN proxima_em REAL NOT NULL DEFAULT 0"
             )
 
+        # Migração idempotente para bancos criados antes da estante. O índice vem
+        # depois do ALTER porque num banco antigo as colunas que ele referencia
+        # só passam a existir depois que o ALTER TABLE roda.
         reading_session_columns = {
             row["name"] for row in con.execute("PRAGMA table_info(reading_sessions)")
         }
