@@ -1,7 +1,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   AppState,
   Pressable,
@@ -28,13 +29,17 @@ import {
 } from "../readingDraft";
 import {
   appendReadingBuffer,
+  Book,
   compileReadingSession,
+  createBook,
   createReadingSession,
   discardReadingSession,
   deleteLastReadingBuffer,
   draftReadingSession,
   getReadingSession,
+  listBooks,
   listPendingReadingSessions,
+  reabrirBook,
   readingErrorDetail,
   ReadingApiError,
   ReadingHook,
@@ -43,10 +48,12 @@ import {
   ReadingSnapshot,
   reconcileReadingSession,
   rejectReadingDraft,
+  terminarBook,
   updateLastReadingBuffer,
 } from "../readingApi";
 import { parseReadingEntry } from "../readingParser";
 import { readingPreviewFromSession } from "../readingStaging";
+import { montarEstante, LinhaEstante } from "../shelfView";
 import {
   canClearLocalAfterDiscardFailure,
   formatReadingElapsed,
@@ -162,6 +169,28 @@ export default function Capture({
   const compileLockRef = useRef(false);
   const syncChain = useRef<Promise<void>>(Promise.resolve());
 
+  // a estante
+  const [shelf, setShelf] = useState<Book[] | null>(null);
+  const [finished, setFinished] = useState<Book[] | null>(null);
+  const [showFinished, setShowFinished] = useState(false);
+  const [shelfBusyId, setShelfBusyId] = useState<number | null>(null);
+  const [newBookMode, setNewBookMode] = useState(false);
+
+  const loadShelf = useCallback(async () => {
+    try {
+      const { books } = await listBooks("lendo");
+      setShelf(books);
+    } catch {
+      // null = NÃO CARREGOU. A tela mostra o campo livre, e nunca uma estante
+      // vazia que o Leo leria como "não tenho livro nenhum".
+      setShelf(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode === "leitura") void loadShelf();
+  }, [mode, loadShelf]);
+
   function replaceDraft(next: ReadingDraft | null): void {
     draftRevisionRef.current += 1;
     draftRef.current = next;
@@ -173,6 +202,81 @@ export default function Capture({
   ): void {
     readingFormRevisionRef.current += 1;
     setter(value);
+  }
+
+  // Mexer no texto é dizer "não é essa obra". Sem isso, a tela mostra um
+  // título e a sessão grava outro — o servidor ignora `livro` quando há
+  // `book_id`, então o estrago é de rótulo, não de dado. Mas é estrago.
+  function editarTitulo(value: string): void {
+    updateReadingField(setBook, value);
+    if (selectedBookId !== null) setSelectedBookId(null);
+  }
+
+  function escolherObra(linha: LinhaEstante): void {
+    setSelectedBookId(linha.id);
+    setBook(linha.titulo);
+    // Sugestão, não imposição: pode ter lido no papel desde a última sessão.
+    setPageStart(linha.paginaInicialSugerida);
+    setPageEnd("");
+    setNewBookMode(false);
+  }
+
+  // Devolve a obra criada (não só marca state) porque quem chama em modo "novo
+  // livro" — `beginSession`/`startSession` — precisa do id no mesmo tick, antes
+  // que o state atualizado volte num novo render.
+  async function criarObra(): Promise<{ id: number; titulo: string } | null> {
+    const titulo = book.trim();
+    if (!titulo) return null;
+    try {
+      const { book: criada } = await createBook(titulo);
+      setSelectedBookId(criada.id);
+      setBook(criada.titulo);
+      await loadShelf();
+      return { id: criada.id, titulo: criada.titulo };
+    } catch (error) {
+      setSpeechError(readingErrorDetail(error) ?? "não deu para registrar a obra");
+      return null;
+    }
+  }
+
+  async function terminarObra(bookId: number, titulo: string): Promise<void> {
+    setShelfBusyId(bookId);
+    try {
+      await terminarBook(bookId);
+      await loadShelf();
+    } catch (error) {
+      const detalhe = readingErrorDetail(error);
+      if (detalhe === "book_ja_terminado") {
+        // Já terminada em outro lugar: recarregar é a resposta certa, não um erro.
+        await loadShelf();
+      } else if (detalhe === "book_com_sessao_aberta") {
+        setSpeechError(`termine a sessão de leitura de ${titulo} antes`);
+      } else {
+        setSpeechError("não deu para terminar a obra");
+      }
+    } finally {
+      setShelfBusyId(null);
+    }
+  }
+
+  function confirmarTerminar(bookId: number, titulo: string): void {
+    Alert.alert("Terminar obra", `Terminar ${titulo}?`, [
+      { text: "cancelar", style: "cancel" },
+      { text: "terminar", onPress: () => void terminarObra(bookId, titulo) },
+    ]);
+  }
+
+  async function reabrirObra(bookId: number): Promise<void> {
+    setShelfBusyId(bookId);
+    try {
+      await reabrirBook(bookId);
+      await loadShelf();
+      setFinished((await listBooks("terminado")).books);
+    } catch {
+      setSpeechError("não deu para reabrir a obra");
+    } finally {
+      setShelfBusyId(null);
+    }
   }
 
   const speech = useReadingSpeech({
@@ -498,10 +602,18 @@ export default function Capture({
         await localSave;
         await syncDraft(draft);
       })
-      .catch(() => {
-        if (draftRef.current?.sessionKey === draft.sessionKey) {
-          setStatus("sessão salva no aparelho — autosave no servidor pendente");
+      .catch(async (error) => {
+        if (draftRef.current?.sessionKey !== draft.sessionKey) return;
+        // O createReadingSession deste sync pode achar a obra terminada (409)
+        // entre a escolha na estante e o autosave — a obra some da estante nesse
+        // meio-tempo, ou foi terminada em outro lugar. Não é falha de rede.
+        if (readingErrorDetail(error) === "book_nao_aceita_sessao") {
+          setSpeechError("essa obra foi terminada — reabra antes de ler");
+          setSelectedBookId(null);
+          await loadShelf();
+          return;
         }
+        setStatus("sessão salva no aparelho — autosave no servidor pendente");
       });
   }
 
@@ -784,12 +896,19 @@ export default function Capture({
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
   }
 
-  async function ensureSession(): Promise<ReadingDraft | null> {
+  // `novaObra` chega de `criarObra` quando a sessão nasce em modo "novo livro".
+  // `book`/`selectedBookId` só refletem essa criação depois de um novo render, e
+  // esta função roda no mesmo tick — por isso o valor entra por parâmetro, não
+  // por state, e não corre atrás de uma obra que a tela ainda não sabe que existe.
+  async function ensureSession(
+    novaObra?: { id: number; titulo: string },
+  ): Promise<ReadingDraft | null> {
     if (speech.starting || compileLockRef.current) return null;
     setSpeechError("");
     let draft = draftRef.current;
     if (!draft) {
-      if (!book.trim()) {
+      const titulo = novaObra?.titulo ?? book;
+      if (!titulo.trim()) {
         setSpeechError("informe o livro antes de iniciar a sessão");
         return null;
       }
@@ -797,8 +916,8 @@ export default function Capture({
       draft = {
         sessionKey: createSessionKey(now),
         remoteId: null,
-        book,
-        bookId: selectedBookId,
+        book: titulo,
+        bookId: novaObra ? novaObra.id : selectedBookId,
         pageStart,
         pageEnd,
         startedAt: now,
@@ -817,12 +936,18 @@ export default function Capture({
   }
 
   async function beginSession(): Promise<void> {
-    const draft = await ensureSession();
+    // Em modo "novo livro" a obra precisa existir no servidor antes da sessão —
+    // senão a sessão nasce sem `book_id` e a estante nunca aprende sobre ela.
+    const novaObra = newBookMode ? await criarObra() : undefined;
+    if (novaObra === null) return; // criarObra falhou; o erro já está em speechError
+    const draft = await ensureSession(novaObra ?? undefined);
     if (draft) setStatus("sessão iniciada — escreva ou ative o microfone quando quiser");
   }
 
   async function startSession(): Promise<void> {
-    const draft = await ensureSession();
+    const novaObra = newBookMode ? await criarObra() : undefined;
+    if (novaObra === null) return;
+    const draft = await ensureSession(novaObra ?? undefined);
     if (!draft) return;
     const started = await speech.start();
     if (started) setStatus("ouvindo — diga ‘citação’, ‘comentário’, ‘ideia’ ou ‘lista’");
@@ -852,6 +977,10 @@ export default function Capture({
     setRemoveConfirmSeq(null);
     setSpeechError("");
     setPreview(null);
+    setNewBookMode(false);
+    // A sessão que acabou de compilar pode ter mudado a página/data da obra no
+    // servidor; sem isto a estante ficaria mostrando o estado de antes da leitura.
+    void loadShelf();
   }
 
   function readingSnapshot(draft: ReadingDraft): ReadingSnapshot {
@@ -1532,12 +1661,95 @@ export default function Capture({
 
           <Card style={styles.setupCard}>
             <Text style={styles.setupLabel}>O QUE VOCÊ VAI LER?</Text>
-            <Field
-              value={book}
-              onChangeText={(value) => updateReadingField(setBook, value)}
-              placeholder="Livro, artigo ou capítulo"
-              editable={readingDraftReady}
-            />
+
+            {shelf && !newBookMode ? (
+              <>
+                {montarEstante(shelf, Date.now()).map((linha) => (
+                  <Pressable
+                    key={linha.id}
+                    style={[
+                      styles.shelfRow,
+                      selectedBookId === linha.id && styles.shelfRowActive,
+                    ]}
+                    onPress={() => escolherObra(linha)}
+                    disabled={shelfBusyId !== null}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.shelfTitle} numberOfLines={1}>
+                        {linha.titulo}
+                      </Text>
+                      <Text style={styles.shelfDetail}>{linha.detalhe}</Text>
+                    </View>
+                    <Pressable
+                      onPress={() => confirmarTerminar(linha.id, linha.titulo)}
+                      hitSlop={10}
+                      disabled={shelfBusyId !== null}
+                    >
+                      {shelfBusyId === linha.id ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Feather name="check" size={17} color={colors.textMuted} />
+                      )}
+                    </Pressable>
+                  </Pressable>
+                ))}
+                <Pressable
+                  onPress={() => {
+                    setNewBookMode(true);
+                    setSelectedBookId(null);
+                    setBook("");
+                    setPageStart("");
+                  }}
+                  style={styles.shelfAdd}
+                >
+                  <Feather name="plus" size={14} color={colors.primary} />
+                  <Text style={styles.shelfAddText}>novo livro</Text>
+                </Pressable>
+              </>
+            ) : (
+              // shelf === null (não carregou) cai aqui também — degradação para o
+              // campo livre de sempre, nunca uma estante vazia lida como "sem livro".
+              <Field
+                value={book}
+                onChangeText={editarTitulo}
+                placeholder="Livro, artigo ou capítulo"
+                editable={readingDraftReady}
+              />
+            )}
+
+            <Pressable
+              onPress={async () => {
+                const proximo = !showFinished;
+                setShowFinished(proximo);
+                if (proximo) {
+                  try {
+                    setFinished((await listBooks("terminado")).books);
+                  } catch {
+                    setFinished(null);
+                  }
+                }
+              }}
+            >
+              <Text style={styles.shelfLink}>
+                {showFinished ? "esconder terminadas" : "ver obras terminadas"}
+              </Text>
+            </Pressable>
+            {showFinished && finished
+              ? finished.map((obra) => (
+                  <View key={obra.id} style={styles.shelfRow}>
+                    <Text style={styles.shelfTitle} numberOfLines={1}>
+                      {obra.titulo}
+                    </Text>
+                    <Pressable
+                      onPress={() => void reabrirObra(obra.id)}
+                      disabled={shelfBusyId !== null}
+                    >
+                      <Text style={styles.shelfLink}>reabrir</Text>
+                    </Pressable>
+                  </View>
+                ))
+              : null}
+
             <View style={styles.pagesRow}>
               <Field
                 style={styles.pageField}
@@ -1843,6 +2055,23 @@ const styles = StyleSheet.create({
   pendingSessionText: { fontFamily: fonts.ui, fontSize: 11, color: colors.textMuted, marginTop: 3 },
   setupCard: { gap: spacing.md },
   setupLabel: { fontFamily: fonts.mono, fontSize: 9.5, letterSpacing: 1.3, color: colors.textMuted },
+  // colors.surfaceAlt e colors.muted não existem em theme.ts (Task 11) — troquei
+  // pelo par que os estilos vizinhos deste arquivo já usam para o mesmo papel:
+  // card2 (fundo de destaque) e textMuted (texto secundário).
+  shelfRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  shelfRowActive: { backgroundColor: colors.card2 },
+  shelfTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 15, flex: 1 },
+  shelfDetail: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  shelfAdd: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 12 },
+  shelfAddText: { fontFamily: fonts.uiSemi, color: colors.primary, fontSize: 13 },
+  shelfLink: { fontFamily: fonts.ui, color: colors.primary, fontSize: 12, paddingVertical: 8 },
   pagesRow: { flexDirection: "row", gap: spacing.sm },
   pageField: { flex: 1, minWidth: 0 },
   startWithAudio: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 5 },
