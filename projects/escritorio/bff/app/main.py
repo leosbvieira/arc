@@ -1015,7 +1015,16 @@ def _reading_notes(session: dict) -> str:
     )
 
 
-async def _suggest_anki_once(session_id: int, notas: str) -> list[dict]:
+def _deck_da_sessao(session: dict) -> str:
+    """Deck determinado por código, a partir da obra da sessão de leitura."""
+    book_id = session.get("book_id")
+    if book_id is None:
+        return ""
+    book = store.get_book(int(book_id))
+    return "" if book is None else anki.deck_para_livro(book["titulo"])
+
+
+async def _suggest_anki_once(session_id: int, notas: str, deck: str = "") -> list[dict]:
     state = store.claim_anki_suggestion(session_id)
     if state == "done":
         return store.list_anki_cards_for_session(session_id)
@@ -1023,7 +1032,7 @@ async def _suggest_anki_once(session_id: int, notas: str) -> list[dict]:
         raise RuntimeError("anki_suggestion_em_andamento")
     try:
         candidatos = await hermes_client.suggest_anki(notas)
-        return store.finish_anki_suggestion(session_id, candidatos)
+        return store.finish_anki_suggestion(session_id, candidatos, deck)
     except Exception:
         store.release_anki_suggestion(session_id)
         raise
@@ -1360,6 +1369,7 @@ async def compile_reading_session(
                 cards = await _suggest_anki_once(
                     int(session["compiled_session_id"]),
                     _reading_notes(session),
+                    _deck_da_sessao(session),
                 )
                 anki_status = "done"
                 session = store.purge_reading_content(session_id)
@@ -1469,6 +1479,7 @@ async def compile_reading_session(
         cards = await _suggest_anki_once(
             compiled_session_id,
             _reading_notes(compiled),
+            _deck_da_sessao(session),
         )
         anki_status = "done"
         compiled = store.purge_reading_content(session_id)
@@ -2183,8 +2194,12 @@ async def sugerir_anki(
         ) from None
 
     try:
+        deck = ""
+        if body.session_id is not None:
+            sessao = store.get_reading_session(body.session_id)
+            deck = _deck_da_sessao(sessao) if sessao else ""
         cards = (
-            store.finish_anki_suggestion(body.session_id, candidatos)
+            store.finish_anki_suggestion(body.session_id, candidatos, deck)
             if body.session_id is not None
             else store.add_anki_cards(candidatos)
         )

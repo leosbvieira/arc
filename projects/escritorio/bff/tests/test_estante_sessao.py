@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, reading_frontmatter, store
+from app import anki, main, reading_frontmatter, store
 from app.config import settings
 from app.main import app, require_auth
 
@@ -222,3 +222,104 @@ def test_draft_legado_e_regenerado_e_nao_reusado(client, monkeypatch):
     # Formato atual e mesmo digest: reusa, sem chamar o Hermes de novo.
     client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
     assert chamadas["n"] == 2
+
+
+def test_deck_para_livro():
+    assert anki.deck_para_livro("Sapiens") == "Leitura::Sapiens"
+    # `::` é o separador de subdeck do Anki: um título que o contenha criaria uma
+    # árvore acidental.
+    assert anki.deck_para_livro("A::B") == "Leitura::A-B"
+    assert anki.deck_para_livro("  espaços  demais ") == "Leitura::espaços demais"
+    assert anki.deck_para_livro("   ") == ""
+
+
+def test_card_nasce_no_deck_da_obra(client, monkeypatch):
+    obra = _nova_obra(client)
+    sid = _sessao_com_buffer(client, obra["id"])
+
+    async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
+        return "# Nota"
+
+    async def suggest_anki(notas):
+        # O modelo TENTA escolher o deck. O valor dele não pode valer.
+        return [
+            {
+                "frente": "f",
+                "meaning": "m",
+                "example": "e",
+                "hook": "h",
+                "deck": "DeckDoModelo",
+            }
+        ]
+
+    async def write_reading_note(*_a, **_k):
+        return "Leituras/x.md"
+
+    monkeypatch.setattr(main.hermes_client, "compile_reading", compile_reading)
+    monkeypatch.setattr(main.hermes_client, "suggest_anki", suggest_anki)
+    monkeypatch.setattr(main.vault_client, "write_reading_note", write_reading_note)
+
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+    resp = client.post(
+        f"/reading/sessions/{sid}/compile",
+        json={"pagina_final": 214, "fim": 100.0, "duracao_s": 60},
+    )
+    assert resp.status_code == 200
+    cards = resp.json()["anki_cards"]
+    assert cards[0]["deck"] == "Leitura::Sapiens"
+
+
+def test_card_de_sessao_sem_obra_fica_sem_deck(client, monkeypatch):
+    sid = _sessao_com_buffer(client)
+
+    async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
+        return "# Nota"
+
+    async def suggest_anki(notas):
+        return [{"frente": "f", "meaning": "m", "example": "e", "hook": "h"}]
+
+    async def write_reading_note(*_a, **_k):
+        return "Leituras/x.md"
+
+    monkeypatch.setattr(main.hermes_client, "compile_reading", compile_reading)
+    monkeypatch.setattr(main.hermes_client, "suggest_anki", suggest_anki)
+    monkeypatch.setattr(main.vault_client, "write_reading_note", write_reading_note)
+
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+    resp = client.post(
+        f"/reading/sessions/{sid}/compile",
+        json={"pagina_final": 214, "fim": 100.0, "duracao_s": 60},
+    )
+    assert resp.json()["anki_cards"][0]["deck"] == ""
+
+
+def test_anki_sugerir_sem_session_id_nao_quebra(client, monkeypatch):
+    async def suggest_anki(notas):
+        return [{"frente": "f", "meaning": "m", "example": "e", "hook": "h"}]
+
+    monkeypatch.setattr(main.hermes_client, "suggest_anki", suggest_anki)
+    resp = client.post("/anki/sugerir", json={"notas": "algum texto"})
+    assert resp.status_code == 200
+    assert resp.json()["cards"][0]["deck"] == ""
+
+
+def test_tsv_carrega_o_deck_por_linha():
+    linhas = anki.tsv(
+        [
+            {"frente": "a", "meaning": "b", "example": "c", "hook": "d",
+             "deck": "Leitura::Sapiens"},
+            {"frente": "e", "meaning": "f", "example": "g", "hook": "h", "deck": ""},
+        ]
+    )
+    corpo = [l for l in linhas.splitlines() if not l.startswith("#")]
+    assert corpo[0].split("\t")[4] == "Leitura::Sapiens"
+    # Card antigo, sem obra: cai no deck-pai. O TSV NUNCA emite célula vazia —
+    # é o que dispensa saber o que o Anki faria com ela.
+    assert corpo[1].split("\t") == ["e", "f", "g", "h", "Leitura"]
+    assert linhas.startswith("#separator:tab\n")
+
+
+def test_tsv_nunca_emite_celula_de_deck_vazia():
+    for card in ({"frente": "a"}, {"frente": "a", "deck": None}, {"frente": "a", "deck": "  "}):
+        corpo = [l for l in anki.tsv([card]).splitlines() if not l.startswith("#")]
+        assert corpo[0].split("\t")[4] == "Leitura"

@@ -2808,20 +2808,28 @@ def _insert_anki_cards(
     con: sqlite3.Connection,
     cards: list[dict],
     session_id: int | None,
+    deck: str = "",
 ) -> list[dict]:
+    """O deck vem por PARÂMETRO, nunca como chave do card.
+
+    `_normalizar_anki_cards` descarta chaves desconhecidas de propósito: o dict vem
+    da proposta do modelo, e o modelo não tem autoridade para escolher deck — se
+    tivesse, uma injeção na leitura direcionaria cards para qualquer lugar.
+    """
     criado = time.time()
     criados: list[dict] = []
     for card in cards:
         cur = con.execute(
             "INSERT INTO anki_cards "
-            "(session_id, frente, meaning, example, hook, criado) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(session_id, frente, meaning, example, hook, deck, criado) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 card["frente"],
                 card["meaning"],
                 card["example"],
                 card["hook"],
+                deck,
                 criado,
             ),
         )
@@ -2837,13 +2845,14 @@ def _insert_anki_cards(
 def add_anki_cards(
     cards: list[dict],
     session_id: int | None = None,
+    deck: str = "",
 ) -> list[dict]:
     """Persiste propostas em lote, sempre aguardando aprovação explícita posterior."""
     normalizados = _normalizar_anki_cards(cards)
     if not normalizados:
         return []
     with closing(_connect()) as con:
-        criados = _insert_anki_cards(con, normalizados, session_id)
+        criados = _insert_anki_cards(con, normalizados, session_id, deck)
         con.commit()
     return criados
 
@@ -2890,7 +2899,9 @@ def claim_anki_suggestion(session_id: int) -> str:
         return "claimed"
 
 
-def finish_anki_suggestion(session_id: int, cards: list[dict]) -> list[dict]:
+def finish_anki_suggestion(
+    session_id: int, cards: list[dict], deck: str = ""
+) -> list[dict]:
     """Cards e receipt done entram na mesma transação, inclusive quando cards=[]."""
     normalizados = _normalizar_anki_cards(cards)
     with closing(_connect()) as con:
@@ -2902,7 +2913,7 @@ def finish_anki_suggestion(session_id: int, cards: list[dict]) -> list[dict]:
         if row is None or row["status"] != "processing":
             con.rollback()
             raise ValueError("anki_suggestion_sem_claim")
-        criados = _insert_anki_cards(con, normalizados, session_id)
+        criados = _insert_anki_cards(con, normalizados, session_id, deck)
         con.execute(
             "UPDATE anki_suggestion_runs SET status = 'done', updated = ? "
             "WHERE session_id = ?",

@@ -274,7 +274,11 @@ def test_exporta_apenas_aprovados_e_nao_repete(client):
 
     assert response.status_code == 200
     payload = response.json()
-    esperado = "F1\tM1\tE1\tH1\nF2\tM2\tE2\tH2\n"
+    esperado = (
+        "#separator:tab\n#html:false\n#deck column:5\n"
+        "F1\tM1\tE1\tH1\tLeitura\n"
+        "F2\tM2\tE2\tH2\tLeitura\n"
+    )
     assert payload["n"] == 2
     assert payload["tsv"] == esperado
     assert payload["path"] is not None
@@ -304,8 +308,14 @@ def test_exports_consecutivos_nao_sobrescrevem_arquivo_anterior(client):
     path_2 = Path(client.post("/anki/export").json()["path"])
 
     assert path_1 != path_2
-    assert path_1.read_text(encoding="utf-8").startswith("Primeiro\t")
-    assert path_2.read_text(encoding="utf-8").startswith("Segundo\t")
+    corpo_1 = [
+        l for l in path_1.read_text(encoding="utf-8").splitlines() if not l.startswith("#")
+    ]
+    corpo_2 = [
+        l for l in path_2.read_text(encoding="utf-8").splitlines() if not l.startswith("#")
+    ]
+    assert corpo_1[0].startswith("Primeiro\t")
+    assert corpo_2[0].startswith("Segundo\t")
 
 
 def test_tsv_limpa_tabs_e_quebras_sem_mudar_ordem_dos_campos():
@@ -321,8 +331,11 @@ def test_tsv_limpa_tabs_e_quebras_sem_mudar_ordem_dos_campos():
     )
 
     assert resultado == (
+        "#separator:tab\n#html:false\n#deck column:5\n"
         "Frente editada\t"
         "Linha 1 Linha 2\t"
         "Exemplo seguinte\t"
-        "Gancho final\n"
+        "Gancho final\t"
+        # Sem deck no card: cai no deck-pai, igual a qualquer card sem obra.
+        "Leitura\n"
     )
