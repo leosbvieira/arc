@@ -1465,14 +1465,24 @@ export default function Capture({
               replaceDraft(null);
               let remoteId = current.remoteId;
               if (remoteId === null) {
-                const recovered = await createReadingSession({
-                  client_key: current.sessionKey,
-                  livro: current.book,
-                  book_id: current.bookId,
-                  pagina_inicial: numericPage(current.pageStart),
-                  inicio: current.startedAt / 1000,
-                });
-                remoteId = recovered.session.id;
+                try {
+                  const recovered = await createReadingSession({
+                    client_key: current.sessionKey,
+                    livro: current.book,
+                    book_id: current.bookId,
+                    pagina_inicial: numericPage(current.pageStart),
+                    inicio: current.startedAt / 1000,
+                  });
+                  remoteId = recovered.session.id;
+                } catch (error) {
+                  // O servidor recusou criar a sessão (ex.: a obra terminou antes
+                  // do primeiro sync) — uma sessão que ele nunca teve é uma sessão
+                  // que ele não precisa descartar. remoteId fica null, o guard
+                  // abaixo pula o discard, e o descarte vira só local.
+                  if (!canClearLocalAfterDiscardFailure(readingErrorDetail(error))) {
+                    throw error;
+                  }
+                }
               }
               if (remoteId !== null) {
                 try {
