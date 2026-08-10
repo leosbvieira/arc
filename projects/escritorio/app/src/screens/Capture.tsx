@@ -175,15 +175,23 @@ export default function Capture({
   const [showFinished, setShowFinished] = useState(false);
   const [shelfBusyId, setShelfBusyId] = useState<number | null>(null);
   const [newBookMode, setNewBookMode] = useState(false);
+  // true só depois de um loadShelf que falhou de verdade — nunca durante o
+  // primeiro carregamento, senão a mensagem de "indisponível" pisca em toda
+  // entrada na tela antes do fetch normal responder.
+  const [shelfError, setShelfError] = useState(false);
 
   const loadShelf = useCallback(async () => {
     try {
       const { books } = await listBooks("lendo");
       setShelf(books);
+      setShelfError(false);
     } catch {
       // null = NÃO CARREGOU. A tela mostra o campo livre, e nunca uma estante
-      // vazia que o Leo leria como "não tenho livro nenhum".
+      // vazia que o Leo leria como "não tenho livro nenhum". Mas a degradação
+      // não pode ficar muda: sem isto, a sessão nasce com bookId null e some
+      // da estante para sempre, sem que nada avise que isso aconteceu.
       setShelf(null);
+      setShelfError(true);
     }
   }, []);
 
@@ -210,6 +218,16 @@ export default function Capture({
   function editarTitulo(value: string): void {
     updateReadingField(setBook, value);
     if (selectedBookId !== null) setSelectedBookId(null);
+  }
+
+  // Saída para quem entrou em "novo livro" sem querer: sem isto, o único jeito
+  // de ver a estante de novo era terminar ou descartar uma sessão, porque
+  // `Capture` fica montado (com `active` só trocando de estilo) a vida inteira
+  // do app — trocar de aba e voltar não desfaz o toque.
+  function voltarParaEstante(): void {
+    setNewBookMode(false);
+    updateReadingField(setBook, "");
+    updateReadingField(setPageStart, "");
   }
 
   // book_nao_aceita_sessao: a obra virou "terminado" — aqui ou em outro
@@ -250,7 +268,13 @@ export default function Capture({
       await loadShelf();
       return { id: criada.id, titulo: criada.titulo };
     } catch (error) {
-      setSpeechError(readingErrorDetail(error) ?? "não deu para registrar a obra");
+      // Único código real que o POST devolve. Mapear em vez de repassar cru: é
+      // o único lugar do arquivo que mostraria uma string de servidor ao Leo.
+      setSpeechError(
+        readingErrorDetail(error) === "titulo_invalido"
+          ? "esse título não é válido — tente outro"
+          : "não deu para registrar a obra",
+      );
       return null;
     }
   }
@@ -285,9 +309,21 @@ export default function Capture({
   async function reabrirObra(bookId: number): Promise<void> {
     setShelfBusyId(bookId);
     try {
-      await reabrirBook(bookId);
+      try {
+        await reabrirBook(bookId);
+      } catch (error) {
+        // Espelha terminarObra: já reaberta em outro lugar não é erro, é a
+        // resposta certa recarregar e seguir.
+        if (readingErrorDetail(error) !== "book_ja_lendo") throw error;
+      }
       await loadShelf();
-      setFinished((await listBooks("terminado")).books);
+      // Falha aqui é só a lista de terminadas ficar velha — o reabrir em si já
+      // teve sucesso acima, então não pode virar "não deu para reabrir a obra".
+      try {
+        setFinished((await listBooks("terminado")).books);
+      } catch {
+        setFinished(null);
+      }
     } catch {
       setSpeechError("não deu para reabrir a obra");
     } finally {
@@ -1234,6 +1270,20 @@ export default function Capture({
         );
         return;
       }
+      if (detail === "reading_draft_desatualizado") {
+        // O preview ficou aberto no aparelho de um formato antigo (sem
+        // frontmatter) até este deploy subir. O digest ainda bate, mas publicar
+        // assim sairia sem frontmatter — por isso o servidor recusa. Mesma saída
+        // do draft ausente: soltar o preview e compilar de novo regenera via
+        // /draft já no formato atual.
+        setPreview(null);
+        setStatus("o preview ficou desatualizado — compile de novo para gerar outro");
+        Alert.alert(
+          "Preview desatualizado",
+          "Este preview foi gerado num formato antigo. Ele foi liberado para edição; toque em Compilar para gerar um novo preview.",
+        );
+        return;
+      }
       if (detail === "book_nao_aceita_sessao") {
         // syncDraft() só tenta criar a sessão no servidor aqui se ela nunca foi
         // criada antes (sessão inteira feita offline, por ex.) — e a esta altura
@@ -1330,6 +1380,18 @@ export default function Capture({
         await saveReadingDraft(pendingDraft);
       }
       const detail = readingErrorDetail(error);
+      if (detail === "reading_draft_desatualizado") {
+        // Mesmo caso de approveNow — ver o comentário lá. Aqui só por simetria:
+        // /draft sempre regenera no formato atual, então esta rota não é
+        // alcançável pelo servidor hoje, mas tratar do mesmo jeito custa nada.
+        setPreview(null);
+        setStatus("o preview ficou desatualizado — compile de novo para gerar outro");
+        Alert.alert(
+          "Preview desatualizado",
+          "Este preview foi gerado num formato antigo. Ele foi liberado para edição; toque em Compilar para gerar um novo preview.",
+        );
+        return;
+      }
       if (detail === "book_nao_aceita_sessao") {
         // Mesmo caso de approveNow: a obra terminou antes da primeira sessão
         // no servidor existir. O buffer local segue intacto.
@@ -1766,12 +1828,30 @@ export default function Capture({
             ) : (
               // shelf === null (não carregou) cai aqui também — degradação para o
               // campo livre de sempre, nunca uma estante vazia lida como "sem livro".
-              <Field
-                value={book}
-                onChangeText={editarTitulo}
-                placeholder="Livro, artigo ou capítulo"
-                editable={readingDraftReady}
-              />
+              <>
+                {shelfError ? (
+                  // A degradação em si é a escolha certa (ler sem estante é melhor
+                  // que não conseguir ler), mas ela não pode ficar muda: sem isto a
+                  // sessão nasce sem book_id e some da estante sem que nada avise.
+                  <Pressable onPress={() => void loadShelf()}>
+                    <Text style={styles.shelfWarning}>
+                      estante indisponível — esta leitura não vai ser agrupada por
+                      obra · toque para tentar de novo
+                    </Text>
+                  </Pressable>
+                ) : null}
+                <Field
+                  value={book}
+                  onChangeText={editarTitulo}
+                  placeholder="Livro, artigo ou capítulo"
+                  editable={readingDraftReady}
+                />
+                {newBookMode && shelf ? (
+                  <Pressable onPress={voltarParaEstante}>
+                    <Text style={styles.shelfLink}>‹ voltar à estante</Text>
+                  </Pressable>
+                ) : null}
+              </>
             )}
 
             <Pressable
@@ -2129,6 +2209,7 @@ const styles = StyleSheet.create({
   shelfAdd: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 12 },
   shelfAddText: { fontFamily: fonts.uiSemi, color: colors.primary, fontSize: 13 },
   shelfLink: { fontFamily: fonts.ui, color: colors.primary, fontSize: 12, paddingVertical: 8 },
+  shelfWarning: { fontFamily: fonts.ui, color: colors.danger, fontSize: 11.5, lineHeight: 16, paddingBottom: spacing.xs },
   pagesRow: { flexDirection: "row", gap: spacing.sm },
   pageField: { flex: 1, minWidth: 0 },
   startWithAudio: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 5 },
