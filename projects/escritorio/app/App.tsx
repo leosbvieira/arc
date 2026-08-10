@@ -1,18 +1,23 @@
 import { Feather } from "@expo/vector-icons";
-import {
-  useFonts,
-  BricolageGrotesque_400Regular,
-  BricolageGrotesque_500Medium,
-  BricolageGrotesque_600SemiBold,
-  BricolageGrotesque_700Bold,
-} from "@expo-google-fonts/bricolage-grotesque";
-import {
-  IBMPlexMono_500Medium,
-} from "@expo-google-fonts/ibm-plex-mono";
-import {
-  Syne_600SemiBold,
-  Syne_700Bold,
-} from "@expo-google-fonts/syne";
+// Caminho PROFUNDO por peso, nunca o barril da família. O barril de
+// `@expo-google-fonts/*` faz require() de TODOS os pesos, e importar um só
+// torna o conjunto alcançável: o Metro empacotava 26 arquivos .ttf para usar 7
+// — 2,3 MB de fonte morta, 1,8 MB deles só de IBM Plex Mono.
+//
+// `useFonts` vem do `expo-font` direto. Importá-lo de qualquer pacote de fonte
+// reabriria o barril daquela família e desfaria a economia sem avisar.
+//
+// Caminho errado aqui NÃO quebra o build: a fonte só não carrega, o Android cai
+// no padrão do sistema, e o app fica com cara de Roboto sem ninguém notar. Se
+// mexer nestas linhas, confira no aparelho — `tsc` não pega isso.
+import { useFonts } from "expo-font";
+import { BricolageGrotesque_400Regular } from "@expo-google-fonts/bricolage-grotesque/400Regular";
+import { BricolageGrotesque_500Medium } from "@expo-google-fonts/bricolage-grotesque/500Medium";
+import { BricolageGrotesque_600SemiBold } from "@expo-google-fonts/bricolage-grotesque/600SemiBold";
+import { BricolageGrotesque_700Bold } from "@expo-google-fonts/bricolage-grotesque/700Bold";
+import { IBMPlexMono_500Medium } from "@expo-google-fonts/ibm-plex-mono/500Medium";
+import { Syne_600SemiBold } from "@expo-google-fonts/syne/600SemiBold";
+import { Syne_700Bold } from "@expo-google-fonts/syne/700Bold";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
