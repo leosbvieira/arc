@@ -3,6 +3,7 @@
 Porta REST (não MCP): o BFF é um servidor comum, não uma IA. Autentica com token
 pessoal (pk_...) no header Authorization. Ver development/LIGAR-DADOS-REAIS.md.
 """
+import asyncio
 from datetime import date, datetime
 
 import httpx
@@ -147,12 +148,25 @@ async def fetch_open() -> list[dict]:
 
     O desempate é pela ÁREA, não pela ordem de varredura (Staging é a 2ª de 10 em
     AREA_LISTS): Staging é o resíduo do move que falhou, a área de destino é a
-    decisão do Leo. Mostrar o resíduo faria ele triar de novo o que já triou."""
+    decisão do Leo. Mostrar o resíduo faria ele triar de novo o que já triou.
+
+    As 10 listas são buscadas EM PARALELO. Sequencialmente eram 10 idas ao
+    ClickUp uma depois da outra — medido em 09/ago: ~4,5s de piso em toda tela
+    que depende de tarefa (Hoje, Tarefas, Mesa, Agenda, Shutdown, Revisão),
+    contra 5-13ms das rotas que só leem o SQLite. O `gather` troca a soma das
+    dez pela mais lenta delas.
+
+    A ordem NÃO se perde: o gather preserva a ordem de AREA_LISTS, e a fusão
+    continua acontecendo depois, no mesmo laço de antes. Fundir dentro das
+    corrotinas tornaria o desempate dependente de quem responde primeiro."""
     out: list[dict] = []
     por_id: dict[str, dict] = {}
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        for area, list_id in AREA_LISTS.items():
-            for task in await _fetch_list(list_id, client=client):
+        por_lista = await asyncio.gather(
+            *(_fetch_list(list_id, client=client) for list_id in AREA_LISTS.values())
+        )
+        for area, tarefas in zip(AREA_LISTS, por_lista):
+            for task in tarefas:
                 if ((task.get("status") or {}).get("type")) in ("done", "closed"):
                     continue
                 task["_area"] = area
@@ -174,43 +188,40 @@ async def count_open(list_id: str) -> int:
     return len(await _fetch_list(list_id))
 
 
+async def _contar_fechadas(params: dict) -> int:
+    """Soma as tarefas com `date_done` nas 9 áreas (Staging fora), em paralelo.
+
+    Mesma razão do `fetch_open`: eram 9 idas sequenciais ao ClickUp. Aqui a
+    ordem é irrelevante — é uma soma —, então só o paralelismo importa.
+    """
+    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
+        por_lista = await asyncio.gather(
+            *(
+                _fetch_list(list_id, params=params, client=client)
+                for area, list_id in AREA_LISTS.items()
+                if area != STAGING
+            )
+        )
+    return sum(
+        1 for tarefas in por_lista for task in tarefas if task.get("date_done")
+    )
+
+
 async def count_closed_since(ts_ms: int) -> int:
     """Tarefas fechadas desde ts_ms, excluindo a lista de triagem Staging."""
-    total = 0
-    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        for area, list_id in AREA_LISTS.items():
-            if area == STAGING:
-                continue
-            listed = await _fetch_list(
-                list_id,
-                params={
-                    "include_closed": "true",
-                    "date_done_gt": str(ts_ms),
-                },
-                client=client,
-            )
-            total += sum(1 for task in listed if task.get("date_done"))
-    return total
+    return await _contar_fechadas({
+        "include_closed": "true",
+        "date_done_gt": str(ts_ms),
+    })
 
 
 async def count_closed_between(start_ms: int, end_ms: int) -> int:
     """Conta fechamentos na janela [start, end), excluindo o Staging."""
-    total = 0
-    async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        for area, list_id in AREA_LISTS.items():
-            if area == STAGING:
-                continue
-            listed = await _fetch_list(
-                list_id,
-                params={
-                    "include_closed": "true",
-                    "date_done_gt": str(start_ms),
-                    "date_done_lt": str(end_ms),
-                },
-                client=client,
-            )
-            total += sum(1 for task in listed if task.get("date_done"))
-    return total
+    return await _contar_fechadas({
+        "include_closed": "true",
+        "date_done_gt": str(start_ms),
+        "date_done_lt": str(end_ms),
+    })
 
 
 async def get_task(task_id: str) -> dict:
