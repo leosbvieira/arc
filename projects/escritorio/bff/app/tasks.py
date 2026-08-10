@@ -741,8 +741,17 @@ AREAS_TRIAGEM = [area for area in AREAS if area != clickup_client.STAGING]
 async def triagem_pack() -> dict:
     """Monta os itens do Staging com propostas, nunca decisões, de destino.
 
-    Se o Hermes estiver indisponível, todas as propostas ficam vazias e o Leo
-    ainda pode realizar a triagem manualmente.
+    **A proposta é LIDA, não calculada.** Ela foi decidida uma vez, quando a
+    captura passou pelo pipeline e o Hermes já estava lendo aquele texto para
+    achar tipo e título (`hermes_client.classify`). Antes disto a rota
+    reclassificava o lote inteiro a cada abertura da tela — 11,6s medidos em
+    09/ago, gastos para produzir sempre a mesma resposta, num caminho em que o
+    Leo está parado esperando. Agora a rota é leitura de banco.
+
+    Item sem proposta é o caso normal, não erro: entrou no Staging por fora da
+    captura (criado à mão no ClickUp) ou é anterior à coluna. Ele aparece sem
+    sugestão e o Leo escolhe — que é exatamente o que acontecia quando o Hermes
+    estava fora do ar.
     """
     src, raw = await _source()
     itens_staging = [
@@ -754,22 +763,7 @@ async def triagem_pack() -> dict:
         if isinstance(item, dict) and item.get("id") is not None
     }
 
-    try:
-        propostas_raw = await hermes_client.propose_triage(
-            [
-                {"id": tarefa.id, "titulo": tarefa.name}
-                for tarefa in itens_staging
-            ],
-            areas=AREAS_TRIAGEM,
-        )
-        propostas = {
-            proposta.get("id"): proposta.get("area")
-            for proposta in propostas_raw
-            if isinstance(proposta, dict)
-        }
-    except Exception:
-        # A degradação não registra a exceção, pois sua mensagem pode conter captura.
-        propostas = {}
+    propostas = store.areas_propostas_por_task()
 
     itens = []
     for tarefa in itens_staging:

@@ -381,7 +381,7 @@ async def test_hook_vira_melhoria_sem_task_e_sem_hermes(
 
     monkeypatch.setattr(vault_client, "write_raw", espiar_write_raw)
 
-    async def explode_classify(text):
+    async def explode_classify(text, areas=None):
         pytest.fail("Hermes não deve classificar uma melhoria reconhecível")
 
     async def explode_create(*args, **kwargs):
@@ -440,7 +440,7 @@ async def test_palavra_no_meio_da_frase_nao_dispara_o_hook(monkeypatch):
     """O hook é um prefixo, não uma busca: 'pensei numa melhoria: x' é captura normal."""
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def classify_como_nota(text):
+    async def classify_como_nota(text, areas=None):
         return {"tipo": "nota", "titulo": None, "quando": None}
 
     monkeypatch.setattr(hermes_client, "classify", classify_como_nota)
@@ -461,7 +461,7 @@ async def test_alvo_desconhecido_nao_e_engolido_como_melhoria(monkeypatch):
     texto começaria com 'xyz:' — ruído silencioso."""
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def classify_como_nota(text):
+    async def classify_como_nota(text, areas=None):
         return {"tipo": "nota", "titulo": None, "quando": None}
 
     monkeypatch.setattr(hermes_client, "classify", classify_como_nota)
@@ -484,7 +484,7 @@ async def test_prefixo_sem_texto_nao_vira_melhoria_vazia(monkeypatch, texto):
     review. Cai no caminho normal, como já acontece com `melhoria xyz:`."""
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def classify_como_nota(text):
+    async def classify_como_nota(text, areas=None):
         return {"tipo": "nota", "titulo": None, "quando": None}
 
     monkeypatch.setattr(hermes_client, "classify", classify_como_nota)
@@ -507,7 +507,7 @@ async def test_ideia_nao_e_mais_hook_de_melhoria(monkeypatch):
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
     vistos: list[str] = []
 
-    async def classify_normal(text):
+    async def classify_normal(text, areas=None):
         vistos.append(text)
         return {"tipo": "tarefa_pessoal", "titulo": "Jantar com a Maria", "quando": None}
 

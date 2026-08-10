@@ -312,6 +312,12 @@ def init_db() -> None:
                 "ALTER TABLE capture_queue "
                 "ADD COLUMN sensivel INTEGER NOT NULL DEFAULT 0"
             )
+        # Área proposta na CLASSIFICAÇÃO, não na abertura da triagem. NULL é o
+        # estado normal de item que entrou no Staging por fora da captura (criado
+        # à mão no ClickUp, ou anterior a esta coluna) — a triagem mostra sem
+        # sugestão e o Leo escolhe. Ver `tasks.triagem_pack`.
+        if "area_proposta" not in columns:
+            con.execute("ALTER TABLE capture_queue ADD COLUMN area_proposta TEXT")
         con.commit()
 
     # Semente das rotinas: conexão própria (BEGIN IMMEDIATE não pode nascer dentro
@@ -1563,6 +1569,22 @@ def notif_sent_today(evento: str) -> bool:
 # --- capture_queue (pending -> processing -> done | failed) ------------------
 
 
+def areas_propostas_por_task() -> dict[str, str]:
+    """{clickup_task_id: area_proposta} das capturas que já foram classificadas.
+
+    A triagem lê daqui em vez de perguntar ao Hermes: a proposta foi decidida uma
+    vez, quando a captura foi processada. Item sem entrada aqui — criado à mão no
+    ClickUp, ou anterior à coluna — simplesmente não tem sugestão, e a tela deixa
+    o Leo escolher.
+    """
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT clickup_task_id, area_proposta FROM capture_queue "
+            "WHERE clickup_task_id IS NOT NULL AND area_proposta IS NOT NULL"
+        ).fetchall()
+    return {str(r["clickup_task_id"]): str(r["area_proposta"]) for r in rows}
+
+
 def enqueue_capture(
     text: str,
     profile: str | None,
@@ -1668,6 +1690,7 @@ def mark_capture(
     error=None,
     bump_attempts=False,
     sensivel: bool | None = None,
+    area_proposta: str | None = None,
 ) -> None:
     """Atualiza um item da fila. `error` é a classe/código do erro sanitizado pelo
     chamador — NUNCA o conteúdo capturado (lei 7), pois vai para `last_error`.
@@ -1707,6 +1730,9 @@ def mark_capture(
         if sensivel is not None:
             sets.append("sensivel = ?")
             params.append(int(sensivel))
+        if area_proposta is not None:
+            sets.append("area_proposta = ?")
+            params.append(area_proposta)
         if error is not None:
             sets.append("last_error = ?")
             params.append(error)

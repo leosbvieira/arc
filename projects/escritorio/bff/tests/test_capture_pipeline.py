@@ -23,7 +23,7 @@ def spies(monkeypatch):
         calls["raw"].append((text, capture_id))
         return f"1- Inbox/Raw/raw-c{capture_id}.md"
 
-    async def fake_classify(text):
+    async def fake_classify(text, areas=None):
         calls["classify"].append(text)
         return {"tipo": "nota", "titulo": None, "quando": None}
 
@@ -64,6 +64,54 @@ async def test_nota_vira_so_raw(spies):
     assert store.pending_captures() == []
 
 
+# --- área proposta na classificação, não na abertura da triagem --------------
+#
+# A tela de triagem era 11,6s porque reclassificava o lote inteiro a cada
+# abertura. A proposta passa a ser decidida UMA vez, aqui no fundo, na mesma
+# chamada do Hermes que já decide tipo e título.
+
+
+async def _rodar_com_area(monkeypatch, spies, area):
+    async def classify_com_area(text, areas=None):
+        assert areas == cp.tasks.AREAS_TRIAGEM, "a lista válida tem que ir junto"
+        return {
+            "tipo": "tarefa_pessoal",
+            "titulo": "Comprar cueca",
+            "quando": None,
+            "area": area,
+        }
+
+    monkeypatch.setattr(cp.hermes_client, "classify", classify_com_area)
+    store.enqueue_capture("lembrei de comprar cueca", None)
+    assert await cp.process_pending() == 1
+    return store.areas_propostas_por_task()
+
+
+async def test_area_proposta_e_guardada_na_classificacao(monkeypatch, spies):
+    assert await _rodar_com_area(monkeypatch, spies, "Responsabilidade") == {
+        "tsk1": "Responsabilidade"
+    }
+
+
+@pytest.mark.parametrize("lixo", ["Inexistente", "", None, 42, "staging"])
+async def test_area_fora_do_vocabulario_nao_e_guardada(monkeypatch, spies, lixo):
+    """Proposta inválida gravada vira sugestão errada na tela do Leo depois.
+    Melhor não ter sugestão do que ter uma que ele precisa desfazer.
+
+    `"staging"` está na lista de propósito: o Staging é a origem, nunca destino
+    de triagem, e `AREAS_TRIAGEM` o exclui.
+    """
+    assert await _rodar_com_area(monkeypatch, spies, lixo) == {}
+
+
+async def test_proposta_sobrevive_ao_fim_da_captura(monkeypatch, spies):
+    """`mark_capture(status="done")` apaga o `text` da fila (lei 7), mas a linha
+    fica — e é dela que a triagem lê a proposta, dias depois."""
+    await _rodar_com_area(monkeypatch, spies, "Corpo")
+    assert store.pending_captures() == []
+    assert store.areas_propostas_por_task() == {"tsk1": "Corpo"}
+
+
 async def test_conteudo_sensivel_some_do_sqlite_depois_do_raw(spies):
     segredo = "sensível: conteúdo de terapia que não deve ficar na fila"
     cid = store.enqueue_capture(segredo, None, sensivel=True)
@@ -81,7 +129,7 @@ async def test_conteudo_sensivel_some_do_sqlite_depois_do_raw(spies):
 
 
 async def test_toda_tarefa_vai_pra_staging_com_link_do_raw(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {
             "tipo": "tarefa_pessoal",
             "titulo": "Comprar presente",
@@ -102,7 +150,7 @@ async def test_toda_tarefa_vai_pra_staging_com_link_do_raw(spies, monkeypatch):
 
 
 async def test_reconcilia_marker_antes_de_criar(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {
             "tipo": "tarefa_trabalho",
             "titulo": "Enviar relatório",
@@ -133,7 +181,7 @@ async def test_reconcilia_marker_antes_de_criar(spies, monkeypatch):
 
 
 async def test_cobranca_leva_tag_aguardando_e_schedule(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {
             "tipo": "cobranca",
             "titulo": "Cobrar Yan do contrato",
@@ -151,7 +199,7 @@ async def test_cobranca_leva_tag_aguardando_e_schedule(spies, monkeypatch):
 
 
 async def test_schedule_retomavel_sem_duplicar_task_ou_lembrete(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {
             "tipo": "tarefa_pessoal",
             "titulo": "Ir ao dentista",
@@ -202,7 +250,7 @@ async def test_hermes_caido_preserva_raw_e_retenta(spies, monkeypatch):
 
 
 async def test_classify_invalido_degrada_para_nota(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {
             "tipo": "alucinado",
             "titulo": None,
@@ -217,7 +265,7 @@ async def test_classify_invalido_degrada_para_nota(spies, monkeypatch):
 
 
 async def test_verdict_malformado_degrada_para_nota(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {"tipo": [], "titulo": 123, "quando": {}}
 
     monkeypatch.setattr(cp.hermes_client, "classify", classify)
@@ -234,7 +282,7 @@ async def test_verdict_malformado_degrada_para_nota(spies, monkeypatch):
 
 
 async def test_ja_criado_no_clickup_nao_duplica(spies, monkeypatch):
-    async def classify(text):
+    async def classify(text, areas=None):
         return {
             "tipo": "tarefa_pessoal",
             "titulo": "X",

@@ -9,7 +9,7 @@ import logging
 import re
 from datetime import datetime
 
-from . import clickup_client, hermes_client, store, vault_client, tz
+from . import clickup_client, hermes_client, store, tasks, vault_client, tz
 from .clickup_client import STAGING
 
 logger = logging.getLogger(__name__)
@@ -152,8 +152,18 @@ async def _process_one(row: dict) -> None:
 
     # Classifica em todo retry ainda não concluído. Isso recompõe due/tipo mesmo se
     # uma tentativa anterior já tiver criado ou reconciliado a tarefa no ClickUp.
-    raw_verdict = await hermes_client.classify(texto_processamento)
+    raw_verdict = await hermes_client.classify(
+        texto_processamento,
+        areas=tasks.AREAS_TRIAGEM,
+    )
     verdict = raw_verdict if isinstance(raw_verdict, dict) else {}
+
+    # A área proposta é guardada AQUI, no fundo, e a triagem só lê. Validamos
+    # contra a lista antes de gravar: proposta fora do vocabulário é lixo, e lixo
+    # gravado vira sugestão errada na tela do Leo depois. Vale null.
+    raw_area = verdict.get("area")
+    if isinstance(raw_area, str) and raw_area in tasks.AREAS_TRIAGEM:
+        store.mark_capture(cid, area_proposta=raw_area)
 
     raw_tipo = verdict.get("tipo")
     tipo = (

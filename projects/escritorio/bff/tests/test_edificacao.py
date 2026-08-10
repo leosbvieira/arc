@@ -49,7 +49,7 @@ async def test_hook_aprendizado_nao_classifica_nem_cria_task(
 ):
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def explode_classify(text):
+    async def explode_classify(text, areas=None):
         pytest.fail("Hermes não deve classificar um aprendizado reconhecível")
 
     async def explode_create(*args, **kwargs):
@@ -89,7 +89,7 @@ async def test_prefixo_sem_texto_nao_vira_aprendizado_vazio(client, monkeypatch,
     sentido. Cai no caminho normal, que preserva o Raw e mostra o item na triagem."""
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def classify_como_nota(text):
+    async def classify_como_nota(text, areas=None):
         return {"tipo": "nota", "titulo": None, "quando": None}
 
     monkeypatch.setattr(hermes_client, "classify", classify_como_nota)
@@ -104,7 +104,7 @@ async def test_prefixo_sem_texto_nao_vira_aprendizado_vazio(client, monkeypatch,
 async def test_prefixo_sensivel_antes_do_aprendizado(client, monkeypatch):
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def explode_classify(text):
+    async def explode_classify(text, areas=None):
         pytest.fail("Hermes não deve receber um aprendizado reconhecível")
 
     monkeypatch.setattr(hermes_client, "classify", explode_classify)
@@ -132,7 +132,7 @@ async def test_captura_sensivel_cria_task_com_tag(client, monkeypatch):
     created = []
     monkeypatch.setattr(vault_client, "write_raw", _fake_write_raw)
 
-    async def fake_classify(text):
+    async def fake_classify(text, areas=None):
         assert text == "marcar consulta"
         return {
             "tipo": "tarefa_pessoal",

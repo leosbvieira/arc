@@ -102,23 +102,18 @@ async def test_triagem_pack_filtra_staging_e_valida_propostas(monkeypatch):
     async def fake_source():
         return [staging_valido, staging_invalido, trabalho], raw
 
-    async def fake_propose(itens, areas):
-        assert itens == [
-            {"id": "s1", "titulo": "Primeiro"},
-            {"id": "s2", "titulo": "Segundo"},
-        ]
-        assert areas == tasks.AREAS_TRIAGEM
-        return [
-            {"id": "s1", "area": "Trabalho"},
-            {"id": "s2", "area": "Inexistente"},
-        ]
+    def fake_propostas():
+        # Chegam do banco, gravadas quando a captura foi classificada. "Inexistente"
+        # não deveria existir (o pipeline valida antes de gravar), mas a rota filtra
+        # de novo: banco velho ou escrita por fora não vira sugestão errada na tela.
+        return {"s1": "Trabalho", "s2": "Inexistente"}
+
+    def hermes_proibido(*_args, **_kwargs):
+        raise AssertionError("a triagem não pode chamar o Hermes: a proposta é lida")
 
     monkeypatch.setattr(tasks, "_source", fake_source)
-    monkeypatch.setattr(
-        hermes_client,
-        "propose_triage",
-        fake_propose,
-    )
+    monkeypatch.setattr(store, "areas_propostas_por_task", fake_propostas)
+    monkeypatch.setattr(hermes_client, "propose_triage", hermes_proibido)
 
     pack = await tasks.triagem_pack()
 
@@ -141,23 +136,19 @@ async def test_triagem_pack_filtra_staging_e_valida_propostas(monkeypatch):
     }
 
 
-async def test_triagem_pack_degrada_quando_hermes_falha(monkeypatch):
+async def test_item_sem_proposta_guardada_aparece_sem_sugestao(monkeypatch):
+    """Entrou no Staging por fora da captura — criado à mão no ClickUp, ou é
+    anterior à coluna `area_proposta`. É o caso NORMAL, não erro: aparece na
+    triagem sem sugestão e o Leo escolhe. Mesmo comportamento de quando o Hermes
+    estava fora do ar, só que agora sem esperar 11s para descobrir isso."""
     staging_a = tasks._Task("s1", "Primeiro", "Staging")
     staging_b = tasks._Task("s2", "Segundo", "Staging")
 
     async def fake_source():
         return [staging_a, staging_b], []
 
-    async def fake_propose(_itens, areas):
-        assert areas == tasks.AREAS_TRIAGEM
-        raise RuntimeError("falha simulada")
-
     monkeypatch.setattr(tasks, "_source", fake_source)
-    monkeypatch.setattr(
-        hermes_client,
-        "propose_triage",
-        fake_propose,
-    )
+    monkeypatch.setattr(store, "areas_propostas_por_task", dict)
 
     pack = await tasks.triagem_pack()
 
@@ -171,18 +162,14 @@ def test_get_triagem_retorna_shape_correto(client, monkeypatch):
     staging = tasks._Task("staging-get", "Captura nova", "Staging")
     monkeypatch.setattr(tasks, "_MOCK", [*tasks._MOCK, staging])
 
-    async def fake_propose(itens, areas):
-        assert itens == [
-            {"id": "staging-get", "titulo": "Captura nova"}
-        ]
-        assert areas == tasks.AREAS_TRIAGEM
-        return [{"id": "staging-get", "area": "Estudo"}]
+    # A proposta veio do pipeline da captura e está no banco, ligada ao id da task.
+    store.enqueue_capture("comprar cueca", None, client_key="k-triagem")
+    store.mark_capture(1, clickup_task_id="staging-get", area_proposta="Estudo")
 
-    monkeypatch.setattr(
-        hermes_client,
-        "propose_triage",
-        fake_propose,
-    )
+    def hermes_proibido(*_args, **_kwargs):
+        raise AssertionError("a rota /triagem não pode chamar o Hermes")
+
+    monkeypatch.setattr(hermes_client, "propose_triage", hermes_proibido)
 
     response = client.get("/triagem")
 
