@@ -12,6 +12,7 @@ import json
 import logging
 import sqlite3
 import time
+import unicodedata
 from uuid import uuid4
 from contextlib import closing
 from datetime import date
@@ -108,6 +109,15 @@ CREATE TABLE IF NOT EXISTS reading_buffer (
   texto TEXT NOT NULL,
   ts REAL NOT NULL,
   PRIMARY KEY (session_id, seq)
+);
+CREATE TABLE IF NOT EXISTS books (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  titulo TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'lendo',
+  ciclo INTEGER NOT NULL DEFAULT 1,
+  created REAL NOT NULL,
+  updated REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS telemetry (
   ts REAL NOT NULL, evento TEXT NOT NULL, ref TEXT DEFAULT '', meta_json TEXT DEFAULT '{}'
@@ -286,6 +296,23 @@ def init_db() -> None:
             con.execute(
                 "ALTER TABLE capture_queue ADD COLUMN proxima_em REAL NOT NULL DEFAULT 0"
             )
+
+        reading_session_columns = {
+            row["name"] for row in con.execute("PRAGMA table_info(reading_sessions)")
+        }
+        for coluna, tipo in (
+            ("book_id", "INTEGER"),
+            ("book_ciclo", "INTEGER"),
+            ("compiled_at", "REAL"),
+            ("draft_fmt", "INTEGER"),
+        ):
+            if coluna not in reading_session_columns:
+                con.execute(f"ALTER TABLE reading_sessions ADD COLUMN {coluna} {tipo}")
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reading_sessions_book "
+            "ON reading_sessions(book_id, book_ciclo, compiled_at)"
+        )
+
         con.execute(
             "UPDATE anki_cards SET status = 'aprovado', export_claimed = NULL "
             "WHERE status = 'exporting' "
@@ -906,6 +933,53 @@ def list_sessions_since(
     with closing(_connect()) as con:
         rows = con.execute(consulta, parametros).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- books (estante, fatia 1) ------------------------------------------------
+
+
+def slug_livro(titulo: str) -> str:
+    """Normaliza caixa, acento e espaço — e SÓ isso.
+
+    Pontuação fica: descartá-la colapsaria "C", "C++" e "C#" numa obra só. O slug
+    serve para não criar "Sapiens" e "sapiens " como duas obras, não para ser
+    identidade semântica.
+    """
+    sem_acento = "".join(
+        c
+        for c in unicodedata.normalize("NFD", titulo)
+        if unicodedata.category(c) != "Mn"
+    )
+    # Categoria "C*" cobre controle e formatação; vira espaço para o split colapsar.
+    limpo = "".join(
+        " " if unicodedata.category(c).startswith("C") else c for c in sem_acento
+    )
+    return " ".join(limpo.casefold().split())
+
+
+def create_book(titulo: str) -> tuple[dict, bool]:
+    """Cria ou reusa a obra de mesmo slug. Concorrência resolvida no banco."""
+    slug = slug_livro(titulo)
+    if not slug:
+        raise ValueError("titulo_invalido")
+    agora = time.time()
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        cur = con.execute(
+            "INSERT INTO books (titulo, slug, status, ciclo, created, updated) "
+            "VALUES (?, ?, 'lendo', 1, ?, ?) ON CONFLICT(slug) DO NOTHING",
+            (" ".join(titulo.split()), slug, agora, agora),
+        )
+        criado = cur.rowcount == 1
+        row = con.execute("SELECT * FROM books WHERE slug = ?", (slug,)).fetchone()
+        con.commit()
+        return dict(row), criado
+
+
+def get_book(book_id: int) -> dict | None:
+    with closing(_connect()) as con:
+        row = con.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+    return None if row is None else dict(row)
 
 
 # --- reading_sessions / reading_buffer (B7) ---------------------------------
