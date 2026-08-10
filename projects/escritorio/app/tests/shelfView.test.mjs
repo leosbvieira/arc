@@ -46,6 +46,8 @@ test("tempo relativo cobre hoje, ontem, dias e semanas", () => {
     [AGORA - 3600_000, "hoje"],
     [AGORA - 1.2 * DIA, "ontem"],
     [AGORA - 5 * DIA, "há 5 dias"],
+    [AGORA - 7 * DIA, "há 1 semana"],
+    [AGORA - 13 * DIA, "há 1 semana"],
     [AGORA - 14 * DIA, "há 2 semanas"],
     [AGORA - 70 * DIA, "há 10 semanas"],
   ];
