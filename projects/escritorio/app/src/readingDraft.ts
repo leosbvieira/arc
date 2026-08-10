@@ -230,6 +230,9 @@ async function loadLegacyReadingDraft(): Promise<ReadingDraft | null> {
       draft.startedAt,
       draft.updatedAt,
     );
+    // Rascunho legado não tem bookId; `undefined` quebraria o JSON do sync,
+    // então vira null explícito (mesmo motivo do loadReadingDraft principal).
+    draft.bookId = draft.bookId ?? null;
     await saveReadingDraft(draft);
     await SecureStore.deleteItemAsync(LEGACY_META_KEY);
     for (let i = 0; i < meta.chunks; i += 1) {

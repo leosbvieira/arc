@@ -26,7 +26,7 @@ export type Book = {
   ciclo: number;
   // Derivadas do servidor: null = a obra ainda não tem sessão compilada no ciclo.
   pagina_atual: number | null;
-  ultima_sessao: number | null;
+  ultima_sessao: number | null; // segundos, como o servidor manda
   sessoes_n: number;
 };
 
