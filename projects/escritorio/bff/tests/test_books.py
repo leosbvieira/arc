@@ -116,3 +116,98 @@ def test_derivadas_ignoram_sessao_pendente(db):
     livro, _ = store.create_book("Sapiens")
     store.create_reading_session("p", "Sapiens", inicio=1.0, book_id=livro["id"])
     assert store.list_books("lendo")[0]["sessoes_n"] == 0
+
+
+def test_terminar_e_reabrir_abrem_ciclo_novo(db):
+    livro, _ = store.create_book("Sapiens")
+    _sessao_compilada(livro["id"], pagina_final=300, compiled_at=10.0, fim=10.0, key="a")
+
+    estado, obra = store.terminar_book(livro["id"])
+    assert estado == "terminado" and obra["status"] == "terminado"
+    assert store.list_books("lendo") == []
+    assert store.list_books("terminado")[0]["id"] == livro["id"]
+
+    estado, obra = store.reabrir_book(livro["id"])
+    assert estado == "reaberto" and obra["ciclo"] == 2
+
+    # A releitura recomeça: a página do ciclo 1 não vaza para o ciclo 2.
+    assert store.list_books("lendo")[0]["pagina_atual"] is None
+    _sessao_compilada(livro["id"], pagina_final=120, compiled_at=30.0, fim=30.0, key="b")
+    assert store.list_books("lendo")[0]["pagina_atual"] == 120
+
+
+def test_terminar_duas_vezes(db):
+    livro, _ = store.create_book("Sapiens")
+    assert store.terminar_book(livro["id"])[0] == "terminado"
+    assert store.terminar_book(livro["id"])[0] == "ja_terminado"
+
+
+def test_terminar_com_sessao_aberta_e_recusado(db):
+    livro, _ = store.create_book("Sapiens")
+    sessao, _ = store.create_reading_session(
+        "aberta", "x", inicio=1.0, book_id=livro["id"]
+    )
+    estado, detalhe = store.terminar_book(livro["id"])
+    assert estado == "sessao_aberta"
+    assert detalhe["sessions"] == [sessao["id"]]
+    assert store.get_book(livro["id"])["status"] == "lendo"
+
+
+def test_terminar_obra_sem_sessao_funciona(db):
+    # É assim que se tira da estante uma obra criada por engano.
+    livro, _ = store.create_book("Criada sem querer")
+    assert store.terminar_book(livro["id"])[0] == "terminado"
+
+
+def test_reabrir_obra_que_ja_esta_lendo(db):
+    livro, _ = store.create_book("Sapiens")
+    assert store.reabrir_book(livro["id"])[0] == "ja_lendo"
+    assert store.get_book(livro["id"])["ciclo"] == 1
+
+
+def test_estados_de_obra_inexistente(db):
+    assert store.terminar_book(9999)[0] == "missing"
+    assert store.reabrir_book(9999)[0] == "missing"
+
+
+def test_sessao_usa_o_titulo_canonico_e_o_ciclo_da_obra(db):
+    livro, _ = store.create_book("Sapiens")
+    sessao, _ = store.create_reading_session(
+        "s1", "TÍTULO MENTIROSO", inicio=1.0, book_id=livro["id"]
+    )
+    assert sessao["livro"] == "Sapiens"
+    assert sessao["book_id"] == livro["id"]
+    assert sessao["book_ciclo"] == 1
+
+
+def test_sessao_em_obra_terminada_e_recusada(db):
+    livro, _ = store.create_book("Sapiens")
+    store.terminar_book(livro["id"])
+    with pytest.raises(store.BookIndisponivel):
+        store.create_reading_session("s1", "x", inicio=1.0, book_id=livro["id"])
+    assert store.get_reading_session(1) is None
+
+
+def test_sessao_com_book_id_inexistente(db):
+    with pytest.raises(ValueError, match="book_nao_encontrado"):
+        store.create_reading_session("s1", "x", inicio=1.0, book_id=9999)
+    assert store.get_reading_session(1) is None
+
+
+def test_retry_da_mesma_client_key_nao_troca_a_obra(db):
+    primeira, _ = store.create_book("Sapiens")
+    segunda, _ = store.create_book("Antifrágil")
+    store.create_reading_session("s1", "x", inicio=1.0, book_id=primeira["id"])
+
+    sessao, criada = store.create_reading_session(
+        "s1", "x", inicio=1.0, book_id=segunda["id"]
+    )
+    assert criada is False
+    assert sessao["book_id"] == primeira["id"]
+
+
+def test_sessao_sem_book_id_segue_o_caminho_antigo(db):
+    sessao, _ = store.create_reading_session("s1", "Livro solto", inicio=1.0)
+    assert sessao["livro"] == "Livro solto"
+    assert sessao["book_id"] is None
+    assert sessao["book_ciclo"] is None

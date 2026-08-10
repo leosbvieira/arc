@@ -1017,6 +1017,64 @@ def list_books(status: str = "lendo") -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def terminar_book(book_id: int) -> tuple[str, dict | None]:
+    """Fecha o ciclo. Sem efeito externo: é um UPDATE condicional e acabou.
+
+    A tarefa de resumão no ClickUp é a fatia 2. Enquanto ela não existe, não há
+    nada a reconciliar, então não há claim, lease nem status 'terminando'.
+    """
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
+        if row is None:
+            con.rollback()
+            return "missing", None
+        abertas = con.execute(
+            "SELECT id FROM reading_sessions WHERE book_id = ? AND book_ciclo = ? "
+            "AND status IN ('pending', 'compiling') ORDER BY id",
+            (book_id, row["ciclo"]),
+        ).fetchall()
+        if abertas:
+            con.rollback()
+            return "sessao_aberta", {"sessions": [r["id"] for r in abertas]}
+        cur = con.execute(
+            "UPDATE books SET status = 'terminado', updated = ? "
+            "WHERE id = ? AND status = 'lendo'",
+            (time.time(), book_id),
+        )
+        if cur.rowcount != 1:
+            con.rollback()
+            return "ja_terminado", None
+        atualizado = con.execute(
+            "SELECT * FROM books WHERE id = ?", (book_id,)
+        ).fetchone()
+        con.commit()
+        return "terminado", dict(atualizado)
+
+
+def reabrir_book(book_id: int) -> tuple[str, dict | None]:
+    """Releitura abre um ciclo NOVO: a página recomeça e o histórico fica intacto."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT id FROM books WHERE id = ?", (book_id,)).fetchone()
+        if row is None:
+            con.rollback()
+            return "missing", None
+        cur = con.execute(
+            "UPDATE books SET status = 'lendo', ciclo = ciclo + 1, updated = ? "
+            "WHERE id = ? AND status = 'terminado'",
+            (time.time(), book_id),
+        )
+        if cur.rowcount != 1:
+            con.rollback()
+            return "ja_lendo", None
+        atualizado = con.execute(
+            "SELECT * FROM books WHERE id = ?", (book_id,)
+        ).fetchone()
+        con.commit()
+        return "reaberto", dict(atualizado)
+
+
 # --- reading_sessions / reading_buffer (B7) ---------------------------------
 
 
@@ -1030,6 +1088,14 @@ def _reading_payload(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
     payload["buffer"] = [dict(chunk) for chunk in chunks]
     payload["texto"] = "\n".join(chunk["texto"] for chunk in chunks)
     return payload
+
+
+class BookIndisponivel(Exception):
+    """A obra existe mas não aceita sessão nova (status != 'lendo').
+
+    Separada de ValueError porque o HTTP é outro: 409 (conflito de estado) e não
+    422 (referência inválida).
+    """
 
 
 def create_reading_session(
@@ -1060,6 +1126,9 @@ def create_reading_session(
             if book is None:
                 con.rollback()
                 raise ValueError("book_nao_encontrado")
+            if book["status"] != "lendo":
+                con.rollback()
+                raise BookIndisponivel("book_nao_aceita_sessao")
             # O ciclo é COPIADO, nunca inferido por tempo: `inicio` vem do cliente.
             book_ciclo = book["ciclo"]
             livro = book["titulo"]
