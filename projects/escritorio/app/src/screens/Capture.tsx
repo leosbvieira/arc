@@ -212,12 +212,28 @@ export default function Capture({
     if (selectedBookId !== null) setSelectedBookId(null);
   }
 
+  // book_nao_aceita_sessao: a obra virou "terminado" — aqui ou em outro
+  // aparelho — depois que a sessão a escolheu, e o `createReadingSession` do
+  // `syncDraft` só descobre isso na hora de criar. É comum aos três lugares
+  // que chamam `syncDraft` (autosave, compilar, gerar preview): nenhum pode
+  // tratar isso como falha de rede, senão o usuário fica preso tentando de
+  // novo pra sempre. O estado local (selectedBookId apontando pra obra morta)
+  // é o que precisa limpar; a mensagem pro usuário fica a cargo de quem chama.
+  function limparSelecaoDeObraTerminada(): void {
+    setSelectedBookId(null);
+    void loadShelf();
+  }
+
+  // `updateReadingField` (não os setters crus) porque escolher/criar uma obra é
+  // exatamente o tipo de "o usuário mexeu no formulário" que o restore() em
+  // curso precisa enxergar — sem isso, uma escolha feita antes do restore()
+  // terminar de conferir o servidor pode ser apagada em silêncio quando ele volta.
   function escolherObra(linha: LinhaEstante): void {
     setSelectedBookId(linha.id);
-    setBook(linha.titulo);
+    updateReadingField(setBook, linha.titulo);
     // Sugestão, não imposição: pode ter lido no papel desde a última sessão.
-    setPageStart(linha.paginaInicialSugerida);
-    setPageEnd("");
+    updateReadingField(setPageStart, linha.paginaInicialSugerida);
+    updateReadingField(setPageEnd, "");
     setNewBookMode(false);
   }
 
@@ -230,7 +246,7 @@ export default function Capture({
     try {
       const { book: criada } = await createBook(titulo);
       setSelectedBookId(criada.id);
-      setBook(criada.titulo);
+      updateReadingField(setBook, criada.titulo);
       await loadShelf();
       return { id: criada.id, titulo: criada.titulo };
     } catch (error) {
@@ -602,15 +618,14 @@ export default function Capture({
         await localSave;
         await syncDraft(draft);
       })
-      .catch(async (error) => {
+      .catch((error) => {
         if (draftRef.current?.sessionKey !== draft.sessionKey) return;
         // O createReadingSession deste sync pode achar a obra terminada (409)
         // entre a escolha na estante e o autosave — a obra some da estante nesse
         // meio-tempo, ou foi terminada em outro lugar. Não é falha de rede.
         if (readingErrorDetail(error) === "book_nao_aceita_sessao") {
+          limparSelecaoDeObraTerminada();
           setSpeechError("essa obra foi terminada — reabra antes de ler");
-          setSelectedBookId(null);
-          await loadShelf();
           return;
         }
         setStatus("sessão salva no aparelho — autosave no servidor pendente");
@@ -938,14 +953,22 @@ export default function Capture({
   async function beginSession(): Promise<void> {
     // Em modo "novo livro" a obra precisa existir no servidor antes da sessão —
     // senão a sessão nasce sem `book_id` e a estante nunca aprende sobre ela.
-    const novaObra = newBookMode ? await criarObra() : undefined;
+    // Só falta criar enquanto NÃO há sessão ainda: uma vez que `ensureSession`
+    // gerou o draft, ele é quem decide se recria (não decide, reusa). Sem o
+    // `!draftRef.current`, `newBookMode` fica true a sessão inteira e cada
+    // toque no microfone (`startSession` de novo) chamaria `criarObra` outra
+    // vez — round-trip à toa e, offline, `criarObra` falha e o microfone
+    // simplesmente não liga, sem pista do porquê.
+    const novaObra =
+      newBookMode && !draftRef.current ? await criarObra() : undefined;
     if (novaObra === null) return; // criarObra falhou; o erro já está em speechError
     const draft = await ensureSession(novaObra ?? undefined);
     if (draft) setStatus("sessão iniciada — escreva ou ative o microfone quando quiser");
   }
 
   async function startSession(): Promise<void> {
-    const novaObra = newBookMode ? await criarObra() : undefined;
+    const novaObra =
+      newBookMode && !draftRef.current ? await criarObra() : undefined;
     if (novaObra === null) return;
     const draft = await ensureSession(novaObra ?? undefined);
     if (!draft) return;
@@ -1211,6 +1234,19 @@ export default function Capture({
         );
         return;
       }
+      if (detail === "book_nao_aceita_sessao") {
+        // syncDraft() só tenta criar a sessão no servidor aqui se ela nunca foi
+        // criada antes (sessão inteira feita offline, por ex.) — e a esta altura
+        // a obra já foi terminada. O buffer local com tudo que foi registrado
+        // continua intacto; reabrir a obra é o que destrava o retry.
+        limparSelecaoDeObraTerminada();
+        setStatus("essa obra foi terminada — reabra na estante antes de salvar esta sessão");
+        Alert.alert(
+          "Obra terminada",
+          "A obra desta sessão foi marcada como terminada. Reabra-a na estante e toque em Salvar no vault de novo — nada do que você registrou foi perdido.",
+        );
+        return;
+      }
       const message =
         detail === "reading_compile_em_andamento"
           ? "A compilação ainda está em andamento no servidor. A sessão foi preservada."
@@ -1294,6 +1330,17 @@ export default function Capture({
         await saveReadingDraft(pendingDraft);
       }
       const detail = readingErrorDetail(error);
+      if (detail === "book_nao_aceita_sessao") {
+        // Mesmo caso de approveNow: a obra terminou antes da primeira sessão
+        // no servidor existir. O buffer local segue intacto.
+        limparSelecaoDeObraTerminada();
+        setStatus("essa obra foi terminada — reabra na estante antes de gerar o preview");
+        Alert.alert(
+          "Obra terminada",
+          "A obra desta sessão foi marcada como terminada. Reabra-a na estante e toque em Compilar de novo — nada do que você registrou foi perdido.",
+        );
+        return;
+      }
       const message =
         detail === "reading_compile_indisponivel"
           ? "O gerador da nota está indisponível agora. Nada foi gravado; tente novamente em instantes."
@@ -1697,8 +1744,8 @@ export default function Capture({
                   onPress={() => {
                     setNewBookMode(true);
                     setSelectedBookId(null);
-                    setBook("");
-                    setPageStart("");
+                    updateReadingField(setBook, "");
+                    updateReadingField(setPageStart, "");
                   }}
                   style={styles.shelfAdd}
                 >

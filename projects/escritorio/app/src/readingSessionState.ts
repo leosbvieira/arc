@@ -3,6 +3,11 @@ const LOCAL_CLEAR_SAFE_DETAILS = new Set([
   "reading_session_discarded",
   "reading_session_descartada",
   "reading_session_nao_encontrada",
+  // Um livro terminado recusa a sessão que o descarte tenta recriar (para ter
+  // o quê descartar). Sem `remoteId`, o servidor nunca teve — e nunca terá —
+  // essa sessão, então "não conseguiu criar" é seguro para limpar como
+  // "não existe no servidor", senão o rascunho fica preso para sempre.
+  "book_nao_aceita_sessao",
 ]);
 
 export function canClearLocalAfterDiscardFailure(detail: string | null): boolean {
