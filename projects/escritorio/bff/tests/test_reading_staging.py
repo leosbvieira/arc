@@ -136,6 +136,7 @@ def test_compile_apos_draft_grava_vault_e_sugere_anki(client, monkeypatch):
     assert _append(client, sid, 1, quote, "quote").status_code == 200
 
     calls = {"compile": 0, "vault": 0, "anki": 0}
+    publicado = {}
 
     async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
         calls["compile"] += 1
@@ -145,6 +146,7 @@ def test_compile_apos_draft_grava_vault_e_sugere_anki(client, monkeypatch):
         calls["vault"] += 1
         assert quote in markdown and reading_id == sid and ts == 1_000.0
         assert client_key == "reading-1"
+        publicado["markdown"] = markdown
         return f"Leituras/leitura-r{reading_id}.md"
 
     async def suggest_anki(notas):
@@ -167,6 +169,9 @@ def test_compile_apos_draft_grava_vault_e_sugere_anki(client, monkeypatch):
     assert approve.status_code == 200
     # O draft já existia: /compile NÃO chama o Hermes de novo (bloco gera-se-faltar removido).
     assert calls == {"compile": 1, "vault": 1, "anki": 1}
+    # A garantia do task: o que chega ao vault é exatamente o que ficou staged
+    # (com frontmatter) — não uma versão recomposta na hora de publicar.
+    assert publicado["markdown"] == draft.json()["draft_md"]
     sess = approve.json()["session"]
     assert sess["status"] == "compiled"
     assert sess["draft_md"] is None

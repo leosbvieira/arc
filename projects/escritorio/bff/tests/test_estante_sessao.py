@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main, store
+from app import main, reading_frontmatter, store
 from app.config import settings
 from app.main import app, require_auth
 
@@ -160,6 +160,11 @@ def test_draft_prefixa_o_frontmatter_antes_do_staging(client, monkeypatch):
     assert 'livro: "Sapiens"' in draft
     assert "paginas: 190-214" in draft
     assert draft.endswith("# Nota do Hermes")
+    # Pin nos bytes inteiros (inicio=1.0 torna a data determinística): garante que
+    # nada foi injetado entre o frontmatter e o corpo, nem um dos dois duplicado.
+    assert draft == reading_frontmatter.frontmatter(
+        livro="Sapiens", pagina_inicial=190, pagina_final=214, inicio=1.0
+    ) + "# Nota do Hermes"
     # O que ficou staged é o documento COMPLETO: é ele que o Leo aprova.
     assert store.get_reading_session(sid)["draft_md"] == draft
     assert store.get_reading_session(sid)["draft_fmt"] == 2
