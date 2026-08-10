@@ -17,7 +17,7 @@
 - **Sem backfill:** linhas antigas de `reading_sessions` ficam com `book_id`, `book_ciclo`, `compiled_at` e `draft_fmt` todos `NULL`. Nenhuma migração de dado, só de schema.
 - **Caminho antigo intacto:** `POST /reading/sessions` sem `book_id` mantém exatamente o comportamento de hoje. Os testes de leitura existentes (`test_reading_buffer.py`, `test_reading_staging.py`, `test_reading_reconcile.py`, `test_reading_tail_mutations.py`) devem passar sem edição.
 - **Spec de referência:** `development/ESTANTE-SPEC.md` (revisão 4). Fatias 2 (ClickUp) e 3 (recap) estão fora deste plano.
-- Rodar os testes do BFF de dentro de `projects/escritorio/bff/`: `python -m pytest`.
+- Rodar os testes do BFF de dentro de `projects/escritorio/bff/`: `.venv/Scripts/python -m pytest`. **O `python` puro não serve** — resolve para o venv do Hermes, que não tem pytest instalado.
 - Rodar os testes do app de dentro de `projects/escritorio/app/`: `npm run check`.
 
 ---
@@ -136,7 +136,7 @@ def test_migracao_e_idempotente(db):
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_books.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_books.py -v`
 Expected: FAIL com `AttributeError: module 'app.store' has no attribute 'slug_livro'`
 
 - [ ] **Step 3: Acrescentar a tabela ao schema**
@@ -239,12 +239,12 @@ def get_book(book_id: int) -> dict | None:
 
 - [ ] **Step 6: Rodar os testes**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_books.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_books.py -v`
 Expected: PASS, 6 testes.
 
 - [ ] **Step 7: Rodar a suíte inteira**
 
-Run: `cd projects/escritorio/bff && python -m pytest`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest`
 Expected: PASS. Nada existente pode quebrar — as colunas novas são nullable e a tabela é nova.
 
 - [ ] **Step 8: Commit**
@@ -336,7 +336,7 @@ def test_derivadas_ignoram_sessao_pendente(db):
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_books.py -v -k "pagina_atual or derivadas or sem_sessao"`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_books.py -v -k "pagina_atual or derivadas or sem_sessao"`
 Expected: FAIL — `create_reading_session() got an unexpected keyword argument 'book_id'`. É esperado: a Task 4 fecha esse argumento. Implemente o mínimo aqui (Step 3) e o restante na Task 4.
 
 - [ ] **Step 3: Aceitar `book_id` em `create_reading_session` (mínimo)**
@@ -477,12 +477,12 @@ def list_books(status: str = "lendo") -> list[dict]:
 
 - [ ] **Step 6: Rodar os testes**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_books.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_books.py -v`
 Expected: PASS, 11 testes.
 
 - [ ] **Step 7: Rodar a suíte inteira**
 
-Run: `cd projects/escritorio/bff && python -m pytest`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest`
 Expected: PASS. `create_reading_session` ganhou um parâmetro com default; nenhum chamador existente muda.
 
 - [ ] **Step 8: Commit**
@@ -494,188 +494,21 @@ git commit -m "feat(escritorio): a estante sabe a pagina, e nao pergunta ao celu
 
 ---
 
-### Task 4: Sessão com `book_id` — validação e cópia do título
+### Task 4: Ciclo de vida da obra na store, e a sessão que sabe de qual obra é
+
+Corte por **camada**: esta task fecha o comportamento na `store`, testado direto contra ela. A Task 5 põe HTTP em cima. As duas terminam verdes sozinhas — a versão anterior deste plano fatiava por assunto e deixava a Task 4 vermelha até a 5 existir.
 
 **Files:**
-- Modify: `bff/app/store.py` (`create_reading_session`), `bff/app/main.py` (`ReadingSessionIn` perto de `main.py:365`, endpoint em `main.py:1030`)
-- Test: `bff/tests/test_estante_sessao.py`
+- Modify: `bff/app/store.py` (`create_reading_session` em `store.py:920`; funções novas depois de `list_books`)
+- Test: `bff/tests/test_books.py`
 
 **Interfaces:**
-- Consumes: `store.create_book`, `store.create_reading_session(..., book_id=...)` (Tasks 2 e 3)
-- Produces: `store.BookIndisponivel` (exceção), `POST /reading/sessions` aceitando `book_id: int | None`
-
-- [ ] **Step 1: Escrever os testes que falham**
-
-Criar `bff/tests/test_estante_sessao.py`:
-
-```python
-import pytest
-from fastapi.testclient import TestClient
-
-from app import store
-from app.config import settings
-from app.main import app, require_auth
-
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
-    store.init_db()
-    app.dependency_overrides[require_auth] = lambda: None
-    yield TestClient(app, raise_server_exceptions=False)
-    app.dependency_overrides.clear()
-
-
-def _nova_obra(client, titulo="Sapiens"):
-    resp = client.post("/reading/books", json={"titulo": titulo})
-    assert resp.status_code == 200
-    return resp.json()["book"]
-
-
-def test_sessao_com_book_id_usa_o_titulo_canonico(client):
-    obra = _nova_obra(client)
-    resp = client.post(
-        "/reading/sessions",
-        json={
-            "client_key": "s1",
-            "livro": "TÍTULO MENTIROSO",
-            "pagina_inicial": 10,
-            "inicio": 1_000.0,
-            "book_id": obra["id"],
-        },
-    )
-    assert resp.status_code == 200
-    sessao = resp.json()["session"]
-    assert sessao["livro"] == "Sapiens"
-    assert sessao["book_id"] == obra["id"]
-    assert sessao["book_ciclo"] == 1
-
-
-def test_sessao_com_book_id_inexistente(client):
-    resp = client.post(
-        "/reading/sessions",
-        json={"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": 9999},
-    )
-    assert resp.status_code == 422
-    assert resp.json()["detail"] == "book_nao_encontrado"
-    assert store.get_reading_session(1) is None
-
-
-def test_sessao_em_obra_terminada_e_recusada(client):
-    obra = _nova_obra(client)
-    assert client.post(f"/reading/books/{obra['id']}/terminar").status_code == 200
-
-    resp = client.post(
-        "/reading/sessions",
-        json={"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": obra["id"]},
-    )
-    assert resp.status_code == 409
-    assert resp.json()["detail"] == "book_nao_aceita_sessao"
-
-
-def test_retry_com_book_id_diferente_nao_troca_a_obra(client):
-    primeira = _nova_obra(client, "Sapiens")
-    segunda = _nova_obra(client, "Antifrágil")
-    corpo = {"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": primeira["id"]}
-    assert client.post("/reading/sessions", json=corpo).status_code == 200
-
-    corpo["book_id"] = segunda["id"]
-    resp = client.post("/reading/sessions", json=corpo)
-    assert resp.status_code == 200
-    assert resp.json()["created"] is False
-    assert resp.json()["session"]["book_id"] == primeira["id"]
-
-
-def test_sessao_sem_book_id_segue_o_caminho_antigo(client):
-    resp = client.post(
-        "/reading/sessions",
-        json={"client_key": "s1", "livro": "Livro solto", "inicio": 1.0},
-    )
-    assert resp.status_code == 200
-    sessao = resp.json()["session"]
-    assert sessao["livro"] == "Livro solto"
-    assert sessao["book_id"] is None
-    assert sessao["book_ciclo"] is None
-```
-
-- [ ] **Step 2: Rodar e ver falhar**
-
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_estante_sessao.py -v`
-Expected: FAIL com 404 em `/reading/books` — os endpoints chegam na Task 5. Implemente Steps 3–4 aqui e volte a rodar depois da Task 5; os testes deste arquivo ficam vermelhos até lá. **Isso é esperado e está anotado no Step 6.**
-
-- [ ] **Step 3: Acrescentar a validação de status na store**
-
-Em `bff/app/store.py`, antes de `create_reading_session`, uma exceção própria:
-
-```python
-class BookIndisponivel(Exception):
-    """A obra existe mas não aceita sessão nova (status != 'lendo').
-
-    Separada de ValueError porque o HTTP é outro: 409 (conflito de estado) e não
-    422 (referência inválida).
-    """
-```
-
-E dentro de `create_reading_session`, no bloco `if book_id is not None:`, entre a checagem de `book is None` e a cópia do ciclo:
-
-```python
-            if book["status"] != "lendo":
-                con.rollback()
-                raise BookIndisponivel("book_nao_aceita_sessao")
-```
-
-- [ ] **Step 4: Acrescentar `book_id` ao modelo e ao endpoint**
-
-Em `bff/app/main.py`, na classe do corpo de `POST /reading/sessions` (perto de `main.py:365`), acrescentar o campo:
-
-```python
-    book_id: int | None = None
-```
-
-E no endpoint `create_reading_session` (`main.py:1031`), envolver a chamada:
-
-```python
-    try:
-        session, created = store.create_reading_session(
-            body.client_key,
-            body.livro,
-            body.pagina_inicial,
-            body.inicio,
-            book_id=body.book_id,
-        )
-    except store.BookIndisponivel:
-        raise HTTPException(409, "book_nao_aceita_sessao") from None
-    except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
-```
-
-Manter o resto do corpo do endpoint como está.
-
-- [ ] **Step 5: Commit parcial**
-
-```bash
-git add projects/escritorio/bff/app/store.py projects/escritorio/bff/app/main.py projects/escritorio/bff/tests/test_estante_sessao.py
-git commit -m "feat(escritorio): a sessao passa a saber de que obra ela e"
-```
-
-- [ ] **Step 6: Anotar a dependência**
-
-Os testes de `test_estante_sessao.py` só ficam verdes depois da Task 5, que cria os endpoints de obra. Não tente consertá-los aqui.
-
----
-
-### Task 5: Endpoints de obra — criar, listar, terminar, reabrir
-
-**Files:**
-- Modify: `bff/app/store.py` (`terminar_book`, `reabrir_book`), `bff/app/main.py` (quatro rotas, perto de `main.py:1030`, antes de `POST /reading/sessions`)
-- Test: `bff/tests/test_books.py`, `bff/tests/test_estante_sessao.py`
-
-**Interfaces:**
-- Consumes: `store.create_book`, `store.list_books`, `store.get_book` (Tasks 2 e 3)
+- Consumes: `store.create_book`, `store.list_books` (Tasks 2 e 3)
 - Produces:
-  - `store.terminar_book(book_id) -> tuple[str, dict | None]` com estado em `{"missing", "sessao_aberta", "ja_terminado", "terminado"}`
-  - `store.reabrir_book(book_id) -> tuple[str, dict | None]` com estado em `{"missing", "ja_lendo", "reaberto"}`
-  - `GET /reading/books?status=`, `POST /reading/books`, `POST /reading/books/{id}/terminar`, `POST /reading/books/{id}/reabrir`
+  - `store.BookIndisponivel` (exceção)
+  - `store.terminar_book(book_id) -> tuple[str, dict | None]`, estado em `{"missing", "sessao_aberta", "ja_terminado", "terminado"}`
+  - `store.reabrir_book(book_id) -> tuple[str, dict | None]`, estado em `{"missing", "ja_lendo", "reaberto"}`
+  - `create_reading_session` recusando obra que não está em `lendo`
 
 - [ ] **Step 1: Escrever os testes que falham**
 
@@ -732,63 +565,78 @@ def test_reabrir_obra_que_ja_esta_lendo(db):
 def test_estados_de_obra_inexistente(db):
     assert store.terminar_book(9999)[0] == "missing"
     assert store.reabrir_book(9999)[0] == "missing"
-```
-
-E em `bff/tests/test_estante_sessao.py`:
-
-```python
-def test_criar_obra_e_idempotente_por_slug(client):
-    primeira = client.post("/reading/books", json={"titulo": "Sapiens"})
-    segunda = client.post("/reading/books", json={"titulo": "sapiens "})
-    assert primeira.json()["created"] is True
-    assert segunda.json()["created"] is False
-    assert segunda.json()["book"]["id"] == primeira.json()["book"]["id"]
 
 
-def test_criar_obra_com_titulo_vazio(client):
-    resp = client.post("/reading/books", json={"titulo": "   "})
-    assert resp.status_code == 422
-    assert resp.json()["detail"] == "titulo_invalido"
-
-
-def test_listar_estante(client):
-    _nova_obra(client, "Sapiens")
-    resp = client.get("/reading/books")
-    assert resp.status_code == 200
-    linha = resp.json()["books"][0]
-    assert linha["titulo"] == "Sapiens"
-    assert linha["pagina_atual"] is None
-    assert linha["sessoes_n"] == 0
-
-
-def test_terminar_pela_api(client):
-    obra = _nova_obra(client)
-    assert client.post(f"/reading/books/{obra['id']}/terminar").status_code == 200
-    assert client.get("/reading/books").json()["books"] == []
-    assert len(client.get("/reading/books?status=terminado").json()["books"]) == 1
-
-    repetido = client.post(f"/reading/books/{obra['id']}/terminar")
-    assert repetido.status_code == 409
-    assert repetido.json()["detail"] == "book_ja_terminado"
-
-
-def test_terminar_com_sessao_aberta_pela_api(client):
-    obra = _nova_obra(client)
-    client.post(
-        "/reading/sessions",
-        json={"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": obra["id"]},
+def test_sessao_usa_o_titulo_canonico_e_o_ciclo_da_obra(db):
+    livro, _ = store.create_book("Sapiens")
+    sessao, _ = store.create_reading_session(
+        "s1", "TÍTULO MENTIROSO", inicio=1.0, book_id=livro["id"]
     )
-    resp = client.post(f"/reading/books/{obra['id']}/terminar")
-    assert resp.status_code == 409
-    assert resp.json()["detail"] == "book_com_sessao_aberta"
+    assert sessao["livro"] == "Sapiens"
+    assert sessao["book_id"] == livro["id"]
+    assert sessao["book_ciclo"] == 1
+
+
+def test_sessao_em_obra_terminada_e_recusada(db):
+    livro, _ = store.create_book("Sapiens")
+    store.terminar_book(livro["id"])
+    with pytest.raises(store.BookIndisponivel):
+        store.create_reading_session("s1", "x", inicio=1.0, book_id=livro["id"])
+    assert store.get_reading_session(1) is None
+
+
+def test_sessao_com_book_id_inexistente(db):
+    with pytest.raises(ValueError, match="book_nao_encontrado"):
+        store.create_reading_session("s1", "x", inicio=1.0, book_id=9999)
+    assert store.get_reading_session(1) is None
+
+
+def test_retry_da_mesma_client_key_nao_troca_a_obra(db):
+    primeira, _ = store.create_book("Sapiens")
+    segunda, _ = store.create_book("Antifrágil")
+    store.create_reading_session("s1", "x", inicio=1.0, book_id=primeira["id"])
+
+    sessao, criada = store.create_reading_session(
+        "s1", "x", inicio=1.0, book_id=segunda["id"]
+    )
+    assert criada is False
+    assert sessao["book_id"] == primeira["id"]
+
+
+def test_sessao_sem_book_id_segue_o_caminho_antigo(db):
+    sessao, _ = store.create_reading_session("s1", "Livro solto", inicio=1.0)
+    assert sessao["livro"] == "Livro solto"
+    assert sessao["book_id"] is None
+    assert sessao["book_ciclo"] is None
 ```
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_books.py tests/test_estante_sessao.py -v`
-Expected: FAIL — `AttributeError: ... 'terminar_book'` e 404 nas rotas.
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_books.py -v`
+Expected: FAIL com `AttributeError: module 'app.store' has no attribute 'terminar_book'`
 
-- [ ] **Step 3: Escrever `terminar_book` e `reabrir_book`**
+- [ ] **Step 3: Acrescentar a exceção e a validação de status**
+
+Em `bff/app/store.py`, antes de `create_reading_session`:
+
+```python
+class BookIndisponivel(Exception):
+    """A obra existe mas não aceita sessão nova (status != 'lendo').
+
+    Separada de ValueError porque o HTTP é outro: 409 (conflito de estado) e não
+    422 (referência inválida).
+    """
+```
+
+E dentro de `create_reading_session`, no bloco `if book_id is not None:` criado na Task 3, entre a checagem de `book is None` e a cópia do ciclo:
+
+```python
+            if book["status"] != "lendo":
+                con.rollback()
+                raise BookIndisponivel("book_nao_aceita_sessao")
+```
+
+- [ ] **Step 4: Escrever `terminar_book` e `reabrir_book`**
 
 Depois de `list_books` em `bff/app/store.py`:
 
@@ -851,7 +699,180 @@ def reabrir_book(book_id: int) -> tuple[str, dict | None]:
         return "reaberto", dict(atualizado)
 ```
 
-- [ ] **Step 4: Escrever as quatro rotas**
+- [ ] **Step 5: Rodar os testes**
+
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_books.py -v`
+Expected: PASS, 21 testes.
+
+- [ ] **Step 6: Rodar a suíte inteira**
+
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest`
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add projects/escritorio/bff/app/store.py projects/escritorio/bff/tests/test_books.py
+git commit -m "feat(escritorio): terminar um livro e um UPDATE, nao um workflow"
+```
+
+---
+
+### Task 5: Os quatro endpoints de obra
+
+**Files:**
+- Modify: `bff/app/main.py` (modelo da sessão perto de `main.py:365`; rotas novas antes de `@app.post("/reading/sessions")` em `main.py:1030`; endpoint da sessão em `main.py:1031`)
+- Test: `bff/tests/test_estante_sessao.py`
+
+**Interfaces:**
+- Consumes: `store.create_book`, `store.list_books`, `store.terminar_book`, `store.reabrir_book`, `store.BookIndisponivel` (Tasks 2–4)
+- Produces: `GET /reading/books?status=`, `POST /reading/books`, `POST /reading/books/{id}/terminar`, `POST /reading/books/{id}/reabrir`, e `book_id` no corpo de `POST /reading/sessions`
+
+- [ ] **Step 1: Escrever os testes que falham**
+
+Criar `bff/tests/test_estante_sessao.py`:
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+
+from app import store
+from app.config import settings
+from app.main import app, require_auth
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
+    store.init_db()
+    app.dependency_overrides[require_auth] = lambda: None
+    yield TestClient(app, raise_server_exceptions=False)
+    app.dependency_overrides.clear()
+
+
+def _nova_obra(client, titulo="Sapiens"):
+    resp = client.post("/reading/books", json={"titulo": titulo})
+    assert resp.status_code == 200
+    return resp.json()["book"]
+
+
+def test_criar_obra_e_idempotente_por_slug(client):
+    primeira = client.post("/reading/books", json={"titulo": "Sapiens"})
+    segunda = client.post("/reading/books", json={"titulo": "sapiens "})
+    assert primeira.json()["created"] is True
+    assert segunda.json()["created"] is False
+    assert segunda.json()["book"]["id"] == primeira.json()["book"]["id"]
+
+
+def test_criar_obra_com_titulo_vazio(client):
+    resp = client.post("/reading/books", json={"titulo": "   "})
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "titulo_invalido"
+
+
+def test_listar_estante(client):
+    _nova_obra(client, "Sapiens")
+    resp = client.get("/reading/books")
+    assert resp.status_code == 200
+    linha = resp.json()["books"][0]
+    assert linha["titulo"] == "Sapiens"
+    assert linha["pagina_atual"] is None
+    assert linha["sessoes_n"] == 0
+
+
+def test_terminar_pela_api(client):
+    obra = _nova_obra(client)
+    assert client.post(f"/reading/books/{obra['id']}/terminar").status_code == 200
+    assert client.get("/reading/books").json()["books"] == []
+    assert len(client.get("/reading/books?status=terminado").json()["books"]) == 1
+
+    repetido = client.post(f"/reading/books/{obra['id']}/terminar")
+    assert repetido.status_code == 409
+    assert repetido.json()["detail"] == "book_ja_terminado"
+
+
+def test_reabrir_pela_api(client):
+    obra = _nova_obra(client)
+    client.post(f"/reading/books/{obra['id']}/terminar")
+    resp = client.post(f"/reading/books/{obra['id']}/reabrir")
+    assert resp.status_code == 200
+    assert resp.json()["book"]["ciclo"] == 2
+
+    repetido = client.post(f"/reading/books/{obra['id']}/reabrir")
+    assert repetido.status_code == 409
+    assert repetido.json()["detail"] == "book_ja_lendo"
+
+
+def test_endpoints_de_obra_inexistente(client):
+    assert client.post("/reading/books/9999/terminar").status_code == 404
+    assert client.post("/reading/books/9999/reabrir").status_code == 404
+
+
+def test_terminar_com_sessao_aberta_pela_api(client):
+    obra = _nova_obra(client)
+    client.post(
+        "/reading/sessions",
+        json={"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": obra["id"]},
+    )
+    resp = client.post(f"/reading/books/{obra['id']}/terminar")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "book_com_sessao_aberta"
+
+
+def test_sessao_com_book_id_usa_o_titulo_canonico(client):
+    obra = _nova_obra(client)
+    resp = client.post(
+        "/reading/sessions",
+        json={
+            "client_key": "s1",
+            "livro": "TÍTULO MENTIROSO",
+            "pagina_inicial": 10,
+            "inicio": 1_000.0,
+            "book_id": obra["id"],
+        },
+    )
+    assert resp.status_code == 200
+    sessao = resp.json()["session"]
+    assert sessao["livro"] == "Sapiens"
+    assert sessao["book_id"] == obra["id"]
+    assert sessao["book_ciclo"] == 1
+
+
+def test_sessao_com_book_id_inexistente_da_422(client):
+    resp = client.post(
+        "/reading/sessions",
+        json={"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": 9999},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "book_nao_encontrado"
+
+
+def test_sessao_em_obra_terminada_da_409(client):
+    obra = _nova_obra(client)
+    client.post(f"/reading/books/{obra['id']}/terminar")
+    resp = client.post(
+        "/reading/sessions",
+        json={"client_key": "s1", "livro": "x", "inicio": 1.0, "book_id": obra["id"]},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "book_nao_aceita_sessao"
+
+
+def test_sessao_sem_book_id_segue_o_caminho_antigo(client):
+    resp = client.post(
+        "/reading/sessions",
+        json={"client_key": "s1", "livro": "Livro solto", "inicio": 1.0},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["session"]["book_id"] is None
+```
+
+- [ ] **Step 2: Rodar e ver falhar**
+
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_estante_sessao.py -v`
+Expected: FAIL com 404 em `/reading/books`.
+
+- [ ] **Step 3: Escrever as quatro rotas**
 
 Em `bff/app/main.py`, imediatamente antes de `@app.post("/reading/sessions")` (`main.py:1030`):
 
@@ -910,21 +931,48 @@ def reabrir_book(
 
 Conferir que `Literal` já está importado de `typing` no topo de `main.py` (está — `main.py:220` usa `Literal`).
 
+- [ ] **Step 4: Acrescentar `book_id` ao modelo e ao endpoint da sessão**
+
+Em `bff/app/main.py`, na classe do corpo de `POST /reading/sessions` (perto de `main.py:365`), acrescentar o campo:
+
+```python
+    book_id: int | None = None
+```
+
+E no endpoint `create_reading_session` (`main.py:1031`), envolver a chamada à store:
+
+```python
+    try:
+        session, created = store.create_reading_session(
+            body.client_key,
+            body.livro,
+            body.pagina_inicial,
+            body.inicio,
+            book_id=body.book_id,
+        )
+    except store.BookIndisponivel:
+        raise HTTPException(409, "book_nao_aceita_sessao") from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+```
+
+Manter o resto do corpo do endpoint como está.
+
 - [ ] **Step 5: Rodar os testes**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_books.py tests/test_estante_sessao.py -v`
-Expected: PASS — 17 em `test_books.py` e 10 em `test_estante_sessao.py`.
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_estante_sessao.py -v`
+Expected: PASS, 11 testes.
 
 - [ ] **Step 6: Rodar a suíte inteira**
 
-Run: `cd projects/escritorio/bff && python -m pytest`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add projects/escritorio/bff/app/store.py projects/escritorio/bff/app/main.py projects/escritorio/bff/tests/
-git commit -m "feat(escritorio): terminar um livro e um UPDATE, nao um workflow"
+git add projects/escritorio/bff/app/main.py projects/escritorio/bff/tests/test_estante_sessao.py
+git commit -m "feat(escritorio): a estante ganha porta de entrada"
 ```
 
 ---
@@ -1013,7 +1061,7 @@ def test_titulo_com_dois_pontos_nao_quebra_o_yaml():
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_reading_frontmatter.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_reading_frontmatter.py -v`
 Expected: FAIL com `ModuleNotFoundError: No module named 'app.reading_frontmatter'`
 
 - [ ] **Step 3: Escrever o módulo**
@@ -1075,7 +1123,7 @@ def frontmatter(
 
 - [ ] **Step 4: Rodar os testes**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_reading_frontmatter.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_reading_frontmatter.py -v`
 Expected: PASS, 7 testes.
 
 - [ ] **Step 5: Commit**
@@ -1194,7 +1242,7 @@ def test_draft_legado_e_regenerado_e_nao_reusado(client, monkeypatch):
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_estante_sessao.py -v -k "frontmatter or legado"`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_estante_sessao.py -v -k "frontmatter or legado"`
 Expected: FAIL — o draft não começa com `---`.
 
 - [ ] **Step 3: `stage_reading_draft` grava a versão do formato**
@@ -1283,12 +1331,12 @@ Em `bff/app/main.py:1319`, logo depois do bloco que checa `draft is None`:
 
 - [ ] **Step 6: Rodar os testes**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_estante_sessao.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_estante_sessao.py -v`
 Expected: PASS, 13 testes.
 
 - [ ] **Step 7: Rodar a suíte inteira e consertar os testes de staging**
 
-Run: `cd projects/escritorio/bff && python -m pytest`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest`
 Expected: FAIL em `test_reading_staging.py` — as asserções de igualdade exata do `draft_md` agora veem o frontmatter na frente.
 
 Ajustar essas asserções para conferir o **sufixo** em vez da string inteira. Por exemplo, `test_draft_gera_preview_sem_tocar_vault_e_deixa_staged` (`test_reading_staging.py:63`):
@@ -1437,7 +1485,7 @@ def test_tsv_nunca_emite_celula_de_deck_vazia():
 
 - [ ] **Step 2: Rodar e ver falhar**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_estante_sessao.py -v -k "deck or tsv or anki"`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_estante_sessao.py -v -k "deck or tsv or anki"`
 Expected: FAIL com `AttributeError: module 'app.anki' has no attribute 'deck_para_livro'`
 
 - [ ] **Step 3: `deck_para_livro` e a coluna no TSV**
@@ -1585,12 +1633,12 @@ Em `/anki/sugerir` (`main.py:2077`), resolver do mesmo jeito:
 
 - [ ] **Step 6: Rodar os testes**
 
-Run: `cd projects/escritorio/bff && python -m pytest tests/test_estante_sessao.py tests/test_anki.py -v`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest tests/test_estante_sessao.py tests/test_anki.py -v`
 Expected: PASS.
 
 - [ ] **Step 7: Rodar a suíte inteira**
 
-Run: `cd projects/escritorio/bff && python -m pytest`
+Run: `cd projects/escritorio/bff && .venv/Scripts/python -m pytest`
 Expected: PASS. Se `test_anki.py` afirmar quatro colunas no TSV, atualizar para cinco.
 
 - [ ] **Step 8: Commit**
@@ -2195,15 +2243,15 @@ git commit -m "feat(escritorio): a leitura para de perguntar o que voce ja disse
 | Seção da spec | Task |
 |---|---|
 | Tabela `books`, slug, migração | 2 |
-| Ciclo copiado (D-L) | 3 (cópia), 5 (incremento) |
+| Ciclo copiado (D-L) | 3 (cópia), 4 (incremento no `reabrir`) |
 | Derivadas, `compiled_at` (D-P) | 3 |
-| Sessão com `book_id`, validação de status (D-M) | 4 |
-| Endpoints de obra, terminar/reabrir (D-Q) | 5 |
+| Sessão com `book_id`, validação de status (D-M) | 3 (cópia), 4 (validação) |
+| terminar/reabrir sem efeito externo (D-Q) | 4 (store), 5 (rotas) |
 | Frontmatter (D-H), YAML seguro | 6, 7 |
 | `draft_fmt` nos dois endpoints (D-O) | 7 |
 | Deck nos três pontos (D-F), TSV | 8 |
 | Tela da estante | 9, 10, 11 |
 
-**Anotado de propósito:** os testes de `test_estante_sessao.py` ficam vermelhos entre a Task 4 e a Task 5 — está escrito no Step 6 da Task 4. É a única quebra de "cada task termina verde" do plano, e existe porque separar o modelo da rota deixa as duas revisáveis em separado.
+**Toda task termina verde.** A primeira versão deste plano fatiava as Tasks 4 e 5 por assunto (modelo de sessão / endpoints de obra) e deixava `test_estante_sessao.py` vermelho entre as duas. O corte agora é por **camada** — Task 4 fecha a `store` e testa direto contra ela; Task 5 põe HTTP em cima. Mesma granularidade de revisão, sem estado intermediário quebrado.
 
 **Não coberto nesta fatia, de propósito:** tarefa de resumão no ClickUp (fatia 2), recap do Hermes (fatia 3). Ambas estão especificadas no fim de `ESTANTE-SPEC.md` com as pendências que as três rodadas de revisão levantaram.
