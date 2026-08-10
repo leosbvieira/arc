@@ -19,10 +19,23 @@ export type ReadingBufferChunk = {
   ts: number;
 };
 
+export type Book = {
+  id: number;
+  titulo: string;
+  status: "lendo" | "terminado";
+  ciclo: number;
+  // Derivadas do servidor: null = a obra ainda não tem sessão compilada no ciclo.
+  pagina_atual: number | null;
+  ultima_sessao: number | null;
+  sessoes_n: number;
+};
+
 export type ReadingSession = {
   id: number;
   client_key: string;
   livro: string;
+  book_id: number | null;
+  book_ciclo: number | null;
   pagina_inicial: number | null;
   pagina_final: number | null;
   inicio: number;
@@ -96,6 +109,7 @@ export async function createReadingSession(body: {
   livro: string;
   pagina_inicial: number | null;
   inicio: number;
+  book_id?: number | null;
 }): Promise<{ session: ReadingSession; created: boolean }> {
   return request("/reading/sessions", {
     method: "POST",
@@ -204,4 +218,27 @@ export async function discardReadingSession(
   return request(`/reading/sessions/${sessionId}/discard`, {
     method: "POST",
   });
+}
+
+export async function listBooks(
+  status: "lendo" | "terminado" = "lendo",
+): Promise<{ books: Book[] }> {
+  return request(`/reading/books?status=${status}`);
+}
+
+export async function createBook(
+  titulo: string,
+): Promise<{ book: Book; created: boolean }> {
+  return request("/reading/books", {
+    method: "POST",
+    body: JSON.stringify({ titulo }),
+  });
+}
+
+export async function terminarBook(bookId: number): Promise<{ book: Book }> {
+  return request(`/reading/books/${bookId}/terminar`, { method: "POST" });
+}
+
+export async function reabrirBook(bookId: number): Promise<{ book: Book }> {
+  return request(`/reading/books/${bookId}/reabrir`, { method: "POST" });
 }

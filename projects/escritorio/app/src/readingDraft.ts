@@ -26,6 +26,7 @@ export type ReadingDraft = {
   sessionKey: string;
   remoteId: number | null;
   book: string;
+  bookId: number | null;
   pageStart: string;
   pageEnd: string;
   startedAt: number;
@@ -192,6 +193,9 @@ export async function loadReadingDraft(): Promise<ReadingDraft | null> {
     const { itemCount: _itemCount, ...header } = parsed as StoredDraft;
     return {
       ...header,
+      // Rascunho gravado antes da estante não tem bookId; `undefined` quebraria o
+      // JSON do sync, então vira null explícito.
+      bookId: header.bookId ?? null,
       activeSeconds: normalizeReadingActiveSeconds(
         (parsed as Partial<StoredDraft>).activeSeconds,
         parsed.startedAt,

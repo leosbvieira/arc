@@ -92,6 +92,7 @@ function draftFromRemote(session: ReadingSession): ReadingDraft {
     sessionKey: session.client_key,
     remoteId: session.id,
     book: session.livro ?? "",
+    bookId: session.book_id,
     pageStart:
       session.pagina_inicial === null
         ? ""
@@ -137,6 +138,7 @@ export default function Capture({
 
   // sessão de leitura
   const [book, setBook] = useState("");
+  const [selectedBookId, setSelectedBookId] = useState<number | null>(null);
   const [pageStart, setPageStart] = useState("");
   const [pageEnd, setPageEnd] = useState("");
   const [items, setItems] = useState<Item[]>([]);
@@ -795,6 +797,7 @@ export default function Capture({
         sessionKey: createSessionKey(now),
         remoteId: null,
         book,
+        bookId: selectedBookId,
         pageStart,
         pageEnd,
         startedAt: now,
@@ -840,6 +843,7 @@ export default function Capture({
     setElapsedSeconds(0);
     setItems([]);
     setBook("");
+    setSelectedBookId(null);
     setPageStart("");
     setPageEnd("");
     setEntry("");
@@ -1287,6 +1291,7 @@ export default function Capture({
                 const recovered = await createReadingSession({
                   client_key: current.sessionKey,
                   livro: current.book,
+                  book_id: current.bookId,
                   pagina_inicial: numericPage(current.pageStart),
                   inicio: current.startedAt / 1000,
                 });
