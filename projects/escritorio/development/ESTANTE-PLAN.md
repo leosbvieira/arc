@@ -1761,7 +1761,12 @@ Em `app/src/screens/Capture.tsx`, no objeto de `ensureSession` (`Capture.tsx:794
 
 Em `resetSessionUi` (`Capture.tsx:836`), acrescentar `setSelectedBookId(null);`.
 
-Onde a sessão é sincronizada com o servidor (`Capture.tsx:1289`, objeto com `livro: current.book`), acrescentar `book_id: current.bookId,`.
+Acrescentar `book_id` **nos dois** `createReadingSession` de `Capture.tsx`:
+
+- em `syncDraft` (`Capture.tsx:560`) → `book_id: snapshot.bookId,`. **Este é o que importa**: é ele que cria a sessão no servidor no fluxo normal. Sem ele, toda sessão nasce com `book_id` nulo, a estante nunca acumula página nenhuma, e a suíte inteira continua verde enquanto a feature não faz nada.
+- na recuperação de descarte (`Capture.tsx:1291`) → `book_id: current.bookId,`.
+
+Uma versão anterior deste plano citava só o segundo. O erro foi pego pelo implementador da Task 9, não pela revisão.
 
 - [ ] **Step 6: Rodar o check completo**
 
