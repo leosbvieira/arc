@@ -45,20 +45,101 @@ Ou seja: **dá para consertar os 37% sem resolver o Hermes.**
 
 ## Sobre levar o Hermes junto
 
+> **Revisado em 10/ago/2026.** A versão anterior desta seção dizia que rodar o OAuth de
+> um IP de datacenter era "convite a bloqueio de conta". **Isso não se sustentou na
+> verificação** — a correção está abaixo, junto com o risco real, que é outro e mais
+> provável.
+
 Investigado em `%LOCALAPPDATA%\hermes`:
 
 - **Modelo é por API, não local.** `provider: openai-codex`,
   `base_url: https://chatgpt.com/backend-api/codex`. Não precisa de GPU nem RAM
   grande — um VPS de €4/mês roda.
-- **Mas a credencial é OAuth da conta pessoal dele.** `auth.json` guarda
+- **A credencial é OAuth da conta pessoal dele.** `auth.json` guarda
   `access_token` + `refresh_token` do ChatGPT, com refresh automático.
 - 2,2 GB em disco. Tem `Dockerfile` e `docker-compose.yml` próprios.
 
-**Recomendação: NÃO levar na fase 1.** Rodar OAuth de conta pessoal a partir de um
-IP de datacenter é convite a bloqueio de conta e quebra no refresh — e o ganho é
-zero para o problema que motiva a migração. Se um dia valer a pena, o caminho é
-trocar o provider para uma API key própria (o `.env` do Hermes já tem
-`ANTHROPIC_API_KEY`), não mudar os tokens de lugar.
+### O que a pesquisa desmentiu
+
+- O caso que mais parecia bloqueio — [openai/codex#11743](https://github.com/openai/codex/issues/11743),
+  literalmente *"Stream disconnected on VPS using ChatGPT OAuth"*, Ubuntu, IP de
+  datacenter — é **bug de streaming do CLI**. O login funcionou, `curl` no mesmo
+  endpoint respondeu, e reproduziu em duas versões. Conta nenhuma foi tocada.
+- Existem guias de instalação em VPS headless (SSH port-forward do `localhost:1455`) e
+  a própria OpenAI shippou **device-code auth** para máquinas sem navegador. Não se
+  constrói isso para um caso de uso que se quer punir.
+- O material alarmista sobre suspensão vem quase todo de **empresas que vendem relay de
+  API** (qcode.cc, teamorouter, 4sAPI) e termina recomendando o serviço delas. É
+  marketing fantasiado de aviso. A versão anterior deste doc reproduziu isso.
+- Perguntada diretamente sobre uso programático e server-side em
+  [openai/codex#8338](https://github.com/openai/codex/discussions/8338), a OpenAI
+  respondeu *"I'm an engineer, not a lawyer"* e apontou os Termos genéricos. **Não há
+  regra pública dizendo que pode nem que não pode** — é zona cinzenta, o que significa
+  que pode mudar sem aviso, não que hoje seja proibido.
+- Os gatilhos que essas fontes descrevem (muitas pessoas numa conta, frota de bots numa
+  assinatura, troca rápida de região/VPN) **não descrevem o Leo**: uma pessoa, uma
+  conta, um IP fixo, um punhado de chamadas por dia.
+
+*Ressalva:* as páginas de ToS da OpenAI retornam 403 para fetch automatizado, então o
+texto da cláusula não foi lido diretamente.
+
+### O risco real: colisão de refresh token
+
+`hermes_cli/auth.py:3672` trata um caso específico:
+
+```
+"Codex refresh token was already consumed by another client
+ (e.g. Codex CLI or VS Code extension).
+ Run `codex` in your terminal to generate fresh tokens,
+ then run `hermes auth` to re-authenticate."
+```
+
+O Leo **usa o `codex` CLI direto** para trabalho pesado. Hermes e Codex CLI dividem o
+mesmo refresh token, e **quem refresca primeiro consome o do outro.** Isso derruba o
+Aeternum de verdade, exige intervenção manual, e ele reproduz sozinho no próprio PC —
+sem VPS, sem IP de datacenter, sem ban nenhum.
+
+**E isso piora no servidor:** refresh token consumido numa máquina headless significa
+SSH com port-forward para reautenticar. É o argumento mais forte a favor de trocar o
+provider para `ANTHROPIC_API_KEY` (que já está preenchida no `.env` do Hermes): **API
+key não tem refresh, então não há o que consumir.**
+
+### A Fase 2 não devolve o Mentor
+
+Registrado porque o plano original deixava implícito e leva a decisão errada: o worker
+que "puxa trabalho do VPS" conserta o **assíncrono** — `classify`, `compile_reading`,
+`suggest_anki`, `propose_triage`. O **Chat é síncrono** (`main.py`, rota `/chat` →
+`hermes_client.chat` → `_oneshot`): com o PC desligado não há o que puxar, e o Leo fica
+olhando o spinner. **Mentor 24/7 só existe com o Hermes fora do PC.**
+
+### Recomendação revisada
+
+Levar o Hermes na fase 1 com o OAuth atual **não é imprudente** — as opções voltam à
+mesa. Mas se o objetivo inclui o Mentor de qualquer lugar, o caminho é **Hermes no VPS
+com `ANTHROPIC_API_KEY`**, e por dois motivos que nunca tiveram a ver com bloqueio:
+
+1. **Isolamento de quota.** A cota do plano ChatGPT é uma janela rolante compartilhada:
+   um Aeternum 24/7 classificando toda captura come do mesmo balde que ele usa para
+   programar. Uma API key é orçamento separado e medido.
+2. **Modo de falhar melhor.** 429 com `Retry-After` é uma espera. OAuth expirado num
+   servidor headless é uma manutenção manual.
+
+Custos assumidos: passa a pagar por token (com spend cap), e o Mentor troca de modelo
+(`gpt-5.4` → `claude-sonnet-5`) — o `SOUL.md` e as personalities vão junto, mas o jeito
+da resposta muda.
+
+### Já implementado (10/ago)
+
+O Hermes distingue cota de credencial desde o PR #33168 (`CODEX_RATE_LIMITED_CODE`,
+`relogin_required=False`, `Retry-After` parseado) — conferido presente na instalação
+local, commit `a653bb0`. Mas o BFF reduzia **toda** falha a `RuntimeError("hermes_error")`
+→ `502 hermes_indisponivel`, e essa distinção morria no stderr do subprocesso.
+
+Corrigido sem ferir a lei 7 (**código de erro não é conteúdo**): `hermes_client.HermesFalhou`
+carrega um código de lista fechada — `hermes_quota`, `hermes_credencial`, `hermes_error` —
+e o `/chat` devolve `503` + `Retry-After` nos dois primeiros. O app traduz em
+`src/chatError.ts`. Agora "a cota acabou, volta em ~2 min" e "o PC pode estar desligado"
+são frases diferentes na tela.
 
 ## Fases
 
@@ -120,6 +201,14 @@ instalado, só desabilitado. E o banco tem backup diário desde hoje.
 3. **Rotacionar os segredos agora?** `APP_PASSWORD` e `JWT_SECRET` ficaram expostos
    em terminal em 06/08, e o PAT do vault é emprestado. A migração é o momento
    natural de trocar os três de uma vez.
+4. **O Hermes vai junto, e com qual provider?** (nova, 10/ago) Três saídas:
+   **(A)** Hermes fica no PC — Mentor só com o PC ligado, custo zero;
+   **(B)** Hermes no VPS com o OAuth atual — Mentor 24/7, sem custo novo, mas herda a
+   colisão de refresh token com o `codex` CLI dele e a manutenção fica por SSH;
+   **(C)** Hermes no VPS com `ANTHROPIC_API_KEY` — Mentor 24/7, quota isolada, sem
+   refresh para colidir; paga por token e o Mentor troca de modelo.
+   O que decide é se ele aceita pagar por token e trocar o modelo — **não** risco de
+   bloqueio, que foi verificado e não se sustentou.
 
 ## Aceite da fase 1
 
