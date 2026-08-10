@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { ComponentProps, useCallback, useEffect, useState } from "react";

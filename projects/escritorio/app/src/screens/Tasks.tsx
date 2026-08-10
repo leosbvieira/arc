@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -474,14 +474,14 @@ const styles = StyleSheet.create({
   confirmOk: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.success,
   },
   taskRow: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 10 },
-  check: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
-  checkCore: { width: 12, height: 12, borderRadius: 6 },
+  check: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
+  checkCore: { width: 12, height: 12, borderRadius: 4 },
   taskBody: { flex: 1 },
   taskTopline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   taskArea: { fontFamily: fonts.mono, fontSize: 9, letterSpacing: 1, textTransform: "uppercase" },

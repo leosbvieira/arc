@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,

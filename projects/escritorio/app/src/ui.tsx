@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { ComponentProps, ReactNode, useEffect, useRef } from "react";
 import {
   ActivityIndicator,

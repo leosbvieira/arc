@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 // Caminho PROFUNDO por peso, nunca o barril da família. O barril de
 // `@expo-google-fonts/*` faz require() de TODOS os pesos, e importar um só
 // torna o conjunto alcançável: o Metro empacotava 26 arquivos .ttf para usar 7
