@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { mensagemDaFalhaDoChat, segundosDoRetryAfter } from "./chatError";
 import * as SecureStore from "./storage";
 
 const KEY = "session_token";
@@ -118,7 +119,19 @@ export async function chatSend(
     },
     body: JSON.stringify({ text, mode, historico }),
   });
-  if (!r.ok) throw new Error(`erro ${r.status}`);
+  if (!r.ok) {
+    // A mensagem desta exception vira BOLHA DE IA na tela (o `catch` de Chat.tsx põe
+    // `e.message` na conversa). Por isso ela já é a frase final, e não um código:
+    // "erro 502" tratava cota esgotada, PC desligado e timeout como a mesma coisa.
+    const payload = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(
+      mensagemDaFalhaDoChat({
+        status: r.status,
+        detail: payload?.detail ?? null,
+        retryAposS: segundosDoRetryAfter(r.headers.get("Retry-After")),
+      }),
+    );
+  }
   const data = (await r.json()) as { reply: string };
   return data.reply;
 }

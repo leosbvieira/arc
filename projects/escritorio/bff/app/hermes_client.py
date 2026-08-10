@@ -73,11 +73,57 @@ def _hermes_python() -> str:
 _UM_POR_VEZ = asyncio.Semaphore(1)
 
 
+class HermesFalhou(RuntimeError):
+    """Falha do Hermes reduzida a um CÓDIGO conhecido — nunca ao texto que a produziu.
+
+    Subclasse de RuntimeError de propósito: os 7 pontos de chamada já capturam
+    RuntimeError, então nenhum deles muda de comportamento por esta classe existir.
+    """
+
+    def __init__(self, code: str = "hermes_error", retry_apos_s: int | None = None):
+        super().__init__(code)
+        self.code = code
+        self.retry_apos_s = retry_apos_s
+
+
+# Assinaturas conhecidas na saída do Hermes → código nosso.
+#
+# Casar por texto é feio e é a única via: o CLI publica a mensagem humana
+# (`hermes_cli.auth.format_auth_error`) e nunca o código estruturado que ele calcula
+# por dentro (`codex_rate_limited`). Assinatura que mudar numa atualização do Hermes
+# cai em `hermes_error` — que é exatamente o comportamento anterior a esta função.
+# Nada quebra; só se perde a distinção, e o teste de falha desconhecida fixa isso.
+_ASSINATURAS = (
+    # auth.py:3630 — 429 no refresh. `relogin_required=False`: a credencial está boa.
+    ("hermes_quota", ("quota exhausted", "usage limit reached")),
+    # auth.py:3672 — o `codex` CLI e o Hermes dividem o mesmo refresh token, e quem
+    # refresca primeiro consome o do outro. Exige ação manual: nenhum retry resolve.
+    ("hermes_credencial", ("refresh token was already consumed",)),
+)
+
+_RETRY_APOS = _re.compile(r"retry after (\d+)s")
+
+
+def _classificar(saida: str) -> HermesFalhou:
+    """Deriva o código a partir da saída de um processo que JÁ falhou.
+
+    Nada da saída atravessa o retorno: só o código fixo e, quando o Hermes disse,
+    um inteiro de segundos (lei 7).
+    """
+    baixa = saida.lower()
+    for code, marcas in _ASSINATURAS:
+        if any(marca in baixa for marca in marcas):
+            achado = _RETRY_APOS.search(baixa)
+            return HermesFalhou(code, int(achado.group(1)) if achado else None)
+    return HermesFalhou("hermes_error")
+
+
 async def _oneshot(prompt: str) -> str:
     """Roda um prompt no Hermes CLI e devolve apenas a resposta limpa.
 
-    Toda falha é deliberadamente reduzida ao código fixo `hermes_error`: prompt,
-    stdout e stderr nunca aparecem na exception message (lei 7).
+    Toda falha vira `HermesFalhou` com um código de uma lista fechada — `hermes_quota`,
+    `hermes_credencial` ou o genérico `hermes_error`. Prompt, stdout e stderr nunca
+    aparecem na exception (lei 7): código de erro não é conteúdo.
     """
 
     def _run() -> subprocess.CompletedProcess:
@@ -104,11 +150,16 @@ async def _oneshot(prompt: str) -> str:
         async with _UM_POR_VEZ:
             proc = await asyncio.to_thread(_run)
         if proc.returncode != 0:
-            raise RuntimeError("hermes_error")
+            # Só a saída de um processo que já falhou é classificada. Com returncode 0
+            # o texto é RESPOSTA do modelo, e perguntar ao Mentor "o que é quota
+            # exhausted?" não pode virar erro de cota.
+            raise _classificar(f"{proc.stdout or ''}\n{proc.stderr or ''}")
         reply = _clean(proc.stdout or "")
         return reply or "(o Hermes respondeu vazio)"
+    except HermesFalhou:
+        raise
     except Exception:
-        raise RuntimeError("hermes_error") from None
+        raise HermesFalhou("hermes_error") from None
 
 
 # Classificador da fila (Task 9/B6). SEM campo `area`: no P1 toda tarefa cai em Staging

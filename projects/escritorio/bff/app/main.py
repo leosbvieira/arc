@@ -1436,6 +1436,30 @@ async def discard_reading_session(
     return {"session": session}
 
 
+# Falhas do Hermes que o app sabe explicar ao Leo. As duas são 503 e não 502 porque o
+# Hermes está de pé: o que faltou foi cota (volta sozinha) ou um refresh token que outro
+# cliente consumiu (pede ação dele). Um 502 mudo mandava as duas para a mesma frase
+# "hermes indisponível", indistinguível de PC desligado.
+_HERMES_TRANSITORIO = {"hermes_quota", "hermes_credencial"}
+
+
+def _erro_do_hermes(exc: hermes_client.HermesFalhou) -> HTTPException:
+    """Traduz o código da falha em HTTP. Só o código viaja — nunca texto (lei 7)."""
+    if exc.code not in _HERMES_TRANSITORIO:
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="hermes_indisponivel",
+        )
+    # `Retry-After` é o cabeçalho padrão para exatamente isto, e o Hermes já calcula os
+    # segundos quando o provedor os manda. Quando não manda, omitir é melhor que chutar.
+    headers = {"Retry-After": str(exc.retry_apos_s)} if exc.retry_apos_s else None
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=exc.code,
+        headers=headers,
+    )
+
+
 @app.post("/chat", response_model=ChatOut)
 async def chat(body: ChatIn, _: str = Depends(require_auth)):
     """Rota síncrona do Chat: fala com o Hermes no modo escolhido e devolve a resposta.
@@ -1454,6 +1478,8 @@ async def chat(body: ChatIn, _: str = Depends(require_auth)):
             contexto=contexto,
             historico=[t.model_dump() for t in body.historico],
         )
+    except hermes_client.HermesFalhou as exc:
+        raise _erro_do_hermes(exc) from None
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
