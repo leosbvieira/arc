@@ -180,7 +180,8 @@ def test_retry_com_draft_rejeita_snapshot_novo_antes_do_vault(client, monkeypatc
     )
     assert first.status_code == 502
     pending = store.get_reading_session(sid)
-    assert pending["draft_md"] == "# Draft da pagina 25"
+    assert pending["draft_md"].startswith("---\n")
+    assert pending["draft_md"].endswith("# Draft da pagina 25")
     assert len(pending["source_digest"]) == 64
 
     divergent = client.post(

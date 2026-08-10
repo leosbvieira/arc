@@ -233,7 +233,8 @@ def test_falha_vault_reusa_draft_e_congela_buffer(client, monkeypatch):
     assert client.post(f"/reading/sessions/{sid}/compile", json={"fim": 1_100}).status_code == 502
     pending = store.get_reading_session(sid)
     assert pending["status"] == "pending"
-    assert pending["draft_md"] == "# Draft persistido\n\nquote literal"
+    assert pending["draft_md"].startswith("---\n")
+    assert pending["draft_md"].endswith("# Draft persistido\n\nquote literal")
     blocked = _append(client, sid, 2, "não pode deixar draft stale", "texto")
     assert blocked.status_code == 409
     assert blocked.json()["detail"] == "reading_draft_ja_gerado"

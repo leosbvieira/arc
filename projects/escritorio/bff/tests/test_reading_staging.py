@@ -60,14 +60,15 @@ def test_draft_gera_preview_sem_tocar_vault_e_deixa_staged(client, monkeypatch):
     resp = client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 40})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["draft_md"] == f"# Preview\n\n> {quote}"
+    assert body["draft_md"].startswith("---\n")
+    assert body["draft_md"].endswith(f"# Preview\n\n> {quote}")
     assert body["session"]["status"] == "pending"
-    assert body["session"]["draft_md"] == f"# Preview\n\n> {quote}"
+    assert body["session"]["draft_md"] == body["draft_md"]
     assert calls["compile"] == 1
 
     staged = store.get_reading_session(sid)
     assert staged["status"] == "pending"
-    assert staged["draft_md"] == f"# Preview\n\n> {quote}"
+    assert staged["draft_md"] == body["draft_md"]
     assert staged["buffer"][0]["texto"] == quote
 
 
@@ -87,7 +88,9 @@ def test_segundo_draft_com_mesmo_buffer_e_idempotente(client, monkeypatch):
     second = client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 30})
     assert first.status_code == second.status_code == 200
     assert calls["compile"] == 1
-    assert first.json()["draft_md"] == second.json()["draft_md"] == "# Preview estável"
+    assert first.json()["draft_md"] == second.json()["draft_md"]
+    assert first.json()["draft_md"].startswith("---\n")
+    assert first.json()["draft_md"].endswith("# Preview estável")
     assert second.json()["session"]["status"] == "pending"
 
 
@@ -200,7 +203,8 @@ def test_compile_com_pagina_final_diferente_do_draft_diverge(client, monkeypatch
     # Segue staged: o release preserva draft_md (pending + draft).
     staged = store.get_reading_session(sid)
     assert staged["status"] == "pending"
-    assert staged["draft_md"] == "# Preview"
+    assert staged["draft_md"].startswith("---\n")
+    assert staged["draft_md"].endswith("# Preview")
 
 
 def test_rejeitar_draft_reabre_edicao_do_buffer(client, monkeypatch):
@@ -256,7 +260,8 @@ def test_falha_vault_no_compile_mantem_staged_e_retry_reusa_draft(client, monkey
     assert fail.status_code == 502
     staged = store.get_reading_session(sid)
     assert staged["status"] == "pending"
-    assert staged["draft_md"] == "# Draft persistido\n\nquote literal"
+    assert staged["draft_md"].startswith("---\n")
+    assert staged["draft_md"].endswith("# Draft persistido\n\nquote literal")
     # Buffer segue congelado enquanto o draft sobrevive.
     blocked = _append(client, sid, 2, "não pode deixar draft stale", "texto")
     assert blocked.status_code == 409
@@ -283,4 +288,5 @@ def test_list_pending_inclui_a_sessao_staged(client, monkeypatch):
     assert len(pending) == 1
     assert pending[0]["id"] == sid
     assert pending[0]["status"] == "pending"
-    assert pending[0]["draft_md"] == "# Preview staged"
+    assert pending[0]["draft_md"].startswith("---\n")
+    assert pending[0]["draft_md"].endswith("# Preview staged")

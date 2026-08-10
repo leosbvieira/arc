@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import store
+from app import main, store
 from app.config import settings
 from app.main import app, require_auth
 
@@ -130,3 +130,90 @@ def test_sessao_sem_book_id_segue_o_caminho_antigo(client):
     )
     assert resp.status_code == 200
     assert resp.json()["session"]["book_id"] is None
+
+
+def _sessao_com_buffer(client, obra_id=None):
+    corpo = {"client_key": "s1", "livro": "Sapiens", "pagina_inicial": 190, "inicio": 1.0}
+    if obra_id is not None:
+        corpo["book_id"] = obra_id
+    sid = client.post("/reading/sessions", json=corpo).json()["session"]["id"]
+    client.post(
+        f"/reading/sessions/{sid}/buffer",
+        json={"seq": 1, "hook": "comentario", "texto": "um comentário", "ts": 2.0},
+    )
+    return sid
+
+
+def test_draft_prefixa_o_frontmatter_antes_do_staging(client, monkeypatch):
+    obra = _nova_obra(client)
+    sid = _sessao_com_buffer(client, obra["id"])
+
+    async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
+        return "# Nota do Hermes"
+
+    monkeypatch.setattr(main.hermes_client, "compile_reading", compile_reading)
+
+    resp = client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+    assert resp.status_code == 200
+    draft = resp.json()["draft_md"]
+    assert draft.startswith("---\n")
+    assert 'livro: "Sapiens"' in draft
+    assert "paginas: 190-214" in draft
+    assert draft.endswith("# Nota do Hermes")
+    # O que ficou staged é o documento COMPLETO: é ele que o Leo aprova.
+    assert store.get_reading_session(sid)["draft_md"] == draft
+    assert store.get_reading_session(sid)["draft_fmt"] == 2
+
+
+def test_compile_recusa_draft_legado(client, monkeypatch):
+    obra = _nova_obra(client)
+    sid = _sessao_com_buffer(client, obra["id"])
+
+    async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
+        return "# Nota do Hermes"
+
+    monkeypatch.setattr(main.hermes_client, "compile_reading", compile_reading)
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+
+    # Simula o preview que já estava aberto no celular quando o deploy subiu.
+    with store.closing(store._connect()) as con:
+        con.execute("UPDATE reading_sessions SET draft_fmt = NULL WHERE id = ?", (sid,))
+        con.commit()
+
+    async def nunca(*_a, **_k):
+        raise AssertionError("o vault não pode ser tocado com draft legado")
+
+    monkeypatch.setattr(main.vault_client, "write_reading_note", nunca)
+
+    resp = client.post(
+        f"/reading/sessions/{sid}/compile",
+        json={"pagina_final": 214, "fim": 100.0, "duracao_s": 60},
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "reading_draft_desatualizado"
+    assert store.get_reading_session(sid)["status"] == "pending"
+
+
+def test_draft_legado_e_regenerado_e_nao_reusado(client, monkeypatch):
+    obra = _nova_obra(client)
+    sid = _sessao_com_buffer(client, obra["id"])
+    chamadas = {"n": 0}
+
+    async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
+        chamadas["n"] += 1
+        return "# Nota do Hermes"
+
+    monkeypatch.setattr(main.hermes_client, "compile_reading", compile_reading)
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+    assert chamadas["n"] == 1
+
+    # Mesmo digest, mas formato antigo: tem que regenerar.
+    with store.closing(store._connect()) as con:
+        con.execute("UPDATE reading_sessions SET draft_fmt = NULL WHERE id = ?", (sid,))
+        con.commit()
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+    assert chamadas["n"] == 2
+
+    # Formato atual e mesmo digest: reusa, sem chamar o Hermes de novo.
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 214})
+    assert chamadas["n"] == 2

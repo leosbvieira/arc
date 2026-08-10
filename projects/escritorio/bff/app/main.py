@@ -23,6 +23,7 @@ from . import (
     objetivos,
     pontos,
     reading_digest,
+    reading_frontmatter,
     routines,
     store,
     tasks,
@@ -1293,10 +1294,16 @@ async def draft_reading_session(
     )
 
     draft = session.get("draft_md")
-    if not (draft and session.get("source_digest") == source_digest):
-        # Idempotência: um preview salvo do mesmo snapshot é reusado sem chamar o Hermes.
+    reusavel = (
+        draft
+        and session.get("source_digest") == source_digest
+        and session.get("draft_fmt") == reading_frontmatter.DRAFT_FMT
+    )
+    if not reusavel:
+        # Idempotência: um preview salvo do mesmo snapshot E do mesmo formato é
+        # reusado sem chamar o Hermes. Formato antigo regenera e volta ao preview.
         try:
-            draft = await hermes_client.compile_reading(
+            nota = await hermes_client.compile_reading(
                 session["livro"],
                 session["buffer"],
                 pagina_inicial=session.get("pagina_inicial"),
@@ -1310,8 +1317,19 @@ async def draft_reading_session(
                 meta={"error": type(exc).__name__},
             )
             raise HTTPException(502, "reading_compile_indisponivel") from None
+        draft = (
+            reading_frontmatter.frontmatter(
+                livro=session["livro"],
+                pagina_inicial=session.get("pagina_inicial"),
+                pagina_final=body.pagina_final,
+                inicio=float(session["inicio"]),
+            )
+            + nota
+        )
 
-    session = store.stage_reading_draft(session_id, draft, source_digest)
+    session = store.stage_reading_draft(
+        session_id, draft, source_digest, reading_frontmatter.DRAFT_FMT
+    )
     store.log_event("reading_drafted", ref=str(session_id))
     return {"session": session, "draft_md": draft}
 
@@ -1380,6 +1398,11 @@ async def compile_reading_session(
         # O draft é pré-requisito: /draft roda antes e é o portão humano.
         store.release_reading_compile(session_id, "reading_draft_ausente")
         raise HTTPException(422, "reading_draft_ausente")
+    if session.get("draft_fmt") != reading_frontmatter.DRAFT_FMT:
+        # O preview já estava aberto no celular quando o deploy subiu: o digest
+        # continua válido, então nada mais barraria a publicação sem frontmatter.
+        store.release_reading_compile(session_id, "reading_draft_desatualizado")
+        raise HTTPException(409, "reading_draft_desatualizado")
     if draft and not session.get("source_digest"):
         store.release_reading_compile(session_id, "reading_draft_snapshot_nao_verificavel")
         raise HTTPException(409, "reading_draft_snapshot_nao_verificavel")
