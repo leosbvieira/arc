@@ -46,51 +46,17 @@
 
 ---
 
-### Task 1: Portão — contrato do TSV do Anki
+### Task 1: (resolvida antes do plano começar)
 
-Este é o único ponto do plano que depende de fato externo. **Nenhuma linha de código antes dele**, porque o resultado decide a forma da Task 9.
+O portão do TSV era: `#deck column:N` funciona na versão de Anki do Leo?
 
-**Files:**
-- Modify: `development/ESTANTE-SPEC.md` (seção "Anki: formato do TSV")
+**Resolvido:** o Anki do Leo é de 2026, e o header existe desde a 2.1.55 (fim de 2022). O caminho é **um arquivo só, com deck por linha**. A Task 8 implementa essa forma; a bifurcação "um arquivo por deck" foi descartada.
 
-- [ ] **Step 1: Descobrir a versão do Anki do Leo**
+Sobrava uma segunda incerteza — em que deck cai uma célula de deck **vazia**, já que os cards antigos têm `deck=''`. Ela foi resolvida por desenho, não por teste: **o TSV nunca emite célula vazia**. Card sem obra sai no deck-pai `Leitura`. Isso remove a pergunta em vez de respondê-la, e o comportamento resultante é o certo de qualquer forma — um card de leitura sem obra ainda é um card de leitura.
 
-Perguntar ao Leo, ou abrir o Anki → Ajuda → Sobre. Anotar a versão exata (ex.: `24.06.3`).
+O banco continua guardando `''` para card sem obra: o `deck` gravado diz o que o sistema sabe, e o fallback é uma decisão de **serialização**, que mora no `anki.py`. Não misturar as duas coisas é o que permite, na fatia 2, reclassificar cards antigos se algum dia valer a pena.
 
-- [ ] **Step 2: Gerar um TSV de fixture com deck por linha**
-
-Criar o arquivo no scratchpad (não no repositório), exatamente com estes bytes, tabs de verdade entre os campos:
-
-```
-#separator:tab
-#html:false
-#deck column:5
-frente A	significado A	exemplo A	gancho A	Leitura::Livro Um
-frente B	significado B	exemplo B	gancho B	Leitura::Livro Dois
-```
-
-- [ ] **Step 3: Importar no Anki e observar**
-
-Anki → Arquivo → Importar → escolher o arquivo. Verificar as três coisas:
-1. Os dois cards caíram em decks **diferentes** (`Leitura::Livro Um` e `Leitura::Livro Dois`)?
-2. As linhas `#...` viraram card, ou foram lidas como cabeçalho?
-3. Repetir com uma linha de deck **vazia** e conferir em que deck ela cai.
-
-Desfazer a importação depois (Editar → Desfazer), para não sujar a coleção.
-
-- [ ] **Step 4: Registrar o resultado na spec**
-
-Abrir `development/ESTANTE-SPEC.md`, seção "Anki: formato do TSV — portão antes de implementar". Substituir o texto dos dois desfechos pelo que aconteceu:
-
-- **Se funcionou:** escrever a versão testada, os bytes exatos dos headers, e em que deck a linha vazia caiu. A Task 9 implementa **um arquivo só**.
-- **Se não funcionou:** escrever o que o Anki fez (headers viraram card? coluna ignorada?) e registrar que a Task 9 implementa **um arquivo por deck**, cada um com `#deck:<nome>` fixo no topo, com `exportar_anki` devolvendo N arquivos.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add projects/escritorio/development/ESTANTE-SPEC.md
-git commit -m "docs(escritorio): fecha o contrato do TSV contra o Anki real"
-```
+Nada a implementar aqui. Seguir para a Task 2.
 
 ---
 
@@ -1444,7 +1410,7 @@ def test_anki_sugerir_sem_session_id_nao_quebra(client, monkeypatch):
     assert resp.json()["cards"][0]["deck"] == ""
 ```
 
-E o teste do TSV, **na forma decidida pela Task 1**. Se o Anki suporta coluna de deck:
+E o teste do TSV:
 
 ```python
 def test_tsv_carrega_o_deck_por_linha():
@@ -1457,9 +1423,16 @@ def test_tsv_carrega_o_deck_por_linha():
     )
     corpo = [l for l in linhas.splitlines() if not l.startswith("#")]
     assert corpo[0].split("\t")[4] == "Leitura::Sapiens"
-    # Card antigo, sem deck, ainda sai íntegro com as cinco colunas.
-    assert corpo[1].split("\t") == ["e", "f", "g", "h", ""]
-    assert linhas.startswith("#separator:tab")
+    # Card antigo, sem obra: cai no deck-pai. O TSV NUNCA emite célula vazia —
+    # é o que dispensa saber o que o Anki faria com ela.
+    assert corpo[1].split("\t") == ["e", "f", "g", "h", "Leitura"]
+    assert linhas.startswith("#separator:tab\n")
+
+
+def test_tsv_nunca_emite_celula_de_deck_vazia():
+    for card in ({"frente": "a"}, {"frente": "a", "deck": None}, {"frente": "a", "deck": "  "}):
+        corpo = [l for l in anki.tsv([card]).splitlines() if not l.startswith("#")]
+        assert corpo[0].split("\t")[4] == "Leitura"
 ```
 
 - [ ] **Step 2: Rodar e ver falhar**
@@ -1469,7 +1442,7 @@ Expected: FAIL com `AttributeError: module 'app.anki' has no attribute 'deck_par
 
 - [ ] **Step 3: `deck_para_livro` e a coluna no TSV**
 
-Reescrever `bff/app/anki.py` (usar os headers **confirmados na Task 1**):
+Reescrever `bff/app/anki.py`:
 
 ```python
 """Regras de serialização dos candidatos aprovados para o Anki."""
@@ -1492,9 +1465,12 @@ def deck_para_livro(titulo: str) -> str:
 def tsv(cards: list[dict]) -> str:
     """Cinco colunas sem permitir que um campo quebre a grade do import.
 
-    O deck vai por LINHA, não por arquivo: um export carrega cards de obras
-    diferentes. Os headers foram confirmados contra o Anki real (ver ESTANTE-SPEC.md,
-    seção "Anki: formato do TSV").
+    O deck vai por LINHA (`#deck column:5`), e não por arquivo: um export carrega
+    cards de obras diferentes.
+
+    Célula de deck vazia NUNCA é emitida — card sem obra cai no deck-pai. O banco
+    guarda '' porque é o que o sistema sabe; o fallback é decisão de serialização e
+    mora aqui. Assim não dependemos do que o Anki faria com uma célula vazia.
     """
     linhas: list[str] = ["#separator:tab\n", "#html:false\n", "#deck column:5\n"]
 
@@ -1511,12 +1487,13 @@ def tsv(cards: list[dict]) -> str:
             )
             campos.append(texto)
 
+        if not campos[-1].strip():
+            campos[-1] = DECK_PAI
+
         linhas.append("\t".join(campos) + "\n")
 
     return "".join(linhas)
 ```
-
-**Se a Task 1 decidiu "um arquivo por deck":** manter `tsv(cards)` sem os headers e sem a quinta coluna, e acrescentar `tsv_por_deck(cards: list[dict]) -> dict[str, str]`, que agrupa por `card["deck"]` e devolve `{deck: conteúdo}` com `#deck:<nome>` no topo de cada. `exportar_anki` em `main.py:2137` passa a gravar N arquivos. Ajustar o teste do Step 1 para essa forma.
 
 - [ ] **Step 4: Levar o deck até o INSERT**
 
@@ -2224,7 +2201,7 @@ git commit -m "feat(escritorio): a leitura para de perguntar o que voce ja disse
 | Endpoints de obra, terminar/reabrir (D-Q) | 5 |
 | Frontmatter (D-H), YAML seguro | 6, 7 |
 | `draft_fmt` nos dois endpoints (D-O) | 7 |
-| Deck nos três pontos (D-F), TSV | 1 (portão), 8 |
+| Deck nos três pontos (D-F), TSV | 8 |
 | Tela da estante | 9, 10, 11 |
 
 **Anotado de propósito:** os testes de `test_estante_sessao.py` ficam vermelhos entre a Task 4 e a Task 5 — está escrito no Step 6 da Task 4. É a única quebra de "cada task termina verde" do plano, e existe porque separar o modelo da rota deixa as duas revisáveis em separado.

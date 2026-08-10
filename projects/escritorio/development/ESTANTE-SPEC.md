@@ -289,25 +289,31 @@ mesmo `draft_fmt`, mesmo frontmatter, sem segunda chamada ao Hermes.
 
 O path e a mensagem de commit **não mudam** (D-E).
 
-## Anki: formato do TSV — portão antes de implementar
+## Anki: formato do TSV
 
-`anki.tsv()` ganha a quinta coluna (deck) e o arquivo ganha headers. Um export carrega cards
-de obras diferentes, então precisa ser **deck por linha**, não `#deck:` fixo por arquivo.
+`anki.tsv()` ganha a quinta coluna (deck) e o arquivo ganha headers:
 
-**Este é o único ponto da spec que depende de fato externo.** Antes da primeira linha de
-código: importar um TSV de fixture com header de coluna de deck na versão de Anki que o Leo
-usa. Os dois desfechos:
+```
+#separator:tab
+#html:false
+#deck column:5
+```
 
-- **Suporta** → header no arquivo, quinta coluna por linha, um export só.
-- **Não suporta** → **um arquivo por deck**, cada um com `#deck:` fixo no topo.
-  `claim_anki_export` agrupa por deck e `exportar_anki` devolve N arquivos.
+O deck vai **por linha**, não `#deck:` fixo por arquivo: um export carrega cards de obras
+diferentes. `#deck column:N` existe desde o Anki 2.1.55 (fim de 2022); o Anki do Leo é de
+2026.
 
-Os bytes exatos do header, a versão testada e — no segundo desfecho — o contrato de retorno de
-múltiplos arquivos entram nesta spec junto com o resultado. Card antigo com `deck=''` cai no
-deck padrão: confirmado no mesmo teste, não assumido.
+**Célula de deck vazia nunca é emitida.** Card sem obra sai no deck-pai `Leitura`. Isso
+elimina a pergunta "o que o Anki faz com uma célula vazia?" em vez de respondê-la — e o
+resultado é o certo de qualquer forma: um card de leitura sem obra ainda é um card de leitura.
 
-**O revisor manteve isto como "não resolvido" nas três rodadas, e com razão:** não fecha
-escrevendo spec. Fecha importando o fixture.
+O banco continua guardando `deck=''` para card sem obra. O gravado diz **o que o sistema
+sabe**; o fallback é decisão de **serialização** e mora no `anki.py`. Separar as duas coisas é
+o que permitiria, depois, reclassificar cards antigos sem reescrever histórico.
+
+**Nota das revisões:** o revisor manteve este item como "não resolvido" nas três rodadas,
+corretamente — enquanto o contrato dependia de testar o comportamento da célula vazia, não
+fechava escrevendo spec. O que fechou não foi o teste: foi tirar a dependência do desenho.
 
 ## Migração
 
