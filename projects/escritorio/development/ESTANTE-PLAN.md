@@ -2007,6 +2007,20 @@ E junto dos outros `useState` do modo leitura:
     setNewBookMode(false);
   }
 
+**Editar o título à mão desfaz a seleção.** Depois que a estante existe, `selectedBookId` pode ficar apontando para uma obra enquanto o campo de texto mostra outra coisa — o usuário escolhe "Sapiens", depois edita o texto. O servidor ignora `livro` quando vem `book_id`, então não corrompe dado, mas a tela mostraria uma coisa e gravaria outra. Editar o campo é a forma de dizer "não é essa obra", então a edição limpa a seleção e cai no caminho de obra nova:
+
+```typescript
+  function editarTitulo(value: string): void {
+    updateReadingField(setBook, value);
+    // Mexer no texto é dizer "não é essa obra". Sem isso, a tela mostra um
+    // título e a sessão grava outro — o servidor ignora `livro` quando há
+    // `book_id`, então o estrago é de rótulo, não de dado. Mas é estrago.
+    if (selectedBookId !== null) setSelectedBookId(null);
+  }
+```
+
+Usar `editarTitulo` no `onChangeText` do campo de livro, no lugar de `updateReadingField(setBook, ...)`.
+
   async function criarObra(): Promise<void> {
     const titulo = book.trim();
     if (!titulo) return;
