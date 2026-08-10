@@ -401,6 +401,12 @@ O que a revisão hostil deixou registrado como pendência desta fatia, para não
 
 - **Status `terminando` + claim** volta a ser necessário, porque `terminar` passa a ter efeito
   externo. Com ele voltam a recuperação de lease e a questão do fencing.
+- **Os `rowcount != 1` da fatia 1 viram ambíguos no momento em que existir um terceiro
+  status.** Hoje `terminar_book` e `reabrir_book` devolvem `ja_terminado`/`ja_lendo` para
+  qualquer status inesperado, e isso está certo porque só existem dois. Assim que `terminando`
+  entrar, um `reabrir` durante o fechamento responderia `ja_lendo` — mentira. As duas funções
+  precisam reler o status e discriminar antes de devolver o estado. (Achado do revisor da
+  Task 4 na implementação da fatia 1.)
 - **POST ambíguo:** se o ClickUp cria a tarefa mas a resposta se perde, liberar para `lendo` é
   errado — uma sessão nova entraria no ciclo e o retry reconciliaria uma tarefa que não a
   contém. A obra deve **ficar em `terminando`** até se provar que nenhuma tarefa foi criada.
