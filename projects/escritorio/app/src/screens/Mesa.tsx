@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 
-import { Abertura, Shutdown, getAbertura, getShutdown, getTriagem, listAnkiCards } from "../api";
+import { Abertura, Shutdown, getAbertura, getShutdown, listAnkiCards } from "../api";
 import { listPendingReadingSessions } from "../readingApi";
 import { MesaSinais, montarMesa } from "../mesaView";
 import { POINTS, colors, fonts, radius, spacing } from "../theme";
@@ -37,7 +37,6 @@ const VISUAL: Record<string, { icon: string; color: string }> = {
 const FALLBACK_VISUAL = { icon: "circle", color: colors.textMuted };
 
 export default function Mesa({ onOpenTab }: { onOpenTab?: (tab: string) => void }) {
-  const [triagemN, setTriagemN] = useState<number | null>(null);
   const [anki, setAnki] = useState<number | null>(null);
   const [leituras, setLeituras] = useState<number | null>(null);
   const [abertura, setAbertura] = useState<Abertura | null>(null);
@@ -74,8 +73,13 @@ export default function Mesa({ onOpenTab }: { onOpenTab?: (tab: string) => void 
       }
     };
 
+    // A contagem do Staging NÃO vem de `/triagem`. Aquele endpoint roda o Hermes
+    // para propor destino item a item (11,6s medidos em 09/ago) e a Mesa usava
+    // dele um número só — que o `/shutdown` já devolve em `staging.n`, na mesma
+    // chamada de onde já vinha o `mais_velho_d`. Com o timeout de 6s daqui, a
+    // chamada estourava SEMPRE: a Mesa esperava 6s fixos, acendia a faixa de
+    // "alguns dados não responderam" e jogava a Triagem no arquivo sem contador.
     await Promise.all([
-      run("triagem", getTriagem(), (value) => setTriagemN(value.n)),
       run("anki", listAnkiCards("sugerido"), (value) => setAnki(value.length)),
       run("leituras", listPendingReadingSessions(), (value) => setLeituras(value.sessions.length)),
       run("abertura", getAbertura(), setAbertura),
@@ -97,12 +101,15 @@ export default function Mesa({ onOpenTab }: { onOpenTab?: (tab: string) => void 
 
   const partial = failures.size > 0;
 
-  // A idade do item mais velho da triagem vem do shutdown: se o shutdown
-  // falhou mas a triagem não, maisVelhoD fica null e o sub cai para
-  // "N itens parados". Não invente.
+  // Contagem e idade do Staging vêm da MESMA chamada (`/shutdown`), então ou as
+  // duas existem ou nenhuma existe — sem o meio-termo de antes, em que a idade
+  // podia faltar com a contagem presente.
   const sinais: MesaSinais = {
-    triagem: loaded.has("triagem")
-      ? { n: triagemN ?? 0, maisVelhoD: loaded.has("shutdown") ? shutdown?.staging.mais_velho_d ?? null : null }
+    triagem: loaded.has("shutdown")
+      ? {
+          n: shutdown?.staging.n ?? 0,
+          maisVelhoD: shutdown?.staging.mais_velho_d ?? null,
+        }
       : null,
     anki: loaded.has("anki") ? anki : null,
     leituras: loaded.has("leituras") ? leituras : null,
