@@ -2196,7 +2196,11 @@ async def sugerir_anki(
     try:
         deck = ""
         if body.session_id is not None:
-            sessao = store.get_reading_session(body.session_id)
+            # body.session_id aqui é um sessions.id (a sessão JÁ compilada) — não um
+            # reading_sessions.id. As duas tabelas têm AUTOINCREMENT independentes,
+            # então o mesmo número pode ser linhas diferentes; a busca precisa ir no
+            # sentido inverso, por compiled_session_id.
+            sessao = store.get_reading_session_by_compiled_id(body.session_id)
             deck = _deck_da_sessao(sessao) if sessao else ""
         cards = (
             store.finish_anki_suggestion(body.session_id, candidatos, deck)

@@ -323,3 +323,69 @@ def test_tsv_nunca_emite_celula_de_deck_vazia():
     for card in ({"frente": "a"}, {"frente": "a", "deck": None}, {"frente": "a", "deck": "  "}):
         corpo = [l for l in anki.tsv([card]).splitlines() if not l.startswith("#")]
         assert corpo[0].split("\t")[4] == "Leitura"
+
+
+def test_anki_sugerir_resolve_deck_pela_sessao_compilada_certa(client, monkeypatch):
+    # `sessions.id` e `reading_sessions.id` são AUTOINCREMENT independentes: o
+    # mesmo número pode nomear linhas de obras diferentes. Esta armadilha força a
+    # colisão para provar que /anki/sugerir busca a sessão de leitura que RESULTOU
+    # na compilação (via compiled_session_id), não a que só tem o id parecido.
+    obra_b = _nova_obra(client, "Livro B")
+    armadilha = client.post(
+        "/reading/sessions",
+        json={"client_key": "decoy", "livro": "Livro B", "inicio": 1.0, "book_id": obra_b["id"]},
+    ).json()["session"]["id"]
+
+    obra_a = _nova_obra(client, "Livro A")
+    sid = client.post(
+        "/reading/sessions",
+        json={
+            "client_key": "alvo",
+            "livro": "Livro A",
+            "pagina_inicial": 1,
+            "inicio": 1.0,
+            "book_id": obra_a["id"],
+        },
+    ).json()["session"]["id"]
+    client.post(
+        f"/reading/sessions/{sid}/buffer",
+        json={"seq": 1, "hook": "comentario", "texto": "nota", "ts": 2.0},
+    )
+
+    async def compile_reading(livro, chunks, pagina_inicial=None, pagina_final=None):
+        return "# Nota"
+
+    async def write_reading_note(*_a, **_k):
+        return "Leituras/x.md"
+
+    async def suggest_anki_falha(notas):
+        # Faz o compile terminar SEM consumir a sugestão automática, para poder
+        # chamar /anki/sugerir manualmente depois e observar a resolução de deck.
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(main.hermes_client, "compile_reading", compile_reading)
+    monkeypatch.setattr(main.vault_client, "write_reading_note", write_reading_note)
+    monkeypatch.setattr(main.hermes_client, "suggest_anki", suggest_anki_falha)
+
+    client.post(f"/reading/sessions/{sid}/draft", json={"pagina_final": 10})
+    compile_resp = client.post(
+        f"/reading/sessions/{sid}/compile",
+        json={"pagina_final": 10, "fim": 100.0, "duracao_s": 60},
+    )
+    assert compile_resp.status_code == 200
+    assert compile_resp.json()["anki_status"] == "pending"
+    compiled_session_id = compile_resp.json()["session"]["compiled_session_id"]
+    # A armadilha só prova algo se os ids realmente colidirem.
+    assert compiled_session_id == armadilha
+
+    async def suggest_anki_ok(notas):
+        return [{"frente": "f", "meaning": "m", "example": "e", "hook": "h"}]
+
+    monkeypatch.setattr(main.hermes_client, "suggest_anki", suggest_anki_ok)
+
+    resp = client.post(
+        "/anki/sugerir",
+        json={"notas": "algum texto", "session_id": compiled_session_id},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["cards"][0]["deck"] == "Leitura::Livro A"

@@ -1166,6 +1166,24 @@ def get_reading_session(session_id: int) -> dict | None:
         return _reading_payload(con, row) if row is not None else None
 
 
+def get_reading_session_by_compiled_id(compiled_session_id: int) -> dict | None:
+    """Sentido inverso de `compiled_session_id`: de `sessions.id` para a
+    `reading_sessions` que o gerou.
+
+    `sessions.id` e `reading_sessions.id` são sequências AUTOINCREMENT
+    independentes — mesmo valor numérico não implica mesma linha. Cada
+    `reading_sessions` só grava seu próprio `compiled_session_id` (via
+    `session_key=f"reading:{id}"`, único), então no máximo uma linha aqui
+    corresponde a um dado `compiled_session_id`.
+    """
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT * FROM reading_sessions WHERE compiled_session_id = ?",
+            (compiled_session_id,),
+        ).fetchone()
+        return _reading_payload(con, row) if row is not None else None
+
+
 def list_pending_reading_sessions() -> list[dict]:
     """Inclui uma compilação em voo: a fila nunca some enquanto não finalizar."""
     with closing(_connect()) as con:
