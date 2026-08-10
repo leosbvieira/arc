@@ -188,8 +188,13 @@ nem invalida digests de sessões compiladas.
 **Por que `book_id` NÃO entra no `source_digest`:** a única coisa que a obra determina é o
 título, e o título já está no digest, copiado e imutável. Deck e frontmatter derivam desse
 mesmo título. Acrescentar `book_id` invalidaria drafts antigos sem cobrir nada novo. `book_id`
-**entra** no `ReadingSession` devolvido pela API (o app precisa para a tela) e no
-`ReadingSnapshot` como campo informativo, não comparado.
+**entra** no `ReadingSession` devolvido pela API, porque o app precisa dele para a tela.
+
+**E não entra no `ReadingSnapshot`.** A revisão 3 dizia que entraria "como campo informativo,
+não comparado" — errado, e seguir aquela frase quebraria o reconcile: `ReadingReconcileIn` é
+`model_config = {"extra": "forbid"}`, então mandar o campo devolveria 422 em toda reconciliação.
+(Corrigido na revisão final da fatia 1, antes que uma fatia seguinte "completasse" o que a
+frase pedia.)
 
 ## Endpoints
 
