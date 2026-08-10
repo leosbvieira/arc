@@ -560,6 +560,7 @@ export default function Capture({
       const created = await createReadingSession({
         client_key: snapshot.sessionKey,
         livro: snapshot.book,
+        book_id: snapshot.bookId,
         pagina_inicial: numericPage(snapshot.pageStart),
         inicio: snapshot.startedAt / 1000,
       });
