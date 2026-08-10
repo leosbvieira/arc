@@ -985,6 +985,38 @@ def get_book(book_id: int) -> dict | None:
     return None if row is None else dict(row)
 
 
+_ESTANTE_SQL = """
+SELECT
+  b.id, b.titulo, b.status, b.ciclo,
+  (SELECT s.pagina_final FROM reading_sessions s
+     WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
+       AND s.status = 'compiled' AND s.pagina_final IS NOT NULL
+     ORDER BY s.compiled_at DESC, s.id DESC LIMIT 1) AS pagina_atual,
+  (SELECT MAX(s.compiled_at) FROM reading_sessions s
+     WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
+       AND s.status = 'compiled') AS ultima_sessao,
+  (SELECT COUNT(*) FROM reading_sessions s
+     WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
+       AND s.status = 'compiled') AS sessoes_n
+FROM books b
+WHERE b.status = ?
+ORDER BY ultima_sessao IS NULL, ultima_sessao DESC, b.id DESC
+"""
+
+
+def list_books(status: str = "lendo") -> list[dict]:
+    """Estante: uma query só, com o progresso derivado das sessões do ciclo atual.
+
+    `pagina_atual` ordena por `compiled_at` (relógio do servidor) e não por `fim`,
+    que vem do cliente — celular atrasado apontaria a sessão errada como a última.
+    `ultima_sessao IS NULL` primeiro no ORDER BY faz obra sem leitura cair no fim
+    sem depender de NULLS LAST, que nem toda versão de SQLite tem.
+    """
+    with closing(_connect()) as con:
+        rows = con.execute(_ESTANTE_SQL, (status,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 # --- reading_sessions / reading_buffer (B7) ---------------------------------
 
 
@@ -1005,6 +1037,7 @@ def create_reading_session(
     livro: str,
     pagina_inicial: int | None = None,
     inicio: float | None = None,
+    book_id: int | None = None,
 ) -> tuple[dict, bool]:
     """Cria uma sessão retomável; retry da mesma client_key devolve a original."""
     agora = time.time()
@@ -1019,11 +1052,33 @@ def create_reading_session(
             con.commit()
             return _reading_payload(con, row), False
 
+        book_ciclo = None
+        if book_id is not None:
+            book = con.execute(
+                "SELECT * FROM books WHERE id = ?", (book_id,)
+            ).fetchone()
+            if book is None:
+                con.rollback()
+                raise ValueError("book_nao_encontrado")
+            # O ciclo é COPIADO, nunca inferido por tempo: `inicio` vem do cliente.
+            book_ciclo = book["ciclo"]
+            livro = book["titulo"]
+
         cur = con.execute(
             "INSERT INTO reading_sessions "
-            "(client_key, livro, pagina_inicial, inicio, created, updated) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (client_key, livro, pagina_inicial, inicio_real, agora, agora),
+            "(client_key, livro, pagina_inicial, inicio, created, updated, "
+            "book_id, book_ciclo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                client_key,
+                livro,
+                pagina_inicial,
+                inicio_real,
+                agora,
+                agora,
+                book_id,
+                book_ciclo,
+            ),
         )
         row = con.execute(
             "SELECT * FROM reading_sessions WHERE id = ?",
@@ -1344,11 +1399,13 @@ def finish_reading_compile(
     source_digest: str,
 ) -> dict:
     with closing(_connect()) as con:
+        agora = time.time()
         con.execute("BEGIN IMMEDIATE")
         cur = con.execute(
             "UPDATE reading_sessions SET status = 'compiled', vault_path = ?, "
             "compiled_session_id = ?, pagina_final = COALESCE(?, pagina_final), "
-            "fim = ?, source_digest = ?, last_error = NULL, updated = ? "
+            "fim = ?, source_digest = ?, last_error = NULL, updated = ?, "
+            "compiled_at = ? "
             "WHERE id = ? AND status = 'compiling'",
             (
                 vault_path,
@@ -1356,7 +1413,8 @@ def finish_reading_compile(
                 pagina_final,
                 fim,
                 source_digest,
-                time.time(),
+                agora,
+                agora,
                 session_id,
             ),
         )

@@ -53,3 +53,66 @@ def test_migracao_e_idempotente(db):
     store.init_db()
     criada, _ = store.create_book("Sapiens")
     assert criada["id"] > 0
+
+
+def _sessao_compilada(book_id, *, pagina_final, compiled_at, fim, key):
+    """Grava direto na store o estado que /compile deixaria, para testar a derivada
+    sem subir o pipeline inteiro de leitura.
+
+    Não recebe o ciclo: quem o define é `create_reading_session`, copiando de
+    `books.ciclo`. Passá-lo aqui esconderia justamente o que se quer testar.
+    """
+    sessao, _ = store.create_reading_session(
+        key, "irrelevante", pagina_inicial=1, inicio=1.0, book_id=book_id
+    )
+    with store.closing(store._connect()) as con:
+        con.execute(
+            "UPDATE reading_sessions SET status='compiled', pagina_final=?, "
+            "compiled_at=?, fim=? WHERE id=?",
+            (pagina_final, compiled_at, fim, sessao["id"]),
+        )
+        con.commit()
+    return sessao["id"]
+
+
+def test_pagina_atual_e_da_sessao_compilada_mais_recente(db):
+    livro, _ = store.create_book("Sapiens")
+    _sessao_compilada(livro["id"], pagina_final=100, compiled_at=10.0, fim=10.0, key="a")
+    _sessao_compilada(livro["id"], pagina_final=214, compiled_at=20.0, fim=20.0, key="b")
+
+    estante = store.list_books("lendo")
+    assert estante[0]["pagina_atual"] == 214
+    assert estante[0]["sessoes_n"] == 2
+    assert estante[0]["ultima_sessao"] == 20.0
+
+
+def test_pagina_atual_ignora_o_relogio_do_celular(db):
+    # A segunda sessão foi compilada depois (compiled_at maior) mas mandou um `fim`
+    # atrasado. Ordenar por `fim` apontaria a página errada.
+    livro, _ = store.create_book("Sapiens")
+    _sessao_compilada(livro["id"], pagina_final=100, compiled_at=10.0, fim=999.0, key="a")
+    _sessao_compilada(livro["id"], pagina_final=214, compiled_at=20.0, fim=5.0, key="b")
+
+    assert store.list_books("lendo")[0]["pagina_atual"] == 214
+
+
+def test_sessao_recente_sem_pagina_final_nao_apaga_o_progresso(db):
+    livro, _ = store.create_book("Sapiens")
+    _sessao_compilada(livro["id"], pagina_final=214, compiled_at=10.0, fim=10.0, key="a")
+    _sessao_compilada(livro["id"], pagina_final=None, compiled_at=20.0, fim=20.0, key="b")
+
+    assert store.list_books("lendo")[0]["pagina_atual"] == 214
+
+
+def test_obra_sem_sessao_compilada(db):
+    store.create_book("Recém-criada")
+    linha = store.list_books("lendo")[0]
+    assert linha["pagina_atual"] is None
+    assert linha["ultima_sessao"] is None
+    assert linha["sessoes_n"] == 0
+
+
+def test_derivadas_ignoram_sessao_pendente(db):
+    livro, _ = store.create_book("Sapiens")
+    store.create_reading_session("p", "Sapiens", inicio=1.0, book_id=livro["id"])
+    assert store.list_books("lendo")[0]["sessoes_n"] == 0
