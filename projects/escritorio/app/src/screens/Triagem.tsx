@@ -17,6 +17,7 @@ import {
   aplicarTriagem,
   getTriagem,
 } from "../api";
+import { faixaDeDias } from "../agendaDias";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { resumoDaTriagem } from "../triagemResultado";
 import { AppButton, Card, ErrorState, Skeleton } from "../ui";
@@ -25,6 +26,9 @@ export default function Triagem() {
   const [itens, setItens] = useState<ItemTriagem[]>([]);
   const [escolhas, setEscolhas] = useState<Record<string, AreaTriagem | null>>({});
   const [aprovados, setAprovados] = useState<Record<string, boolean>>({});
+  // Ausente = sem prazo, que é o padrão. Triar diz ONDE; dizer QUANDO é opcional,
+  // senão o gesto rápido vira formulário e o Staging para de esvaziar.
+  const [prazos, setPrazos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [aplicando, setAplicando] = useState(false);
@@ -42,6 +46,7 @@ export default function Triagem() {
       );
       // Sugestão nunca equivale a aprovação: todo lote começa desmarcado.
       setAprovados({});
+      setPrazos({});
       setError(false);
     } catch {
       setError(true);
@@ -64,9 +69,26 @@ export default function Triagem() {
     setAprovados((atual) => ({ ...atual, [item.id]: !atual[item.id] }));
   }
 
+  // Calculado a cada render, não no módulo: o app fica aberto atravessando a
+  // meia-noite, e um "hoje" congelado no carregamento marcaria a data de ontem.
+  const diasDePrazo = faixaDeDias().slice(0, 3);
+
+  function alternarPrazo(item: ItemTriagem, data: string) {
+    setPrazos((atual) => {
+      const proximo = { ...atual };
+      // Tocar no chip aceso apaga o prazo: é como se volta a "sem data" sem um
+      // terceiro chip só para isso.
+      if (proximo[item.id] === data) delete proximo[item.id];
+      else proximo[item.id] = data;
+      return proximo;
+    });
+  }
+
   const movimentos = itens.flatMap((item) => {
     const area = escolhas[item.id];
-    return aprovados[item.id] && area ? [{ task_id: item.id, area }] : [];
+    if (!aprovados[item.id] || !area) return [];
+    const due = prazos[item.id];
+    return [due ? { task_id: item.id, area, due } : { task_id: item.id, area }];
   });
 
   function confirmarLote() {
@@ -183,6 +205,27 @@ export default function Triagem() {
                     );
                   })}
                 </View>
+
+                <View style={styles.prazos}>
+                  <Text style={styles.prazoLabel}>prazo</Text>
+                  {diasDePrazo.map((dia) => {
+                    const on = prazos[item.id] === dia.data;
+                    return (
+                      <Pressable
+                        key={dia.data}
+                        onPress={() => alternarPrazo(item, dia.data)}
+                        style={[styles.prazoPill, on && styles.prazoPillOn]}
+                      >
+                        <Text style={[styles.prazoText, on && styles.prazoTextOn]}>
+                          {dia.rotulo}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                  {prazos[item.id] ? null : (
+                    <Text style={styles.prazoVazio}>sem data</Text>
+                  )}
+                </View>
               </Card>
             );
           })
@@ -220,6 +263,13 @@ const styles = StyleSheet.create({
   areas: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   areaPill: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 6 },
   areaText: { fontFamily: fonts.ui, fontSize: 11, color: colors.textMuted },
+  prazos: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  prazoLabel: { fontFamily: fonts.ui, fontSize: 10.5, color: colors.textMuted, marginRight: 2 },
+  prazoPill: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5 },
+  prazoPillOn: { borderColor: colors.primary, backgroundColor: `${colors.primary}22` },
+  prazoText: { fontFamily: fonts.ui, fontSize: 11, color: colors.textMuted },
+  prazoTextOn: { color: colors.primary },
+  prazoVazio: { fontFamily: fonts.ui, fontSize: 10.5, color: colors.textMuted, opacity: 0.7 },
   emptyCard: { alignItems: "center", gap: spacing.xs, paddingVertical: spacing.xl },
   emptyTitle: { fontFamily: fonts.uiSemi, fontSize: 18, color: colors.text },
   emptyText: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted },

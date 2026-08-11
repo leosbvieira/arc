@@ -777,6 +777,10 @@ class MovimentoIn(BaseModel):
 
     task_id: str
     area: str
+    # Opcional de propósito: triar sem prazo continua sendo um toque. Obrigar data
+    # transformaria o gesto rápido em formulário, e a triagem existe justamente para
+    # esvaziar o Staging depressa.
+    due: str | None = None
 
     @field_validator("area")
     @classmethod
@@ -785,6 +789,20 @@ class MovimentoIn(BaseModel):
         if value not in tasks.AREAS or value == "Staging":
             raise ValueError("area inválida para triagem")
         return value
+
+    @field_validator("due")
+    @classmethod
+    def validar_due(cls, valor: str | None) -> str | None:
+        """Fail-closed igual ao create e ao adiar: data ambígua não vira cobrança."""
+        if valor is None:
+            return None
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", valor):
+            raise ValueError("due inválido; use YYYY-MM-DD")
+        try:
+            date.fromisoformat(valor)
+        except ValueError:
+            raise ValueError("due inválido; use YYYY-MM-DD") from None
+        return valor
 
 
 class TriagemAplicarIn(BaseModel):
@@ -2307,7 +2325,7 @@ async def triagem_aplicar(
 ):
     """Aplica somente os movimentos enviados explicitamente pelo Leo."""
     movimentos = [
-        (movimento.task_id, movimento.area)
+        (movimento.task_id, movimento.area, movimento.due)
         for movimento in body.movimentos
     ]
     return {"resultados": await tasks.aplicar_triagem(movimentos)}

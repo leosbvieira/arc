@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app import clickup_client, hermes_client, store, tasks
+from app import clickup_client, hermes_client, store, tasks, tz
 from app.config import settings
 from app.main import app, require_auth
 
@@ -213,16 +213,19 @@ def test_post_triagem_aplicar_mock_e_validacoes(client, monkeypatch):
                 "task_id": "staging-post",
                 "ok": True,
                 "erro": None,
+                "prazo": None,
             },
             {
                 "task_id": "desconhecida",
                 "ok": False,
                 "erro": "nao_encontrado",
+                "prazo": None,
             },
             {
                 "task_id": "t1",
                 "ok": False,
                 "erro": "fora_do_staging",
+                "prazo": None,
             },
         ]
     }
@@ -291,17 +294,18 @@ async def test_aplicar_triagem_clickup_confere_staging(monkeypatch):
 
     resultados = await tasks.aplicar_triagem(
         [
-            ("s1", "Corpo"),
-            ("fora", "Finance"),
+            ("s1", "Corpo", None),
+            ("fora", "Finance", None),
         ]
     )
 
     assert resultados == [
-        {"task_id": "s1", "ok": True, "erro": None},
+        {"task_id": "s1", "ok": True, "erro": None, "prazo": None},
         {
             "task_id": "fora",
             "ok": False,
             "erro": "fora_do_staging",
+            "prazo": None,
         },
     ]
     assert movimentos_clickup == [
@@ -314,3 +318,99 @@ async def test_aplicar_triagem_clickup_confere_staging(monkeypatch):
             {"n": 1, "erros": 1},
         )
     ]
+
+
+# ---- prazo opcional na triagem ------------------------------------------------
+#
+# Triar dizia só ONDE a tarefa mora. A tarefa saía do Staging, caía na área sem data
+# nenhuma, e "hoje" no app se monta por data de vencimento: ela sumia do Staging e não
+# aparecia em lugar que cobrasse. Triar é o momento natural de dizer QUANDO.
+
+
+def _clickup_falso(monkeypatch, *, prazos, set_due_resultado=True, explode=False):
+    """Staging para todo mundo, move sempre ok, e grava os set_due que chegarem."""
+    monkeypatch.setattr(tasks, "_use_clickup", lambda: True)
+
+    async def fake_get_task(task_id):
+        return {
+            "id": task_id,
+            "list": {
+                "id": clickup_client.AREA_LISTS["Staging"],
+                "name": "Staging",
+            },
+        }
+
+    async def fake_move_task(task_id, to_list_id):
+        return True
+
+    async def fake_set_due(task_id, due_ts, **kwargs):
+        if explode:
+            raise RuntimeError("clickup caiu")
+        prazos.append((task_id, due_ts))
+        return set_due_resultado
+
+    monkeypatch.setattr(clickup_client, "get_task", fake_get_task)
+    monkeypatch.setattr(clickup_client, "move_task", fake_move_task)
+    monkeypatch.setattr(clickup_client, "set_due", fake_set_due)
+    monkeypatch.setattr(store, "log_event", lambda *a, **k: None)
+
+
+async def test_sem_prazo_nao_chama_o_clickup(monkeypatch):
+    """`prazo: None` quer dizer "ele não pediu" — e não pode virar uma data qualquer."""
+    prazos = []
+    _clickup_falso(monkeypatch, prazos=prazos)
+
+    resultados = await tasks.aplicar_triagem([("s1", "Corpo", None)])
+
+    assert resultados == [{"task_id": "s1", "ok": True, "erro": None, "prazo": None}]
+    assert prazos == []
+
+
+async def test_prazo_pedido_vira_meia_noite_local(monkeypatch):
+    """Mesma conversão do POST /tasks: data civil + 00:00 no fuso do Leo. Num VPS em
+    UTC, usar o relógio do processo jogaria a tarefa para o dia seguinte."""
+    prazos = []
+    _clickup_falso(monkeypatch, prazos=prazos)
+
+    resultados = await tasks.aplicar_triagem([("s1", "Corpo", "2026-08-11")])
+
+    assert resultados == [{"task_id": "s1", "ok": True, "erro": None, "prazo": "ok"}]
+    (task_id, due_ts) = prazos[0]
+    assert task_id == "s1"
+    esperado = datetime(2026, 8, 11, 0, 0, tzinfo=tz.TZ).timestamp()
+    assert due_ts == esperado
+
+
+async def test_prazo_que_falha_nao_desfaz_nem_esconde_o_movimento(monkeypatch):
+    """O movimento não tem desfazer. Se a falha de data marcasse a tarefa como não
+    movida, ele triaria de novo o que já triou — e a segunda vez daria
+    `fora_do_staging`, porque a tarefa já saiu."""
+    prazos = []
+    _clickup_falso(monkeypatch, prazos=prazos, set_due_resultado=False)
+
+    resultados = await tasks.aplicar_triagem([("s1", "Corpo", "2026-08-11")])
+
+    assert resultados == [
+        {"task_id": "s1", "ok": True, "erro": None, "prazo": "falhou"}
+    ]
+
+
+async def test_excecao_no_prazo_tambem_preserva_o_movimento(monkeypatch):
+    """Não basta tratar o `False`: `set_due` faz rede e pode estourar."""
+    _clickup_falso(monkeypatch, prazos=[], explode=True)
+
+    resultados = await tasks.aplicar_triagem([("s1", "Corpo", "2026-08-11")])
+
+    assert resultados == [
+        {"task_id": "s1", "ok": True, "erro": None, "prazo": "falhou"}
+    ]
+
+
+def test_due_malformado_e_recusado_na_rota(client, monkeypatch):
+    """Fail-closed igual ao adiar: data ambígua não vira cobrança silenciosa."""
+    for ruim in ["11/08/2026", "2026-8-11", "amanhã", "2026-13-45", ""]:
+        resposta = client.post(
+            "/triagem/aplicar",
+            json={"movimentos": [{"task_id": "t", "area": "Corpo", "due": ruim}]},
+        )
+        assert resposta.status_code == 422, ruim

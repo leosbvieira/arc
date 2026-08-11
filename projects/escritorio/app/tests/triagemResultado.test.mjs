@@ -65,3 +65,48 @@ test("mensagem remota NÃO é ecoada — o título da tarefa não vai para a tel
   assert.equal(msg, "0 movidas · 1 não movida.\n\nfalha inesperada");
   assert.doesNotMatch(msg, /Minancora/);
 });
+
+// ---- prazo -------------------------------------------------------------------
+//
+// O prazo é opcional e vem DEPOIS do movimento. Mover não tem desfazer, então uma
+// data que falha não pode marcar como não movida uma tarefa que moveu — mas também
+// não pode sumir, senão ele acha que marcou "amanhã" e a tarefa está sem data.
+
+const okComPrazo = (id, prazo) => ({ task_id: id, ok: true, erro: null, prazo });
+
+test("prazo pedido e aplicado não vira linha nenhuma — silêncio é sucesso", () => {
+  assert.equal(resumoDaTriagem([okComPrazo("a", "ok")]), "1 tarefa movida.");
+});
+
+test("prazo não pedido também é silêncio", () => {
+  assert.equal(resumoDaTriagem([okComPrazo("a", null)]), "1 tarefa movida.");
+});
+
+test("moveu mas o prazo falhou: conta as duas coisas, sem chamar de falha", () => {
+  const msg = resumoDaTriagem([okComPrazo("a", "falhou")]);
+  assert.match(msg, /1 tarefa movida\./);
+  assert.match(msg, /1 moveu, mas ficou sem o prazo que você marcou\./);
+  // A tarefa moveu. Dizer "não movida" faria ele triar de novo o que já triou.
+  assert.doesNotMatch(msg, /não movida/);
+});
+
+test("prazo falho e movimento falho aparecem juntos, sem se confundir", () => {
+  const msg = resumoDaTriagem([
+    okComPrazo("a", "falhou"),
+    falha("b", "HTTPStatusError"),
+  ]);
+  assert.match(msg, /1 movida · 1 não movida\./);
+  assert.match(msg, /1 moveu, mas ficou sem o prazo/);
+  assert.match(msg, /Tasks in Multiple Lists/);
+});
+
+test("plural do aviso de prazo", () => {
+  const msg = resumoDaTriagem([okComPrazo("a", "falhou"), okComPrazo("b", "falhou")]);
+  assert.match(msg, /2 moveram, mas ficaram sem o prazo/);
+});
+
+test("resultado antigo, sem o campo prazo, continua funcionando", () => {
+  // O campo é opcional no tipo: uma resposta de BFF anterior a este contrato não
+  // pode quebrar a tela.
+  assert.equal(resumoDaTriagem([{ task_id: "a", ok: true, erro: null }]), "1 tarefa movida.");
+});

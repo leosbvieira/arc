@@ -1050,7 +1050,9 @@ export async function getTriagem(): Promise<{ itens: ItemTriagem[]; n: number }>
 }
 
 export async function aplicarTriagem(
-  movimentos: { task_id: string; area: AreaTriagem }[],
+  // `due` no formato civil YYYY-MM-DD, que é o que o BFF valida (fail-closed).
+  // Ausente = sem prazo; o servidor não inventa data quando ele não pediu uma.
+  movimentos: { task_id: string; area: AreaTriagem; due?: string }[],
 ): Promise<ResultadoTriagem[]> {
   const base = await getBffUrl();
   const r = await fetch(`${base}/triagem/aplicar`, {

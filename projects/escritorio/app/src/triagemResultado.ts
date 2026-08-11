@@ -10,6 +10,10 @@ export type ResultadoTriagem = {
   readonly task_id: string;
   readonly ok: boolean;
   readonly erro: string | null;
+  // `null` = ele não pediu prazo. O movimento e a data são desfechos separados de
+  // propósito: mover não tem desfazer, então uma data que falha não pode marcar como
+  // não movida uma tarefa que moveu — mas também não pode sumir.
+  readonly prazo?: "ok" | "falhou" | null;
 };
 
 // O BFF expõe DE PROPÓSITO só o nome da classe da exceção (`type(exc).__name__`),
@@ -51,8 +55,23 @@ function plural(n: number, singular: string, plural_: string): string {
 export function resumoDaTriagem(resultados: readonly ResultadoTriagem[]): string {
   const movidas = resultados.filter((resultado) => resultado.ok).length;
   const falhas = resultados.filter((resultado) => !resultado.ok);
+  // A tarefa MOVEU e o prazo não pegou. Nunca some do resumo: ele acha que marcou
+  // "amanhã", a tarefa está sem data, e nada na tela desmentiria isso.
+  const semPrazo = resultados.filter((resultado) => resultado.prazo === "falhou").length;
 
-  if (falhas.length === 0) return `${plural(movidas, "tarefa movida", "tarefas movidas")}.`;
+  const linhas: string[] = [];
+  if (semPrazo > 0) {
+    linhas.push(
+      semPrazo === 1
+        ? "1 moveu, mas ficou sem o prazo que você marcou."
+        : `${semPrazo} moveram, mas ficaram sem o prazo que você marcou.`,
+    );
+  }
+
+  if (falhas.length === 0) {
+    const cabecalho = `${plural(movidas, "tarefa movida", "tarefas movidas")}.`;
+    return linhas.length ? `${cabecalho}\n\n${linhas.join("\n")}` : cabecalho;
+  }
 
   // Agrupa por causa e preserva a ORDEM DE APARIÇÃO: um lote grande com duas causas
   // diferentes vira duas linhas, não uma lista de task ids que não dizem nada a ele.
@@ -63,8 +82,10 @@ export function resumoDaTriagem(resultados: readonly ResultadoTriagem[]): string
   }
 
   const cabecalho = `${plural(movidas, "movida", "movidas")} · ${plural(falhas.length, "não movida", "não movidas")}.`;
-  const linhas = [...porCausa].map(([causa, quantas]) =>
-    porCausa.size === 1 && quantas === falhas.length ? causa : `${quantas}: ${causa}`,
-  );
+  for (const [causa, quantas] of porCausa) {
+    linhas.push(
+      porCausa.size === 1 && quantas === falhas.length ? causa : `${quantas}: ${causa}`,
+    );
+  }
   return `${cabecalho}\n\n${linhas.join("\n")}`;
 }

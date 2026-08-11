@@ -11,7 +11,7 @@ POST /internal/notify (D-14). As regras de cadência são as mesmas nos dois cas
 
 import unicodedata
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time
 
 from pydantic import BaseModel
 
@@ -784,18 +784,43 @@ async def triagem_pack() -> dict:
     return {"itens": itens, "n": len(itens)}
 
 
+async def _marcar_prazo(task_id: str, due: str | None) -> str | None:
+    """`None` = ele não pediu prazo. `"ok"`/`"falhou"` = pediu, e este é o desfecho.
+
+    A exceção morre aqui de propósito: o movimento já aconteceu e não tem desfazer,
+    então deixar o erro subir marcaria como NÃO MOVIDA uma tarefa que moveu — e ele
+    triaria de novo o que já triou.
+    """
+    if due is None:
+        return None
+    try:
+        return "ok" if await clickup_client.set_due(task_id, _timestamp_do_prazo(due)) else "falhou"
+    except Exception:
+        return "falhou"
+
+
+def _timestamp_do_prazo(due: str) -> float:
+    """Data civil → instante local. Mesma conversão do POST /tasks e do adiar: a
+    validação do formato mora no modelo da rota, aqui só chega data já conferida."""
+    return datetime.combine(date.fromisoformat(due), time.min, tzinfo=tz.TZ).timestamp()
+
+
 async def aplicar_triagem(
-    movimentos: list[tuple[str, str]],
+    movimentos: list[tuple[str, str, str | None]],
 ) -> list[dict]:
     """Aplica movimentos aprovados pelo Leo, isolando falhas por tarefa.
 
     Cada item é conferido novamente no Staging imediatamente antes do movimento;
     assim, uma proposta antiga não move uma tarefa que já saiu da triagem.
+
+    O prazo é opcional e vem DEPOIS do movimento, num campo próprio do resultado:
+    triar diz onde a tarefa mora, e uma data que falha não pode desfazer — nem
+    esconder — a decisão de área, que é a parte cara do gesto.
     """
     resultados: list[dict] = []
 
     if _use_clickup():
-        for task_id, area in movimentos:
+        for task_id, area, due in movimentos:
             try:
                 task = await clickup_client.get_task(task_id)
                 task_list = task.get("list")
@@ -810,6 +835,7 @@ async def aplicar_triagem(
                             "task_id": task_id,
                             "ok": False,
                             "erro": "fora_do_staging",
+                            "prazo": None,
                         }
                     )
                     continue
@@ -819,7 +845,12 @@ async def aplicar_triagem(
                     clickup_client.AREA_LISTS[area],
                 )
                 resultados.append(
-                    {"task_id": task_id, "ok": True, "erro": None}
+                    {
+                        "task_id": task_id,
+                        "ok": True,
+                        "erro": None,
+                        "prazo": await _marcar_prazo(task_id, due),
+                    }
                 )
             except Exception as exc:
                 # Apenas a classe é exposta: mensagens podem carregar conteúdo remoto.
@@ -828,10 +859,11 @@ async def aplicar_triagem(
                         "task_id": task_id,
                         "ok": False,
                         "erro": type(exc).__name__,
+                        "prazo": None,
                     }
                 )
     else:
-        for task_id, area in movimentos:
+        for task_id, area, due in movimentos:
             tarefa = next(
                 (item for item in _MOCK if item.id == task_id),
                 None,
@@ -842,6 +874,7 @@ async def aplicar_triagem(
                         "task_id": task_id,
                         "ok": False,
                         "erro": "nao_encontrado",
+                        "prazo": None,
                     }
                 )
                 continue
@@ -851,13 +884,21 @@ async def aplicar_triagem(
                         "task_id": task_id,
                         "ok": False,
                         "erro": "fora_do_staging",
+                        "prazo": None,
                     }
                 )
                 continue
 
             tarefa.area = area
+            if due is not None:
+                tarefa.due = due
             resultados.append(
-                {"task_id": task_id, "ok": True, "erro": None}
+                {
+                    "task_id": task_id,
+                    "ok": True,
+                    "erro": None,
+                    "prazo": None if due is None else "ok",
+                }
             )
 
     movidos = sum(1 for resultado in resultados if resultado["ok"])
