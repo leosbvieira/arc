@@ -64,3 +64,35 @@ test("leitura no futuro nao vira tempo negativo", () => {
   const [linha] = montarEstante([obra({ ultima_sessao: (AGORA + DIA) / 1000 })], AGORA);
   assert.ok(linha.detalhe.endsWith("hoje"));
 });
+
+// ---- recap (fatia 3) ----------------------------------------------------------
+
+test("recap ausente vira null, venha ele como undefined, null ou vazio", () => {
+  // Três fontes de "não tem": obra nova (campo ausente), servidor mandando null, e
+  // sessão em que o modelo devolveu string vazia. A tela só quer saber de uma.
+  const linhas = montarEstante(
+    [
+      { id: 1, titulo: "A", pagina_atual: null, ultima_sessao: null },
+      { id: 2, titulo: "B", pagina_atual: null, ultima_sessao: null, recap: null },
+      { id: 3, titulo: "C", pagina_atual: null, ultima_sessao: null, recap: "" },
+    ],
+    0,
+  );
+  assert.deepEqual(linhas.map((l) => l.recap), [null, null, null]);
+});
+
+test("recap presente atravessa intacto — a tela não reescreve o que o modelo disse", () => {
+  const [linha] = montarEstante(
+    [
+      {
+        id: 1,
+        titulo: "Sapiens",
+        pagina_atual: 42,
+        ultima_sessao: 100,
+        recap: "Você parou na tese da ordem imaginada.",
+      },
+    ],
+    100_000,
+  );
+  assert.equal(linha.recap, "Você parou na tese da ordem imaginada.");
+});

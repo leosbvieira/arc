@@ -257,6 +257,7 @@ def test_discard_e_explicito_idempotente_e_impede_compile(client, monkeypatch):
     assert client.post(f"/reading/sessions/{sid}/compile", json={}).status_code == 409
 
 
+@pytest.mark.hermes_oneshot
 async def test_oneshot_envia_prompt_longo_por_stdin_e_nao_argv(monkeypatch):
     prompt = "segredo-privado\n" * 10_000
     seen = {}

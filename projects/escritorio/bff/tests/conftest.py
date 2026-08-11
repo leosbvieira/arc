@@ -13,7 +13,9 @@ afetada; o `.env` não é tocado.
 import tempfile
 from pathlib import Path
 
-from app import store
+import pytest
+
+from app import hermes_client, store
 from app.config import DEFAULTS, settings
 
 for _field in DEFAULTS:
@@ -37,3 +39,25 @@ for _field in DEFAULTS:
 _TMP_DB = Path(tempfile.mkdtemp(prefix="escritorio-tests-")) / "test.db"
 settings.db_path = str(_TMP_DB)
 store.init_db()
+
+
+# --- nenhum teste fala com o Hermes de verdade -------------------------------
+# Descoberto quando o recap da fatia 3 entrou no /compile: os testes de compile
+# fakeiam `compile_reading`, mas o recap é OUTRA chamada, e ela caiu no `_oneshot`
+# real — que dispara o `hermes.exe` como subprocesso. A suíte foi de 56s para 200s
+# sem ninguém notar, porque a chamada é best-effort e o erro é engolido.
+#
+# Falhar alto e na hora é melhor que esperar: quem precisa do modelo stuba
+# `_oneshot` no próprio teste, e essa substituição vence esta (o corpo do teste
+# roda depois das fixtures).
+@pytest.fixture(autouse=True)
+def _sem_hermes_de_verdade(request, monkeypatch):
+    # Quem testa o PRÓPRIO `_oneshot` (classificação de erro, serialização,
+    # prompt por stdin) pede exceção com @pytest.mark.hermes_oneshot.
+    if request.node.get_closest_marker("hermes_oneshot"):
+        return
+
+    async def proibido(*_args, **_kwargs):
+        raise RuntimeError("hermes_oneshot_nao_stubado_neste_teste")
+
+    monkeypatch.setattr(hermes_client, "_oneshot", proibido)

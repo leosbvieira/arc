@@ -7,6 +7,10 @@ export type ObraNaEstante = {
   titulo: string;
   pagina_atual: number | null;
   ultima_sessao: number | null; // segundos, como o servidor manda
+  // Onde a leitura parou, escrito no fim da sessão anterior. `null`/ausente quando
+  // a obra ainda não tem sessão, ou quando o Hermes falhou naquela — o recap é
+  // best-effort e não é regenerável.
+  recap?: string | null;
 };
 
 export type LinhaEstante = {
@@ -15,6 +19,9 @@ export type LinhaEstante = {
   detalhe: string;
   // String porque o campo de página é um TextInput; "" quando não há o que sugerir.
   paginaInicialSugerida: string;
+  // `null` = não há lembrete a mostrar. A tela não renderiza a linha nesse caso, em
+  // vez de reservar um espaço vazio em toda obra.
+  recap: string | null;
 };
 
 const DIA_MS = 86_400_000;
@@ -46,6 +53,9 @@ export function montarEstante(
       detalhe: partes.length ? partes.join(" · ") : "ainda sem leitura",
       paginaInicialSugerida:
         obra.pagina_atual === null ? "" : String(obra.pagina_atual),
+      // Normaliza ausência a UM valor: o servidor pode mandar null, e string vazia
+      // chega de sessão em que o modelo devolveu nada.
+      recap: obra.recap ? obra.recap : null,
     };
   });
 }

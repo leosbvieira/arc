@@ -311,6 +311,10 @@ def init_db() -> None:
             ("book_ciclo", "INTEGER"),
             ("compiled_at", "REAL"),
             ("draft_fmt", "INTEGER"),
+            # Fatia 3: onde a leitura parou, escrito no fim da sessão para a
+            # PRÓXIMA já encontrar pronto. Não regenerável — o buffer é purgado
+            # no compile, e a nota que sobra tem as citações coladas.
+            ("recap", "TEXT"),
         ):
             if coluna not in reading_session_columns:
                 con.execute(f"ALTER TABLE reading_sessions ADD COLUMN {coluna} {tipo}")
@@ -1015,6 +1019,13 @@ SELECT
   (SELECT MAX(s.compiled_at) FROM reading_sessions s
      WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
        AND s.status = 'compiled') AS ultima_sessao,
+  -- Onde a leitura parou, escrito no fim da sessão anterior. Mesma ordenação da
+  -- página: `compiled_at` é do servidor, `fim` vem do celular. Sessão sem recap
+  -- (falhou, ou só teve citação) não apaga o da anterior — daí o NOT NULL.
+  (SELECT s.recap FROM reading_sessions s
+     WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
+       AND s.status = 'compiled' AND s.recap IS NOT NULL AND s.recap <> ''
+     ORDER BY s.compiled_at DESC, s.id DESC LIMIT 1) AS recap,
   (SELECT COUNT(*) FROM reading_sessions s
      WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
        AND s.status = 'compiled') AS sessoes_n
@@ -1141,6 +1152,17 @@ def liberar_terminar_book(book_id: int, ciclo: int) -> tuple[str, dict | None]:
         ).fetchone()
         con.commit()
         return "liberado", dict(atualizado)
+
+
+def salvar_recap(session_id: int, recap: str) -> None:
+    """Guarda o recap da sessão. Best-effort e não regenerável: quem chama já
+    engoliu a falha, e o buffer que o alimentaria some no purge logo depois."""
+    with closing(_connect()) as con:
+        con.execute(
+            "UPDATE reading_sessions SET recap = ? WHERE id = ?",
+            (recap, session_id),
+        )
+        con.commit()
 
 
 def sessoes_do_ciclo(book_id: int, ciclo: int) -> list[dict]:

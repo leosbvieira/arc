@@ -20,6 +20,9 @@ from app import hermes_client, main
 from app.config import settings
 from app.main import require_auth
 
+# Estes testes SAO sobre o `_oneshot`; a trava do conftest o substituiria.
+pytestmark = pytest.mark.hermes_oneshot
+
 
 @pytest.fixture
 def sem_mock(monkeypatch):

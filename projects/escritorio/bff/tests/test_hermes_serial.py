@@ -9,7 +9,12 @@ import asyncio
 from types import SimpleNamespace
 
 from app import hermes_client
+import pytest
+
 from app.config import settings
+
+# Estes testes SÃO sobre o `_oneshot`; a trava do conftest o substituiria.
+pytestmark = pytest.mark.hermes_oneshot
 
 
 async def test_chamadas_do_hermes_nao_se_atropelam(monkeypatch):

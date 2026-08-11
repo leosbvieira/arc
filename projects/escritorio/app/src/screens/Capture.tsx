@@ -1839,6 +1839,12 @@ export default function Capture({
                         {linha.titulo}
                       </Text>
                       <Text style={styles.shelfDetail}>{linha.detalhe}</Text>
+                      {/* Onde ele parou, escrito no fim da sessão anterior. Só a obra
+                          selecionada mostra: na lista inteira, três linhas de texto por
+                          obra viram parede e a estante deixa de ser escaneável. */}
+                      {selectedBookId === linha.id && linha.recap ? (
+                        <Text style={styles.shelfRecap}>{linha.recap}</Text>
+                      ) : null}
                     </View>
                     <Pressable
                       onPress={() => confirmarTerminar(linha.id, linha.titulo)}
@@ -2270,6 +2276,7 @@ const styles = StyleSheet.create({
   shelfRowActive: { backgroundColor: colors.card2 },
   shelfTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 15, flex: 1 },
   shelfDetail: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  shelfRecap: { fontFamily: fonts.ui, color: colors.text, fontSize: 12.5, lineHeight: 17, marginTop: 6 },
   shelfAdd: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 12 },
   presasBloco: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
   presasAviso: { fontFamily: fonts.ui, color: colors.amber, fontSize: 11.5, marginBottom: 6 },
