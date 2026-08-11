@@ -89,7 +89,10 @@ function confere(valor: unknown, no: No): boolean {
     case "boolean":
       return typeof valor === "boolean";
     default:
-      return true;
+      // Fail-closed: um nó sem `type` reconhecido (campo `Any`, `object`
+      // pelado, downgrade do Pydantic) não pode ser aceito em silêncio por
+      // um validador de produção. Ver `test_so_usa_o_subconjunto_do_caminhador`.
+      return false;
   }
 }
 

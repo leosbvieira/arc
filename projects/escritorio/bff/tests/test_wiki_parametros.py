@@ -65,6 +65,11 @@ def test_so_usa_o_subconjunto_do_caminhador():
 
     def anda(no):
         assert set(no) <= PALAVRAS, f"palavra fora do subconjunto: {set(no) - PALAVRAS}"
+        # `set(no) <= PALAVRAS` sozinho deixa passar um nó `{}` vazio -- conjunto
+        # vazio é subconjunto de tudo. O caminhador do app (`confere` em
+        # parametrosCore.ts) faz `switch (no.type)`; sem isto o `default` do
+        # switch (fail-closed) nunca é exercitado por este teste.
+        assert "type" in no, f"nó sem 'type': {no!r}"
         for filho in no.get("properties", {}).values():
             anda(filho)
         if "items" in no:
