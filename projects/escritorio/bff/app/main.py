@@ -25,6 +25,7 @@ from . import (
     reading_digest,
     reading_frontmatter,
     resumo_obra,
+    ritos,
     routines,
     store,
     tasks,
@@ -39,14 +40,28 @@ logger = logging.getLogger(__name__)
 TZ = tz.TZ
 
 # Tom: seco e factual (lei 4 — o sistema não motiva, não envergonha; diz o fato e o custo).
-NUDGE_COPY = {
-    "toque": "5h30 — dia yoga ou dia corrida?",
-    "checkin": "8h20 — check-in: energia, clareza, prioridade nº1. 60 segundos.",
-    "jornal": "8h30 — jornal de leitura de notícias. Abra Capturar para iniciar.",
-    "shutdown": "19h — Shutdown: fechar o trabalho, follow-ups, 3 prioridades de amanhã.",
-    "closing": "21h — fechar o dia? 90 segundos bastam: 1 linha + checks.",
-    "review": "domingo 20h — review semanal. Os números da semana te esperam no app.",
+# A HORA NÃO SE ESCREVE AQUI: ela vem de `ritos.json`, a fonte única. Antes disto o
+# texto dizia "19h" enquanto o Agendador podia disparar em outra hora.
+PRIORIDADES_SHUTDOWN = 3
+
+NUDGE_TEMPLATE = {
+    "toque": "{hora} — dia yoga ou dia corrida?",
+    "checkin": "{hora} — check-in: energia, clareza, prioridade nº1. 60 segundos.",
+    "jornal": "{hora} — jornal de leitura de notícias. Abra Capturar para iniciar.",
+    "shutdown": "{hora} — Shutdown: fechar o trabalho, follow-ups, {prioridades} prioridades de amanhã.",
+    "closing": "{hora} — fechar o dia? 90 segundos bastam: 1 linha + checks.",
+    "review": "domingo {hora} — review semanal. Os números da semana te esperam no app.",
 }
+
+
+def montar_nudge_copy(hora_curta=ritos.hora_curta) -> dict[str, str]:
+    return {
+        slug: t.format(hora=hora_curta(slug), prioridades=PRIORIDADES_SHUTDOWN)
+        for slug, t in NUDGE_TEMPLATE.items()
+    }
+
+
+NUDGE_COPY = montar_nudge_copy()
 
 
 def _guard_default_secrets() -> None:
