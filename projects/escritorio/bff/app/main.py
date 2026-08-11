@@ -221,6 +221,59 @@ class TokenOut(BaseModel):
     token: str
 
 
+class RitoOut(BaseModel):
+    slug: str
+    hora: str
+    # Sem `= None`: o campo é obrigatório porém anulável. Com default, o
+    # `model_json_schema()` emitiria `default: null`, fora do dialeto plano.
+    dia: str | None
+
+
+class TarifasOut(BaseModel):
+    rotina: int
+    tarefa: int
+    captura: int
+    fechamento: int
+    shutdown: int
+    despejo: int
+
+
+class PunicaoOut(BaseModel):
+    limiar_furos: int
+    janela: str
+    desconto_padrao: int
+    teto_semanal: int
+
+
+class NiveisOut(BaseModel):
+    limiares: list[int] = Field(min_length=1)
+
+
+class CicloOut(BaseModel):
+    semanas: int
+    inicio: str
+
+
+class StagingOut(BaseModel):
+    dias_para_alerta: int
+
+
+class ShutdownOut(BaseModel):
+    prioridades: int
+
+
+class ParametrosOut(BaseModel):
+    """Como o SISTEMA funciona. Como VOCÊ está continua em /pontos."""
+    tarifas: TarifasOut
+    punicao: PunicaoOut
+    niveis: NiveisOut
+    ciclo: CicloOut
+    staging: StagingOut
+    shutdown: ShutdownOut
+    areas: list[str] = Field(min_length=1)
+    ritos: list[RitoOut] = Field(min_length=1)
+
+
 class CaptureIn(BaseModel):
     text: str
     profile: str | None = None
@@ -1816,6 +1869,34 @@ async def get_digest(_: str = Depends(require_auth)):
         "body": fresh["body_app"],
         "tasks": fresh["tasks"],
     }
+
+
+@app.get("/wiki/parametros", response_model=ParametrosOut)
+async def wiki_parametros(_=Depends(require_auth)) -> ParametrosOut:
+    """Read-only, sem estado do usuário. NENHUM literal aqui: tudo vem de
+    settings, de ritos.json ou de constante já canônica do BFF."""
+    return ParametrosOut(
+        tarifas=TarifasOut(
+            rotina=settings.pontos_por_rotina,
+            tarefa=settings.pontos_por_tarefa,
+            captura=settings.pontos_por_captura,
+            fechamento=settings.pontos_por_fechamento,
+            shutdown=settings.pontos_por_shutdown,
+            despejo=settings.pontos_por_despejo,
+        ),
+        punicao=PunicaoOut(
+            limiar_furos=settings.routine_miss_threshold,
+            janela=pontos.JANELA,
+            desconto_padrao=settings.desconto_padrao,
+            teto_semanal=settings.teto_desconto_semanal,
+        ),
+        niveis=NiveisOut(limiares=settings.nivel_limiares),
+        ciclo=CicloOut(semanas=settings.ciclo_semanas, inicio=settings.ciclo_inicio),
+        staging=StagingOut(dias_para_alerta=settings.staging_age_days),
+        shutdown=ShutdownOut(prioridades=PRIORIDADES_SHUTDOWN),
+        areas=list(tasks.AREAS),
+        ritos=[RitoOut(slug=r["slug"], hora=r["hora"], dia=r["dia"]) for r in ritos.RITOS],
+    )
 
 
 @app.get("/pontos")
