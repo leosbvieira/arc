@@ -673,7 +673,7 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 - `bff/tests/test_ritos.py` · `bff/tests/test_wiki_parametros.py` · `bff/tests/test_sync_cron.py`
 - **1A:** `app/src/parametrosCore.ts` · `app/src/parametros.tsx` (o provider) ·
   `app/tests/parametrosCore.test.mjs` · `app/tests/migracaoPoints.test.mjs` ·
-  `app/src/wiki-schema.json` (arquivo único do contrato, §3.6) · `app/tests/fixtures/wiki-parametros.json` ·
+  `app/src/wiki-schema.json` (arquivo único do contrato, §3.6) ·
   `bff/app/wiki_schema.py` (a normalização)
 - **1B:** `app/src/wikiContent.ts` · `app/src/wikiResolve.ts` · `app/src/wikiNav.ts` ·
   `app/src/screens/ComoFunciona.tsx` · `app/tests/wikiContent.test.mjs` ·
@@ -741,7 +741,7 @@ resposta ou um cache chega.
 **6b. Primeira abertura é honesta — na wiki (1B).** Na mesma condição, `Como funciona` mostra `—` e diz
 *"ainda não li os valores do servidor"*. Nenhuma tela apresenta o embutido como se fosse o valor do sistema.
 
-**7. Revalidação por foco — drill manual (1A).** Abrir o app com o BFF desligado (números do cache, com selo),
+**7. Revalidação por foco — drill manual (1B).** Abrir o app com o BFF desligado (números do cache, com selo),
 ligar o BFF **sem sair da tela**, tirar o app do foco e voltar: o selo some e os números são os novos. É drill
 porque disparar o evento de foco exige render de RN, que o projeto não testa (§7); está aqui em vez de fingir
 cobertura.
@@ -773,9 +773,12 @@ mentindo. A wiki é a razão de a gente ter olhado, não a razão de valer a pen
 
 ### Fatia 1A — Fonte única (pré-requisito verificável)
 
+**Status: entregue em 11/ago/2026** — branch `wiki-1a`, commits `1ddfbf0..HEAD`. Os drills manuais no
+aparelho (§10.5, §10.7) continuam **pendentes**, a cargo do dono do projeto.
+
 | | |
 |---|---|
-| **Entrega** | `ritos.json`, `ritos.py`, `sync-cron.ps1` (reconciliação + `-DryRun` + política de falha), `NUDGE_COPY` interpolado, `nudge.ps1` renomeado, `start-bff.ps1` chamando o sync, `GET /wiki/parametros` + schema commitado, **`parametrosCore.ts`**, `ParametrosProvider`, o indicador de `padrao`, os 7 call sites de `POINTS.` e os 3 de hora |
+| **Entrega** | `ritos.json`, `ritos.py`, `sync-cron.ps1` (reconciliação + `-DryRun` + política de falha), `NUDGE_COPY` interpolado, `start-bff.ps1` chamando o sync, `GET /wiki/parametros` + schema commitado, **`parametrosCore.ts`**, `ParametrosProvider`, o indicador de `padrao`, os 7 call sites de `POINTS.` e os 3 de hora |
 | **Testes** | 5, 6, 7, 8, 9, 10, 11, 13, 14 |
 | **Verificação** | Mudar uma hora no `ritos.json`, reiniciar, e ver **o Agendador, o push, a Mesa e o hero da Home** mudarem juntos. Mudar `pontos_por_rotina` e ver Mesa, Fechar e Tarefas mudarem. Aceite §10.2, §10.5 e §10.6a |
 | **Fecha sozinha?** | Sim, **e agora de verdade**: em v4 o provider dependia de `validar`/`decidir`, que eu tinha listado na 1B — a fatia não compilava. O núcleo de parâmetros (§3.5) é da 1A |
