@@ -653,8 +653,9 @@ def client(tmp_path, monkeypatch):
 
 
 def test_exige_autenticacao():
-    with TestClient(app) as c:
-        assert c.get("/wiki/parametros").status_code == 401
+    # Sem `with`: o lifespan sobe o worker de captura, e um teste de 401 não
+    # tem por que ligar processo de fundo nenhum.
+    assert TestClient(app).get("/wiki/parametros").status_code == 401
 
 
 def test_devolve_os_parametros(client):
@@ -1571,9 +1572,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // `DEFAULT_PARAMS`, em parametrosCore.ts, é a ÚNICA semente das tarifas no app.
-// `POINTS` deixou de existir: manter os dois seria recriar a duplicação que esta
-// fatia mata. Sem esta guarda, um call site esquecido passa despercebido.
-const PERMITIDOS = new Set(["parametrosCore.ts"]);
+// `POINTS` deixou de existir -- manter os dois seria recriar a duplicação que esta
+// fatia mata --, então NADA em src/ pode citá-lo. Sem esta guarda, um call site
+// esquecido passa despercebido e a fonte única fica pela metade.
 
 function arquivos(dir) {
   return readdirSync(dir).flatMap((n) => {
@@ -1585,7 +1586,6 @@ function arquivos(dir) {
 
 test("POINTS não existe mais em lugar nenhum", () => {
   const infratores = arquivos("src")
-    .filter((p) => !PERMITIDOS.has(p.split(/[\\/]/).pop()))
     .filter((p) => /\bPOINTS\b/.test(readFileSync(p, "utf8")));
   assert.deepEqual(infratores, [], `ainda leem POINTS: ${infratores.join(", ")}`);
 });
