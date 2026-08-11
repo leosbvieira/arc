@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { POINTS } from "../src/theme.ts";
+import { DEFAULT_PARAMS } from "../src/parametrosCore.ts";
 import { montarMesa, valorDaAcao } from "../src/mesaView.ts";
 
-// O teste importa o POINTS de produção e passa por parâmetro — os valores de
-// verdade ficam presos ao teste, e o módulo puro não tem nenhum import de valor.
+// O teste importa a tabela de tarifas de produção e passa por parâmetro — os
+// valores de verdade ficam presos ao teste, e o módulo puro não tem nenhum
+// import de valor.
+const POINTS = DEFAULT_PARAMS.tarifas;
 
 // Mesma tabela de horários de DEFAULT_PARAMS.ritos — o teste é quem importa a
 // tabela real, o mesaView não sabe de onde ela veio.

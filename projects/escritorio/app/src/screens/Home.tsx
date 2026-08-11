@@ -25,7 +25,7 @@ import { listPendingReadingSessions } from "../readingApi";
 import { actionForAt, HomeSignals, nextAgendaAt } from "../homeAction";
 import { milhar } from "../format";
 import { valorDaAcao } from "../mesaView";
-import { useParams } from "../parametros";
+import { useParametros, useParams } from "../parametros";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { Badge, ProgressBar, SectionHeader, SegmentBar, Skeleton } from "../ui";
 
@@ -45,6 +45,7 @@ function dateLabel(): string {
 }
 
 export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void }) {
+  const fonte = useParametros();
   const params = useParams();
   const [digest, setDigest] = useState<Digest | null>(null);
   const [abertura, setAbertura] = useState<Abertura | null>(null);
@@ -113,6 +114,16 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
   }, []);
 
   const partial = failures.size > 0;
+  // Indicador único, no nível do app: aparece sempre que a fonte NÃO é
+  // `fresco` nem `cache` — ou seja, também em `indisponivel` (ex.: sessão
+  // expirada num 401 que não desloga). Sem isso, o número embutido aparece
+  // como se viesse do servidor, o defeito que esta fatia inteira mata.
+  const avisoParametros =
+    fonte.tipo === "padrao"
+      ? "valores padrão · sem conexão"
+      : fonte.tipo === "indisponivel"
+        ? "valores padrão · sessão expirada"
+        : null;
   const action = actionForAt(abertura, signals, params.ritos);
   // Preço do hero (tabela de tarifas, display-only). null = não desenha nada.
   const valorHero = valorDaAcao(action.target, params.tarifas);
@@ -149,6 +160,13 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
             <Text style={styles.levelNumber}>{loaded.has("points") ? points?.nivel ?? 0 : "—"}</Text>
           </Pressable>
         </View>
+
+        {avisoParametros ? (
+          <View style={styles.paramsAviso}>
+            <Feather name="cloud-off" size={12} color={colors.textMuted} />
+            <Text style={styles.paramsAvisoText}>{avisoParametros}</Text>
+          </View>
+        ) : null}
 
         {partial ? (
           <Pressable onPress={() => load(true)} style={styles.partial}>
@@ -330,6 +348,8 @@ const styles = StyleSheet.create({
   levelNumber: { fontFamily: fonts.display, fontSize: 18, color: colors.text, lineHeight: 20 },
   partial: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
   partialText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
+  paramsAviso: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
+  paramsAvisoText: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 10.5 },
   hero: { minHeight: 188, borderRadius: radius.xl, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(222,184,120,0.19)", overflow: "hidden" },
   heroIcon: { position: "absolute", top: 16, right: 16, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(222,184,120,0.1)", borderWidth: 1, borderColor: "rgba(222,184,120,0.18)" },
   heroEyebrow: { fontFamily: fonts.mono, fontSize: 10, color: colors.primary, letterSpacing: 1.6, textTransform: "uppercase" },

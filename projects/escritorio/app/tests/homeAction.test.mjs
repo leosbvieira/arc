@@ -106,6 +106,15 @@ test("o domingo deriva review menos 3h", () => {
   assert.equal(actionForAt(null, empty, cedo, as16).target, "revisao");
 });
 
+// A tabela de hoje (review às 20:00) cravam o limiar em 17:00 — este teste
+// prende o valor, não só o comportamento relativo do teste acima.
+test("com a tabela de hoje, o limiar do domingo é 17:00 em ponto", () => {
+  const antes = at("2026-07-12T16:59:00-03:00"); // domingo
+  const limiar = at("2026-07-12T17:00:00-03:00"); // domingo
+  assert.notEqual(actionForAt(null, empty, RITOS, antes).target, "revisao");
+  assert.equal(actionForAt(null, empty, RITOS, limiar).target, "revisao");
+});
+
 test("os dois prazos NÃO derivam de rito nenhum", () => {
   const tarde = com({ toque: { hora: "09:00" }, checkin: { hora: "11:00" } });
   const as7 = at("2026-07-13T07:00:00-03:00");

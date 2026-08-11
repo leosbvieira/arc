@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { POINTS } from "../src/theme.ts";
+import { DEFAULT_PARAMS } from "../src/parametrosCore.ts";
 import { closingReward, closingLabel } from "../src/closingPoints.ts";
+
+const POINTS = DEFAULT_PARAMS.tarifas;
 
 // A régua é o mockup aprovado (proposta-c2-sobria.html, rito "Fechar o dia") e os
 // cinco casos de aceite decididos pelo Leo (ONDA1-CORRECOES.md). A assinatura é
@@ -14,7 +16,8 @@ import { closingReward, closingLabel } from "../src/closingPoints.ts";
 //   fechamento + (total × rotina) + despejoBonus.
 // O garantido SOBE conforme ele marca, o teto NÃO se move, e quando ele marca
 // tudo e escreve, garantido === teto — o rótulo colapsa para "garante +N".
-// A tabela é a real do theme.ts — se os valores mudarem lá, este teste avisa.
+// A tabela é a real de DEFAULT_PARAMS.tarifas — se os valores mudarem lá, este
+// teste avisa.
 
 test("aceite 1 (mockup): 1 rotina no dia, 0 marcadas, sem texto → garante +80 · bônus até +140", () => {
   assert.deepEqual(closingReward(0, 1, false, POINTS), { garantido: 80, teto: 140 });

@@ -1,8 +1,9 @@
 // A Mesa é ordenação e agrupamento — lógica pura, sem import de valor (o Node
 // tira os tipos sozinho, mas não resolve import relativo em runtime). A tabela
-// de pontos entra por parâmetro; o teste é quem importa o POINTS de produção.
+// de pontos entra por parâmetro; o teste é quem importa a tabela de produção
+// real (`DEFAULT_PARAMS.tarifas`, em parametrosCore).
 
-// Estrutural, sem `despejoBonus`: o POINTS real de theme.ts é atribuível a ela.
+// Estrutural, sem `despejo`: `DEFAULT_PARAMS.tarifas`, real, é atribuível a ela.
 export type PointsTable = { tarefa: number; rotina: number; captura: number; fechamento: number; shutdown: number };
 
 // A hora entra por parâmetro, pelo mesmo motivo que a tabela de pontos: o
@@ -139,7 +140,7 @@ export function montarMesa(sinais: MesaSinais, points: PointsTable, ritos: Rito[
 }
 
 // Preço do hero da Home: mapeia o action.target do actionForAt() para a tabela
-// POINTS (provisória, display-only). null = sem preço, e a tela não desenha nada.
+// de tarifas (provisória, display-only). null = sem preço, e a tela não desenha nada.
 export function valorDaAcao(target: string, points: PointsTable): number | null {
   switch (target) {
     case "fechar":

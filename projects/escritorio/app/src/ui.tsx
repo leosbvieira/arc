@@ -423,7 +423,7 @@ export function PendRow({
 
 // O fim do rito devolve o que ele produziu. Usa só o que getPontos() já traz
 // (saldo, nível, ciclo) — SEM linha de streak: o BFF não expõe sequência
-// corrida, e nenhum número se inventa. `pontosHoje` vem da tabela POINTS
+// corrida, e nenhum número se inventa. `pontosHoje` vem da tabela de tarifas
 // (provisória, display-only): é o número que o botão prometeu. Tipografia da
 // onda 2 entregue: herói em display/Syne Bold, metadados em mono.
 // Entra em fade + subida, 320ms.
