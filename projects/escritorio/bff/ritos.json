@@ -1,0 +1,9 @@
+[
+  { "slug": "toque",    "hora": "05:30", "dia": null,      "task": "Aeternum Toque",      "script": "nudge"  },
+  { "slug": "checkin",  "hora": "08:20", "dia": null,      "task": "Aeternum Check-in",   "script": "nudge"  },
+  { "slug": "jornal",   "hora": "08:30", "dia": null,      "task": "Aeternum Jornal",     "script": "nudge"  },
+  { "slug": "digest",   "hora": "09:00", "dia": null,      "task": "Aeternum Digest",     "script": "digest" },
+  { "slug": "shutdown", "hora": "19:00", "dia": null,      "task": "Aeternum Shutdown",   "script": "nudge"  },
+  { "slug": "closing",  "hora": "21:00", "dia": null,      "task": "Aeternum Fechamento", "script": "nudge"  },
+  { "slug": "review",   "hora": "20:00", "dia": "domingo", "task": "Aeternum Review",     "script": "nudge"  }
+]
