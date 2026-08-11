@@ -76,10 +76,25 @@ async function headers(): Promise<Record<string, string>> {
   };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Autosave, criar sessão, estante: rede e SQLite, nada mais. 12s já é folgado, e
+// esperar mais só atrasaria o aviso de que o BFF caiu.
+const TIMEOUT_MS = 12_000;
+
+// Compor e publicar a nota passam pelo Hermes, que o BFF espera por 150s. Com 12s o
+// celular desistia no meio e dizia "não foi possível gerar o preview" enquanto o
+// servidor terminava o serviço e gravava o rascunho — a mensagem mentia sobre um
+// trabalho que deu certo, e o custo era ele apagar e reditar o que já existia.
+// A margem sobre os 150s é para a resposta voltar, não para esperar mais Hermes.
+const TIMEOUT_HERMES_MS = 165_000;
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs: number = TIMEOUT_MS,
+): Promise<T> {
   const base = await getBffUrl();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${base}${path}`, {
       ...init,
@@ -181,10 +196,11 @@ export async function draftReadingSession(
   sessionId: number,
   body: { pagina_final: number | null },
 ): Promise<{ session: ReadingSession; draft_md: string }> {
-  return request(`/reading/sessions/${sessionId}/draft`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  return request(
+    `/reading/sessions/${sessionId}/draft`,
+    { method: "POST", body: JSON.stringify(body) },
+    TIMEOUT_HERMES_MS,
+  );
 }
 
 // Aprova o rascunho: grava no vault + Anki + purga o buffer. Exige um draft_md
@@ -197,10 +213,14 @@ export async function compileReadingSession(
   anki_cards: unknown[];
   anki_status: "pending" | "done";
 }> {
-  return request(`/reading/sessions/${sessionId}/compile`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  // Aprovar grava no vault e ainda pede os cards ao Hermes na mesma chamada. Desistir
+  // aos 12s aqui é pior que no preview: a nota vai para o Obsidian de qualquer jeito e
+  // o app fica achando que a sessão não fechou.
+  return request(
+    `/reading/sessions/${sessionId}/compile`,
+    { method: "POST", body: JSON.stringify(body) },
+    TIMEOUT_HERMES_MS,
+  );
 }
 
 // Rejeita o rascunho: limpa draft_md e devolve o buffer à edição (status "pending").
