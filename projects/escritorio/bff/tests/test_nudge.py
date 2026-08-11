@@ -69,14 +69,15 @@ def test_nudge_token_errado(client):
     assert r.status_code == 403
 
 
-def test_install_cron_registra_jornal_as_8h30():
+def test_install_cron_delega_a_agenda_pro_sync_cron():
+    # O horário do Jornal (08:30) não vive mais aqui: é ritos.json, via
+    # sync-cron.ps1 (bff/tests/test_sync_cron.py cobre o gatilho gerado).
     script = (
         Path(__file__).resolve().parents[1] / "scripts" / "install-cron.ps1"
     ).read_text(encoding="utf-8")
 
-    assert 'TaskName "Aeternum Jornal"' in script
-    assert "-Daily -At 08:30" in script
-    assert "-Kind jornal" in script
+    assert '& "$dir\\sync-cron.ps1"' in script
+    assert "-Daily -At 08:30" not in script
     nudge = (
         Path(__file__).resolve().parents[1] / "scripts" / "nudge.ps1"
     ).read_text(encoding="utf-8")

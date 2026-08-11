@@ -7,4 +7,7 @@ if ($Listeners) {
     exit 1
 }
 
+# A agenda converge no boot: mudar ritos.json e reiniciar basta. Fail-open lá dentro.
+try { & "$PSScriptRoot\sync-cron.ps1" } catch { Write-Warning "sync-cron falhou: $_" }
+
 & ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000

@@ -1,6 +1,5 @@
 $ps = "powershell.exe"
 $dir = "C:\Users\Leonardo\GitHub\Arc\projects\escritorio\bff\scripts"
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
 $bffTaskInstalled = $false
 try {
@@ -21,41 +20,9 @@ start "" /min powershell.exe -WindowStyle Hidden -NoProfile -ExecutionPolicy Byp
   Write-Warning "Task AtLogOn sem permissao; fallback Startup atualizado: $launcher"
 }
 
-# Os ritos do dia, na ORDEM em que acontecem (SPEC §4):
-#   5h30  A1a  o toque      — "dia yoga ou dia corrida?" (POST /dia/template)
-#   8h20  A1b  o check-in   — energia, clareza, prioridade nº1 (POST /abertura/checkin)
-#   8h30       o jornal     — abre Capturar para a leitura de notícias
-#   9h00       o digest     — as cobranças do dia
-#  19h00  A2   o Shutdown   — fecha o trabalho, follow-ups, 3 prioridades de amanhã
-#  21h00  A3   o fechamento — diário + rotinas
-# dom 20h A4   a review semanal
-Register-ScheduledTask -TaskName "Aeternum Toque" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Daily -At 05:30) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\nudge.ps1`" -Kind toque") -Settings $settings
-
-Register-ScheduledTask -TaskName "Aeternum Check-in" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Daily -At 08:20) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\nudge.ps1`" -Kind checkin") -Settings $settings
-
-Register-ScheduledTask -TaskName "Aeternum Jornal" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Daily -At 08:30) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\nudge.ps1`" -Kind jornal") -Settings $settings
-
-Register-ScheduledTask -TaskName "Aeternum Digest" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Daily -At 09:00) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\run-digest.ps1`"") -Settings $settings
-
-Register-ScheduledTask -TaskName "Aeternum Shutdown" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Daily -At 19:00) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\nudge.ps1`" -Kind shutdown") -Settings $settings
-
-Register-ScheduledTask -TaskName "Aeternum Fechamento" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Daily -At 21:00) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\nudge.ps1`" -Kind closing") -Settings $settings
-
-Register-ScheduledTask -TaskName "Aeternum Review" -Force `
-  -Trigger (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 20:00) `
-  -Action (New-ScheduledTaskAction -Execute $ps -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$dir\nudge.ps1`" -Kind review") -Settings $settings
+# Os ritos do dia vêm de ritos.json, a fonte única (SPEC §4). sync-cron.ps1 registra
+# e reconcilia as sete tarefas a partir dele.
+& "$dir\sync-cron.ps1"
 
 if ($bffTaskInstalled) {
   Start-ScheduledTask -TaskName "Aeternum BFF"
@@ -63,4 +30,3 @@ if ($bffTaskInstalled) {
   Start-Process -FilePath $ps -WindowStyle Hidden `
     -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "$dir\start-bff.ps1"
 }
-Get-ScheduledTask -TaskName "Aeternum *" | Format-Table TaskName, State
