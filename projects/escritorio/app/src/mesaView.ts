@@ -5,6 +5,17 @@
 // Estrutural, sem `despejoBonus`: o POINTS real de theme.ts é atribuível a ela.
 export type PointsTable = { tarefa: number; rotina: number; captura: number; fechamento: number; shutdown: number };
 
+// A hora entra por parâmetro, pelo mesmo motivo que a tabela de pontos: o
+// mesaView escrevia "19h" e "21h" à mão, e mudar o rito deixava a Mesa mentindo.
+export type Rito = { slug: string; hora: string; dia: string | null };
+
+function horaCurta(ritos: Rito[], slug: string): string {
+  const r = ritos.find((x) => x.slug === slug);
+  if (!r) return "";
+  const [h, m] = r.hora.split(":");
+  return m === "00" ? `${Number(h)}h` : `${Number(h)}h${m}`;
+}
+
 // O que a tela conseguiu carregar. null = NÃO CARREGOU, e null nunca vira estado:
 // sinal desconhecido manda o item para o arquivo, sem número inventado.
 export type MesaSinais = {
@@ -30,7 +41,7 @@ function item(destino: string, nome: string, sub: string, contador: string | nul
   return { destino, nome, sub, contador, feito };
 }
 
-export function montarMesa(sinais: MesaSinais, points: PointsTable): MesaGrupo[] {
+export function montarMesa(sinais: MesaSinais, points: PointsTable, ritos: Rito[]): MesaGrupo[] {
   const precisa: MesaItem[] = [];
   const rotina: MesaItem[] = [];
   const arquivo: MesaItem[] = [];
@@ -67,11 +78,13 @@ export function montarMesa(sinais: MesaSinais, points: PointsTable): MesaGrupo[]
     ));
   }
   if (sinais.shutdownFeito === false) {
-    precisa.push(item("shutdown", "Shutdown", "rito das 19h · fecha o trabalho", "19h"));
+    const h = horaCurta(ritos, "shutdown");
+    precisa.push(item("shutdown", "Shutdown", `rito das ${h} · fecha o trabalho`, h));
   }
   // Não existe flag de "fechamento feito" no BFF: Fechar o dia fica sempre aqui,
   // com a hora e o valor — e nunca com FEITO ✓.
-  precisa.push(item("fechar", "Fechar o dia", `rito das 21h · vale +${points.fechamento}`, "21h"));
+  const hFechar = horaCurta(ritos, "closing");
+  precisa.push(item("fechar", "Fechar o dia", `rito das ${hFechar} · vale +${points.fechamento}`, hFechar));
 
   // ROTINA DO DIA — o que tem estado conhecido.
   if (sinais.aberturaFeita !== null) {

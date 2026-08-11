@@ -1,4 +1,16 @@
 import type { Abertura } from "./api";
+import type { Rito } from "./parametrosCore";
+
+// Duplicado de mesaView.ts, de propósito: módulo puro não tem import de valor
+// entre si (o teste .mjs não resolve import relativo sem extensão). São 4
+// linhas — PointsTable já é redeclarado do mesmo jeito entre mesaView.ts e
+// closingPoints.ts.
+function horaCurta(ritos: Rito[], slug: string): string {
+  const r = ritos.find((x) => x.slug === slug);
+  if (!r) return "";
+  const [h, m] = r.hora.split(":");
+  return m === "00" ? `${Number(h)}h` : `${Number(h)}h${m}`;
+}
 
 export type HomeSignals = {
   staging: number | null;
@@ -92,10 +104,17 @@ export function nextAgendaAt(
 export function actionForAt(
   abertura: Abertura | null,
   signals: HomeSignals,
+  ritos: Rito[],
   now = new Date(),
 ): HomeAction {
-  const hour = now.getHours();
+  const agora = now.getHours() * 60 + now.getMinutes();
   const sunday = now.getDay() === 0;
+  const em = (slug: string) => {
+    const r = ritos.find((x) => x.slug === slug);
+    if (!r) return Number.POSITIVE_INFINITY;
+    const [h, m] = r.hora.split(":");
+    return Number(h) * 60 + Number(m);
+  };
 
   // MODO RETORNO — vem antes de tudo, de propósito.
   // Voltar depois de uma semana fora e receber o digest inteiro em 🚨, o "Foco de
@@ -113,23 +132,28 @@ export function actionForAt(
     };
   }
 
-  if (hour < 8 && !abertura?.template) {
+  // Prazo para abrir o dia — não é o horário do toque (05:30). Não deriva de
+  // rito nenhum: nomear uma relação com o rito e não derivá-la foi um defeito
+  // real que a revisão do projeto pegou.
+  if (agora < 8 * 60 && !abertura?.template) {
     return { icon: "sunrise", eyebrow: "abrir o dia", title: "Yoga ou corrida?", subtitle: "Defina o ritmo antes de negociar com o dia.", target: "abertura" };
   }
-  if (hour < 12 && !abertura?.checkin.feito) {
+  // Prazo do check-in — não é o horário dele (08:20). Mesmo motivo acima.
+  if (agora < 12 * 60 && !abertura?.checkin.feito) {
     return { icon: "activity", eyebrow: "check-in · 60 segundos", title: "Como você chega hoje?", subtitle: "Energia, clareza e uma prioridade real.", target: "abertura" };
   }
-  if ((signals.reading ?? 0) > 0 && hour < 19) {
+  if ((signals.reading ?? 0) > 0 && agora < em("shutdown")) {
     return { icon: "book-open", eyebrow: "sessão preservada", title: "Continuar a leitura", subtitle: `${signals.reading} sessão pendente no seu buffer.`, target: "leitura" };
   }
-  if (sunday && hour >= 17) {
+  // 3h de antecedência sobre o rito review.
+  if (sunday && agora >= em("review") - 180) {
     return { icon: "compass", eyebrow: "review semanal", title: "Ler a semana sem fantasia", subtitle: "Números, padrões e a próxima correção de rota.", target: "revisao" };
   }
-  if (hour >= 19 && hour < 21) {
+  if (agora >= em("shutdown") && agora < em("closing")) {
     return { icon: "sunset", eyebrow: "shutdown", title: "Fechar o trabalho", subtitle: "Pendências, follow-ups e três prioridades de amanhã.", target: "shutdown" };
   }
-  if (hour >= 21) {
-    return { icon: "moon", eyebrow: "rito das 21h", title: "Fechar o dia", subtitle: "Uma linha, seus ritmos e nada carregado para a cama. 90 segundos.", target: "fechar" };
+  if (agora >= em("closing")) {
+    return { icon: "moon", eyebrow: `rito das ${horaCurta(ritos, "closing")}`, title: "Fechar o dia", subtitle: "Uma linha, seus ritmos e nada carregado para a cama. 90 segundos.", target: "fechar" };
   }
   return { icon: "crosshair", eyebrow: "agora", title: "Executar o que importa", subtitle: "Abra o foco e conclua uma coisa antes da próxima.", target: "tarefas" };
 }

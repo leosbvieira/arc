@@ -25,7 +25,8 @@ import { listPendingReadingSessions } from "../readingApi";
 import { actionForAt, HomeSignals, nextAgendaAt } from "../homeAction";
 import { milhar } from "../format";
 import { valorDaAcao } from "../mesaView";
-import { areaColor, colors, fonts, POINTS, radius, spacing } from "../theme";
+import { useParams } from "../parametros";
+import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { Badge, ProgressBar, SectionHeader, SegmentBar, Skeleton } from "../ui";
 
 function greeting(): string {
@@ -44,6 +45,7 @@ function dateLabel(): string {
 }
 
 export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void }) {
+  const params = useParams();
   const [digest, setDigest] = useState<Digest | null>(null);
   const [abertura, setAbertura] = useState<Abertura | null>(null);
   const [points, setPoints] = useState<Pontos | null>(null);
@@ -111,9 +113,9 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
   }, []);
 
   const partial = failures.size > 0;
-  const action = actionForAt(abertura, signals);
-  // Preço do hero (tabela POINTS, display-only). null = não desenha nada.
-  const valorHero = valorDaAcao(action.target, POINTS);
+  const action = actionForAt(abertura, signals, params.ritos);
+  // Preço do hero (tabela de tarifas, display-only). null = não desenha nada.
+  const valorHero = valorDaAcao(action.target, params.tarifas);
   const focus = (digest?.tasks ?? []).slice(0, 3);
   const routineDone = abertura?.rotinas_manha.filter((routine) => routine.feito).length ?? 0;
   const routineTotal = abertura?.rotinas_manha.length ?? 0;

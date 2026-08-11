@@ -7,6 +7,18 @@ import { montarMesa, valorDaAcao } from "../src/mesaView.ts";
 // O teste importa o POINTS de produção e passa por parâmetro — os valores de
 // verdade ficam presos ao teste, e o módulo puro não tem nenhum import de valor.
 
+// Mesma tabela de horários de DEFAULT_PARAMS.ritos — o teste é quem importa a
+// tabela real, o mesaView não sabe de onde ela veio.
+const RITOS = [
+  { slug: "toque", hora: "05:30", dia: null },
+  { slug: "checkin", hora: "08:20", dia: null },
+  { slug: "jornal", hora: "08:30", dia: null },
+  { slug: "digest", hora: "09:00", dia: null },
+  { slug: "shutdown", hora: "19:00", dia: null },
+  { slug: "closing", hora: "21:00", dia: null },
+  { slug: "review", hora: "20:00", dia: "domingo" },
+];
+
 const TODOS_OS_DESTINOS = [
   "agenda",
   "abertura",
@@ -66,6 +78,7 @@ test("anti-órfão: os 11 destinos da grade antiga existem em QUALQUER combinaç
               const grupos = montarMesa(
                 sinais({ triagem, anki, leituras: leitura, aberturaFeita, shutdownFeito, ritmos: ritmo }),
                 POINTS,
+                RITOS,
               );
               const ds = destinos(grupos);
               for (const d of TODOS_OS_DESTINOS) {
@@ -99,6 +112,7 @@ test("ordem dos grupos: PRECISA DE VOCÊ, ROTINA DO DIA, ARQUIVO", () => {
       ritmos: { feitos: 2, total: 8 },
     }),
     POINTS,
+    RITOS,
   );
 
   assert.deepEqual(
@@ -122,7 +136,7 @@ test("ordem dos grupos: PRECISA DE VOCÊ, ROTINA DO DIA, ARQUIVO", () => {
 // ---- PRECISA DE VOCÊ ----
 
 test("triagem com fila entra em precisa, com o mais velho no sub", () => {
-  const grupos = montarMesa(sinais({ triagem: { n: 3, maisVelhoD: 5 } }), POINTS);
+  const grupos = montarMesa(sinais({ triagem: { n: 3, maisVelhoD: 5 } }), POINTS, RITOS);
   const t = item(grupos, "triagem");
 
   assert.equal(grupo(grupos, "PRECISA DE VOCÊ").itens.includes(t), true);
@@ -133,33 +147,33 @@ test("triagem com fila entra em precisa, com o mais velho no sub", () => {
 });
 
 test("triagem sem idade conhecida cai para o plural de itens parados", () => {
-  const grupos = montarMesa(sinais({ triagem: { n: 1, maisVelhoD: null } }), POINTS);
+  const grupos = montarMesa(sinais({ triagem: { n: 1, maisVelhoD: null } }), POINTS, RITOS);
   assert.equal(item(grupos, "triagem").sub, "1 item parado");
 
-  const grupos2 = montarMesa(sinais({ triagem: { n: 2, maisVelhoD: null } }), POINTS);
+  const grupos2 = montarMesa(sinais({ triagem: { n: 2, maisVelhoD: null } }), POINTS, RITOS);
   assert.equal(item(grupos2, "triagem").sub, "2 itens parados");
 });
 
 test("revisão entra em precisa com plural correto", () => {
-  const um = montarMesa(sinais({ anki: 1 }), POINTS);
+  const um = montarMesa(sinais({ anki: 1 }), POINTS, RITOS);
   assert.equal(item(um, "revisao").sub, "1 cartão anki sugerido");
   assert.equal(item(um, "revisao").contador, "1");
 
-  const quatro = montarMesa(sinais({ anki: 4 }), POINTS);
+  const quatro = montarMesa(sinais({ anki: 4 }), POINTS, RITOS);
   assert.equal(item(quatro, "revisao").sub, "4 cartões anki sugeridos");
 });
 
 test("leituras entram em precisa com plural correto", () => {
-  const um = montarMesa(sinais({ leituras: 1 }), POINTS);
+  const um = montarMesa(sinais({ leituras: 1 }), POINTS, RITOS);
   assert.equal(item(um, "leitura").sub, "1 sessão por fechar");
   assert.equal(item(um, "leitura").contador, "1");
 
-  const duas = montarMesa(sinais({ leituras: 2 }), POINTS);
+  const duas = montarMesa(sinais({ leituras: 2 }), POINTS, RITOS);
   assert.equal(item(duas, "leitura").sub, "2 sessões por fechar");
 });
 
 test("shutdown não feito entra em precisa; fechar o dia está sempre lá, sem FEITO", () => {
-  const grupos = montarMesa(sinais({ shutdownFeito: false }), POINTS);
+  const grupos = montarMesa(sinais({ shutdownFeito: false }), POINTS, RITOS);
   const shutdown = item(grupos, "shutdown");
   const fechar = item(grupos, "fechar");
 
@@ -177,20 +191,20 @@ test("shutdown não feito entra em precisa; fechar o dia está sempre lá, sem F
 // ---- ROTINA DO DIA ----
 
 test("abertura feita e não feita: sub e feito mudam juntos", () => {
-  const feita = montarMesa(sinais({ aberturaFeita: true }), POINTS);
+  const feita = montarMesa(sinais({ aberturaFeita: true }), POINTS, RITOS);
   const abFeita = item(feita, "abertura");
   assert.equal(grupo(feita, "ROTINA DO DIA").itens.includes(abFeita), true);
   assert.equal(abFeita.sub, "check-in do dia feito");
   assert.equal(abFeita.feito, true);
 
-  const naoFeita = montarMesa(sinais({ aberturaFeita: false }), POINTS);
+  const naoFeita = montarMesa(sinais({ aberturaFeita: false }), POINTS, RITOS);
   const abNao = item(naoFeita, "abertura");
   assert.equal(abNao.sub, "o dia ainda não foi aberto");
   assert.equal(abNao.feito, false);
 });
 
 test("shutdown feito sai de precisa e aparece na rotina como FEITO", () => {
-  const grupos = montarMesa(sinais({ shutdownFeito: true }), POINTS);
+  const grupos = montarMesa(sinais({ shutdownFeito: true }), POINTS, RITOS);
   const s = item(grupos, "shutdown");
 
   assert.equal(grupo(grupos, "ROTINA DO DIA").itens.includes(s), true);
@@ -200,17 +214,17 @@ test("shutdown feito sai de precisa e aparece na rotina como FEITO", () => {
 });
 
 test("ritmos conhecidos mostram N de M e feito só quando completo", () => {
-  const parcial = montarMesa(sinais({ ritmos: { feitos: 2, total: 8 } }), POINTS);
+  const parcial = montarMesa(sinais({ ritmos: { feitos: 2, total: 8 } }), POINTS, RITOS);
   const r = item(parcial, "rotinas");
   assert.equal(r.sub, "2 de 8 hoje");
   assert.equal(r.contador, "2/8");
   assert.equal(r.feito, false);
 
-  const completo = montarMesa(sinais({ ritmos: { feitos: 8, total: 8 } }), POINTS);
+  const completo = montarMesa(sinais({ ritmos: { feitos: 8, total: 8 } }), POINTS, RITOS);
   assert.equal(item(completo, "rotinas").feito, true);
 
   // 0 de 0 não é "feito" — não há ritmo configurado.
-  const vazio = montarMesa(sinais({ ritmos: { feitos: 0, total: 0 } }), POINTS);
+  const vazio = montarMesa(sinais({ ritmos: { feitos: 0, total: 0 } }), POINTS, RITOS);
   assert.equal(item(vazio, "rotinas").feito, false);
 });
 
@@ -227,6 +241,7 @@ test("tudo zerado: filas vazias caem no arquivo com sub fixo, sem número", () =
       ritmos: { feitos: 1, total: 4 },
     }),
     POINTS,
+    RITOS,
   );
   const arquivo = grupo(grupos, "ARQUIVO");
 
@@ -242,7 +257,7 @@ test("tudo zerado: filas vazias caem no arquivo com sub fixo, sem número", () =
 });
 
 test("sinal desconhecido (null) manda o item para o arquivo, sem mentir estado", () => {
-  const grupos = montarMesa(sinais(), POINTS);
+  const grupos = montarMesa(sinais(), POINTS, RITOS);
   const arquivo = grupo(grupos, "ARQUIVO");
 
   assert.deepEqual(
@@ -264,6 +279,17 @@ test("sinal desconhecido (null) manda o item para o arquivo, sem mentir estado",
     assert.equal(i.contador, null);
     assert.equal(i.feito, false);
   }
+});
+
+test("a hora exibida vem da tabela, não de literal", () => {
+  const ritos = [
+    { slug: "shutdown", hora: "18:00", dia: null },
+    { slug: "closing", hora: "22:00", dia: null },
+  ];
+  const grupos = montarMesa(sinais({ shutdownFeito: false }), POINTS, ritos);
+  assert.equal(item(grupos, "shutdown").contador, "18h");
+  assert.equal(item(grupos, "fechar").contador, "22h");
+  assert.match(item(grupos, "shutdown").sub, /18h/);
 });
 
 // ---- valorDaAcao (preço do hero da Home) ----

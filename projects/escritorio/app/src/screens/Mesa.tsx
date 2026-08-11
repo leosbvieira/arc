@@ -13,7 +13,8 @@ import {
 import { Abertura, Shutdown, getAbertura, getShutdown, listAnkiCards } from "../api";
 import { listPendingReadingSessions } from "../readingApi";
 import { MesaSinais, montarMesa } from "../mesaView";
-import { POINTS, colors, fonts, radius, spacing } from "../theme";
+import { useParams } from "../parametros";
+import { colors, fonts, radius, spacing } from "../theme";
 import { PendRow, Skeleton } from "../ui";
 
 // Ícone e cor por destino — herdados da grade "Ferramentas" que saiu da Home.
@@ -37,6 +38,7 @@ const VISUAL: Record<string, { icon: string; color: string }> = {
 const FALLBACK_VISUAL = { icon: "circle", color: colors.textMuted };
 
 export default function Mesa({ onOpenTab }: { onOpenTab?: (tab: string) => void }) {
+  const params = useParams();
   const [anki, setAnki] = useState<number | null>(null);
   const [leituras, setLeituras] = useState<number | null>(null);
   const [abertura, setAbertura] = useState<Abertura | null>(null);
@@ -119,7 +121,7 @@ export default function Mesa({ onOpenTab }: { onOpenTab?: (tab: string) => void 
       ? { feitos: abertura.rotinas_manha.filter((r) => r.feito).length, total: abertura.rotinas_manha.length }
       : null,
   };
-  const grupos = montarMesa(sinais, POINTS);
+  const grupos = montarMesa(sinais, params.tarifas, params.ritos);
 
   return (
     <View style={styles.root}>
