@@ -5,9 +5,9 @@
 > (Leo, 09/ago/2026). Terceiro pedido: já constava na SPEC como "Manual/SOP" (§7) e no corte
 > "diagramas derivados do vault → tooltips + cheatsheet estático".
 >
-> **Data:** 11/ago/2026. **Versão:** v5. Quatro rodadas de revisão hostil (GPT-5.6 Sol xhigh) incorporadas —
-> r1: 15 achados, `REDESENHAR`; r2: 8 novos; r3: 9 novos, **nenhum crítico**; r4: 6 novos, nenhum crítico.
-> Ver §13. **Estado:** não implementado.
+> **Data:** 11/ago/2026. **Versão:** v6. Cinco rodadas de revisão hostil (GPT-5.6 Sol xhigh) incorporadas —
+> r1: 15 achados, `REDESENHAR`; r2: 8 novos; r3: 9, **nenhum crítico**; r4: 6, nenhum crítico; r5: 3, nenhum
+> crítico, **mas 2 regressões introduzidas pela v5**. Ver §13. **Estado:** não implementado.
 >
 > **Entrega em duas fatias** (§12): **1A** é a fonte única e fecha sozinha; **1B** é a tela e depende dela.
 
@@ -353,16 +353,28 @@ export type Decisao = { fonte: Fonte; cache: "gravar" | "manter" | "descartar" }
 
 export const DEFAULT_PARAMS: Params;                      // completo, validado pelo teste 8
 
+export type PortaCache = {                                // TUDO assíncrono — ver abaixo
+  ler(): Promise<unknown>;
+  gravar(v: unknown): Promise<void>;
+  apagar(): Promise<void>;
+};
+
 export function validar(bruto: unknown): Params | null;   // null se o formato não bate
 export function decidir(e: Entrada): Decisao;             // toda a política de §6, pura
-export function aplicar(d: Decisao, s: Storage): void;    // executa o comando; Storage é porta
+export function aplicar(d: Decisao, p: PortaCache): Promise<void>;
 export function minutos(hora: string): number;            // "18:30" → 1110
 export function fonteParaWiki(f: Fonte): Fonte;           // padrao → indisponivel
 ```
 
-`aplicar` recebe o armazenamento como **porta** (`{ ler(): unknown; gravar(v): void; apagar(): void }`), então
-a execução do comando de cache é testável com um duplo em memória — em v4 ela ficava no wiring do provider,
-que era o último pedaço de política sem teste.
+`aplicar` recebe o armazenamento como **porta**, então a execução do comando de cache é testável com um duplo
+— em v4 ela ficava no wiring do provider, que era o último pedaço de política sem teste.
+
+**A porta é assíncrona, e isso não é detalhe.** Em v5 eu a declarei síncrona (`gravar(v): void`). Não é
+implementável: `app/src/storage.ts` embrulha o `expo-secure-store` e **todas** as suas operações devolvem
+`Promise` (`getItemAsync`, `setItemAsync`, `deleteItemAsync`). Um duplo síncrono passaria no teste enquanto a
+produção não esperaria a persistência — teste verde sobre código que perde escrita. O teste 5 cobre também
+**rejeição** da porta (gravar falha → a tela continua com a fonte decidida, o erro não sobe) e **ordenação**
+(duas decisões em sequência não podem gravar fora de ordem).
 
 Três coisas que mudaram desde v2, cada uma fechando um buraco real:
 
@@ -390,14 +402,36 @@ Em v2 o contrato era um exemplo de resposta commitado e uma comparação de **ca
 via tipo (o BFF podia trocar `hora: "05:30"` por `hora: 530` e passar), e um array vazio não produzia caminho
 nenhum, contradizendo a igualdade exata com um fixture não vazio.
 
-O FastAPI já gera JSON Schema do modelo Pydantic. **O schema é o contrato:**
+O FastAPI já gera JSON Schema do modelo Pydantic. **Um schema, um arquivo, um consumidor de cada lado:**
 
-- `app/tests/fixtures/wiki-schema.json` — o JSON Schema do modelo, commitado.
-- Teste do BFF (§7.7) **regenera** do modelo e exige igualdade com o arquivo commitado. Mudou o modelo sem
-  atualizar o contrato → quebra.
-- Teste do app (§7.2, §7.4) valida slots **e tipos** contra o schema, e `validar()` é escrito contra ele.
-- `app/tests/fixtures/wiki-parametros.json` continua existindo, mas só como **massa de teste** — não é mais o
-  contrato.
+- **`app/src/wiki-schema.json`** — o contrato. **Arquivo único**, no bundle. Em v5 eu citei dois caminhos
+  diferentes (`app/tests/fixtures/wiki-schema.json` em §3.6 e `app/src/wiki-schema.json` em §8) sem nada que
+  os igualasse; o implementador não teria como saber qual é o verdadeiro.
+- Teste do BFF (§7.8) **regenera** do modelo, **normaliza** (abaixo) e exige igualdade com esse arquivo.
+- O app valida contra o mesmo arquivo, em runtime e em teste.
+- `app/tests/fixtures/wiki-parametros.json` continua existindo, mas só como **massa de teste**.
+
+#### Normalização: o Pydantic não gera o dialeto que o caminhador lê
+
+Em v5 eu mandei o caminhador implementar `type`, `properties`, `required`, `items`, `minItems`, `enum` e
+`nullable`, e mandei o teste quebrar diante de qualquer outra palavra-chave. **As duas ordens juntas são
+impossíveis de cumprir:** `model_json_schema()` emite `$defs` e `$ref` para os modelos aninhados (`tarifas`,
+`punicao`, `ritos[]`…), e `anyOf: [{type: "string"}, {type: "null"}]` para `dia: str | None`. Regenerar o
+contrato quebraria o próprio teste, sempre.
+
+Correção: uma função de normalização (`bff/app/wiki_schema.py`, ~30 linhas) roda **entre** gerar e commitar, e
+produz o dialeto plano:
+
+| Do Pydantic | Normalizado |
+|---|---|
+| `$defs` + `$ref` | Definição **inlined** no ponto de uso; `$defs` removido |
+| `anyOf: [X, {type: "null"}]` | `X` com `nullable: true` |
+| `const: "x"` | `enum: ["x"]` |
+| `title`, `description` | Removidos — são ruído de documentação, não contrato |
+
+O que **sobrar** de palavra-chave desconhecida depois da normalização é erro do teste 8, e aí sim quebrar é o
+comportamento certo: significa que o modelo ganhou uma construção que o caminhador não sabe validar. A regra de
+v5 estava certa; faltava a etapa que a torna alcançável.
 
 Caminho de array é `areas[]` / `ritos[].hora`: o schema descreve a forma do elemento, e cardinalidade fica de
 fora. Array vazio é válido em geral, e a tela renderiza lista vazia com nota.
@@ -418,10 +452,9 @@ evitavelmente caro da spec.
 Correção: **o schema commitado entra no bundle e `validar()` passa a ser um caminhador sobre ele**, não uma
 segunda implementação das regras. Uma implementação, nada a provar.
 
-O caminhador cobre só o subconjunto de JSON Schema que este contrato usa — `type`, `properties`, `required`,
-`items`, `minItems`, `enum`, `nullable` — em torno de 60 linhas, sem dependência externa (o projeto não tem
-libs de validação e esta fatia não vai introduzir uma). Palavra-chave fora do subconjunto no schema faz o
-teste 8 quebrar, em vez de ser ignorada em silêncio.
+O caminhador cobre só o subconjunto **normalizado** (abaixo) — `type`, `properties`, `required`, `items`,
+`minItems`, `enum`, `nullable` — em torno de 60 linhas, sem dependência externa (o projeto não tem libs de
+validação e esta fatia não vai introduzir uma).
 
 ## 4. Conteúdo
 
@@ -581,10 +614,10 @@ Quinze. Os cinco primeiros são o que faz o aceite ser verdade em vez de promess
 | 2 | idem | **Literal proibido** — dígito fora de slot que não caia nas três categorias de §4.2 quebra; inclui a blocklist enumerada de numerais por extenso |
 | 3 | idem | **Valores-sentinela** — renderiza todas as páginas com um `Params` em que cada número é um sentinela distinto, e falha se qualquer valor de produção aparecer no texto. Pega o número copiado à mão que casualmente bate com o real |
 | 4 | idem | **Inventário coberto** — todo slot de §4.2 é usado por alguma página; e todo slug de `ritos.json` tem `RITOS_TEXTO` com `nome`/`pede`/`grava` não vazios |
-| 5 | `app/tests/parametrosCore.test.mjs` | **`decidir`** nos casos de §6, conferindo **fonte, comando de cache e a precedência**; **`validar`** com payload completo, parcial, tipo errado, array vazio, `null`, cache sem `salvoEm` e com `salvoEm` não parseável; **`aplicar`** contra um armazenamento em memória, provando `gravar`/`manter`/`descartar`; **`minutos`**. Nenhum caminho devolve `undefined` |
+| 5 | `app/tests/parametrosCore.test.mjs` | **`decidir`** nos casos de §6, conferindo **fonte, comando de cache e a precedência**; **`validar`** com payload completo, parcial, tipo errado, array vazio, `null`, cache sem `salvoEm` e com `salvoEm` não parseável; **`aplicar`** contra uma porta **assíncrona** em memória, provando `gravar`/`manter`/`descartar`, mais **rejeição** da porta e **ordenação** de duas decisões seguidas; **`minutos`**. Nenhum caminho devolve `undefined` |
 | 6 | `bff/tests/test_ritos.py` | `ritos.json` carrega e valida: `slug` único, **`task` único**, `hora` `HH:MM`, `dia` válido, `script ∈ {nudge,digest}`, **rito semanal não antes de `03:00`** (§3.3); e o `ValidateSet` do `nudge.ps1` **e as chaves do `NUDGE_COPY`** são, os dois, exatamente os slugs com `script: "nudge"` — igualdade nas duas direções, não continência |
 | 7 | idem | **`NUDGE_COPY` ligado ao slug certo** — renderiza cada copy com uma hora sentinela **distinta por slug** e exige que cada texto mostre a sua. Em v3 o teste só provava ausência de literal: o fechamento podia interpolar a hora do shutdown e passar, anunciando a hora errada no push |
-| 8 | `bff/tests/test_wiki_parametros.py` + `app/tests/parametrosCore.test.mjs` | 401 sem token; cada valor vem de `settings`/`ritos.py` (muda o setting → muda a resposta); o JSON Schema regenerado é idêntico ao commitado; o schema só usa o subconjunto que o caminhador implementa (§3.6); e **`DEFAULT_PARAMS` valida contra o schema** |
+| 8 | `bff/tests/test_wiki_parametros.py` + `app/tests/parametrosCore.test.mjs` | 401 sem token; cada valor vem de `settings`/`ritos.py` (muda o setting → muda a resposta); o JSON Schema regenerado **e normalizado** (§3.6) é idêntico a `app/src/wiki-schema.json`; a normalização não deixa `$ref`, `$defs`, `anyOf`, `const`, `title` nem `description`; o que sobra está todo no subconjunto do caminhador; e **`DEFAULT_PARAMS` valida contra o schema** |
 | 9 | `bff/tests/test_sync_cron.py` | O plano do `sync-cron.ps1 -DryRun` bate com o `ritos.json`: sete tasks, gatilho certo (`-Daily` × `-Weekly -DaysOfWeek Sunday`), script certo; task `Aeternum *` ausente do JSON entra na lista de remoção e `Aeternum BFF` não; e a **política de falha** de §3.2 (JSON inválido aborta; erro do Agendador não impede o boot e gera alerta) |
 | 10 | `app/tests/homeAction.test.mjs` | Os quatro limiares que derivam (§3.3) mudam quando a tabela `ritos` muda, incluindo o domingo em `review − 3h`; os dois prazos **não** mudam. Com um rito em minuto não-zero (`18:30`), o instante anterior, o exato e o posterior caem no ramo certo |
 | 11 | `app/tests/migracaoPoints.test.mjs` | **Guarda estática:** nenhum arquivo fora de `theme.ts` e `parametros.tsx` importa `POINTS`. Sem ela, um call site esquecido passa despercebido e o aceite §10.2 ainda fica verde |
@@ -601,11 +634,14 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 
 - **Se o texto está bom.** Nenhuma suíte prova que uma frase esclarece. Por isso o aceite (§10) é uma lista de
   perguntas concretas respondidas pelo Leo.
-- **A composição visual do `.tsx`.** Depois de `decidir` (política), do provider (busca e cache) e de `wikiNav`
-  (navegação), o que resta no componente é desenhar — e disso não há teste automatizado, porque o projeto não
-  tem infraestrutura de render de RN e criar uma é fatia própria (§14). Coberto pelo aceite manual §10.4.
-  Em v3 esse buraco era maior e eu o declarei em vez de reduzi-lo; a rodada 3 apontou que dava para extrair
-  mais, e deu.
+- **A composição visual do `.tsx`.** Depois de `decidir` (política), `aplicar` (efeito), o provider (busca) e
+  `wikiNav` (navegação), o que resta no componente é desenhar — e disso não há teste automatizado, porque o
+  projeto não tem infraestrutura de render de RN e criar uma é fatia própria (§14). Coberto pelo aceite manual
+  §10.4. Em v3 esse buraco era maior e eu o declarei em vez de reduzi-lo; a rodada 3 apontou que dava para
+  extrair mais, e deu.
+- **O disparo da revalidação por foco.** Que o app revalide ao voltar do background é efeito de ciclo de vida
+  de RN. O que ele faz **depois** de revalidar é `decidir` + `aplicar`, e isso é testado. O disparo em si é
+  drill manual (§10.7).
 
 ## 8. Arquivos tocados
 
@@ -615,7 +651,8 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 - `bff/tests/test_ritos.py` · `bff/tests/test_wiki_parametros.py` · `bff/tests/test_sync_cron.py`
 - **1A:** `app/src/parametrosCore.ts` · `app/src/parametros.tsx` (o provider) ·
   `app/tests/parametrosCore.test.mjs` · `app/tests/migracaoPoints.test.mjs` ·
-  `app/src/wiki-schema.json` (no bundle, §3.6) · `app/tests/fixtures/wiki-parametros.json`
+  `app/src/wiki-schema.json` (arquivo único do contrato, §3.6) · `app/tests/fixtures/wiki-parametros.json` ·
+  `bff/app/wiki_schema.py` (a normalização)
 - **1B:** `app/src/wikiContent.ts` · `app/src/wikiResolve.ts` · `app/src/wikiNav.ts` ·
   `app/src/screens/ComoFunciona.tsx` · `app/tests/wikiContent.test.mjs` ·
   `app/tests/wikiResolve.test.mjs` · `app/tests/wikiNav.test.mjs`
@@ -683,7 +720,12 @@ resposta ou um cache chega.
 **6b. Primeira abertura é honesta — na wiki (1B).** Na mesma condição, `Como funciona` mostra `—` e diz
 *"ainda não li os valores do servidor"*. Nenhuma tela apresenta o embutido como se fosse o valor do sistema.
 
-**7. Suíte.** `python -m pytest -q` e os testes `.mjs` passam, incluindo os quinze de §7.
+**7. Revalidação por foco — drill manual (1A).** Abrir o app com o BFF desligado (números do cache, com selo),
+ligar o BFF **sem sair da tela**, tirar o app do foco e voltar: o selo some e os números são os novos. É drill
+porque disparar o evento de foco exige render de RN, que o projeto não testa (§7); está aqui em vez de fingir
+cobertura.
+
+**8. Suíte.** `python -m pytest -q` e os testes `.mjs` passam, incluindo os quinze de §7.
 
 ## 11. Complexidade
 
@@ -795,6 +837,17 @@ operacional já existente em várias superfícies"*):
 | PARCIAL — execução do comando e refresh sem teste | `aplicar(decisao, storage)` com porta de armazenamento, testado com duplo em memória (§3.5, teste 5) |
 | PARCIAL — igualdade das chaves do `NUDGE_COPY` | Igualdade nas duas direções com os slugs `script: "nudge"`, não continência (teste 6) |
 | D11 julgada **fechada** | Sem mudança, além do rollover acima |
+
+**v5 → v6** — rodada 5. Os **6 achados da rodada 4 e 4 dos 6 parciais: resolvidos**. Mas duas das minhas
+correções de v5 **pioraram** o que consertavam, e a resposta à pergunta que importa foi **não**:
+
+| Achado da rodada 5 | Resposta |
+|---|---|
+| **PIOROU** — o caminhador não aceita o schema que o Pydantic gera | Erro meu, e do tipo pior: eu mandei implementar um dialeto e mandei o teste quebrar diante de qualquer outro, sem notar que `model_json_schema()` emite `$defs`, `$ref`, `anyOf` e `const`. O teste era impossível de passar. Entra a normalização de §3.6 |
+| **PIOROU** — porta de cache síncrona sobre armazenamento assíncrono | Erro meu: `storage.ts` embrulha o `expo-secure-store` e devolve `Promise` em tudo. Porta e `aplicar` viram assíncronos; o teste 5 cobre rejeição e ordenação |
+| MÉDIO — dois arquivos canônicos para o mesmo schema | Erro meu de v5: citei `app/tests/fixtures/wiki-schema.json` em §3.6 e `app/src/wiki-schema.json` em §8. Arquivo único: `app/src/wiki-schema.json` |
+| PARCIAL — revalidação por foco sem cobertura | Aceito como drill manual explícito (§10.7), não como teste inexistente. O que vem **depois** do foco é `decidir` + `aplicar`, e isso é testado |
+| *"Um implementador consegue construir sem voltar a perguntar?"* → **NÃO** | Ele travaria nos três pontos acima. É a razão de existir a v6 |
 
 ## 14. Fatias seguintes
 
