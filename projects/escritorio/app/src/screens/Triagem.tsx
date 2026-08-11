@@ -18,6 +18,7 @@ import {
   getTriagem,
 } from "../api";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
+import { resumoDaTriagem } from "../triagemResultado";
 import { AppButton, Card, ErrorState, Skeleton } from "../ui";
 
 export default function Triagem() {
@@ -81,12 +82,7 @@ export default function Triagem() {
             setAplicando(true);
             try {
               const resultados = await aplicarTriagem(movimentos);
-              const ok = resultados.filter((resultado) => resultado.ok).length;
-              const falhas = resultados.length - ok;
-              Alert.alert(
-                "Triagem concluída",
-                falhas ? `${ok} movidas · ${falhas} não movidas.` : `${ok} tarefa(s) movidas.`,
-              );
+              Alert.alert("Triagem concluída", resumoDaTriagem(resultados));
               await load();
             } catch (e: any) {
               Alert.alert("Triagem", e?.message ?? "não consegui aplicar o lote");

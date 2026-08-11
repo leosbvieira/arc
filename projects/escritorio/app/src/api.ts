@@ -1037,7 +1037,10 @@ export type ItemTriagem = {
   area_proposta: AreaTriagem | null;
 };
 
-export type ResultadoTriagem = { task_id: string; ok: boolean; erro: string | null };
+// O tipo mora em `triagemResultado.ts`, junto da tradução das causas — assim o módulo
+// puro pode ser testado com `node --test` sem arrastar este arquivo (que tem fetch).
+export type { ResultadoTriagem } from "./triagemResultado";
+import type { ResultadoTriagem } from "./triagemResultado";
 
 export async function getTriagem(): Promise<{ itens: ItemTriagem[]; n: number }> {
   const base = await getBffUrl();
