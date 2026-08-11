@@ -46,11 +46,18 @@ import {
   ReadingReconcileResult,
   ReadingSession,
   ReadingSnapshot,
+  reconciliarTerminarBook,
   reconcileReadingSession,
   rejectReadingDraft,
   terminarBook,
   updateLastReadingBuffer,
 } from "../readingApi";
+import {
+  avisoDeObrasPresas,
+  mensagemDeReconciliacao,
+  mensagemDeTermino,
+  mensagemDeTerminoFalho,
+} from "../estanteResumo";
 import { parseReadingEntry } from "../readingParser";
 import { readingPreviewFromSession } from "../readingStaging";
 import { montarEstante, LinhaEstante } from "../shelfView";
@@ -179,12 +186,24 @@ export default function Capture({
   // primeiro carregamento, senão a mensagem de "indisponível" pisca em toda
   // entrada na tela antes do fetch normal responder.
   const [shelfError, setShelfError] = useState(false);
+  // Obras que ficaram reservadas: o resumão foi pedido ao ClickUp e a resposta não
+  // veio. Não voltam sozinhas — é ele quem manda perguntar como ficou.
+  const [presas, setPresas] = useState<Book[]>([]);
 
   const loadShelf = useCallback(async () => {
     try {
       const { books } = await listBooks("lendo");
       setShelf(books);
       setShelfError(false);
+      // Obra reservada some das duas listas normais: ela não está lendo nem
+      // terminada. Sem esta busca, ficaria invisível — e obra invisível é obra
+      // que ninguém reconcilia.
+      try {
+        setPresas((await listBooks("terminando")).books);
+      } catch {
+        // Falhar aqui não pode derrubar a estante: é informação extra.
+        setPresas([]);
+      }
     } catch {
       // null = NÃO CARREGOU. A tela mostra o campo livre, e nunca uma estante
       // vazia que o Leo leria como "não tenho livro nenhum". Mas a degradação
@@ -282,18 +301,40 @@ export default function Capture({
   async function terminarObra(bookId: number, titulo: string): Promise<void> {
     setShelfBusyId(bookId);
     try {
-      await terminarBook(bookId);
+      const { resumo_task_id } = await terminarBook(bookId);
       await loadShelf();
+      // Terminar deixou de ser só sumir da lista: agora nasce uma tarefa. Dizer
+      // onde ela foi parar é o que transforma o ✓ em algo que ele confere depois.
+      Alert.alert(
+        "Obra terminada",
+        mensagemDeTermino({ titulo, resumoTaskId: resumo_task_id }),
+      );
     } catch (error) {
       const detalhe = readingErrorDetail(error);
       if (detalhe === "book_ja_terminado") {
         // Já terminada em outro lugar: recarregar é a resposta certa, não um erro.
         await loadShelf();
-      } else if (detalhe === "book_com_sessao_aberta") {
-        setSpeechError(`termine a sessão de leitura de ${titulo} antes`);
       } else {
-        setSpeechError("não deu para terminar a obra");
+        // Recarrega ANTES de avisar: `book_resumao_indisponivel` deixou a obra
+        // reservada, e ela precisa aparecer na lista de presas junto com o aviso.
+        await loadShelf();
+        setSpeechError(mensagemDeTerminoFalho(detalhe));
       }
+    } finally {
+      setShelfBusyId(null);
+    }
+  }
+
+  async function resolverObraPresa(bookId: number, titulo: string): Promise<void> {
+    setShelfBusyId(bookId);
+    try {
+      const { resultado } = await reconciliarTerminarBook(bookId);
+      await loadShelf();
+      Alert.alert("Obra que ficou fechando", mensagemDeReconciliacao(resultado, titulo));
+    } catch {
+      // Continua presa de propósito: não saber o que houve no ClickUp não é prova
+      // de que nada foi criado, e liberar no escuro duplicaria o resumão.
+      setSpeechError("ainda não deu para falar com o ClickUp — a obra segue reservada");
     } finally {
       setShelfBusyId(null);
     }
@@ -1825,7 +1866,30 @@ export default function Capture({
                   <Text style={styles.shelfAddText}>novo livro</Text>
                 </Pressable>
               </>
-            ) : (
+            ) : null}
+
+            {presas.length > 0 ? (
+              <View style={styles.presasBloco}>
+                <Text style={styles.presasAviso}>{avisoDeObrasPresas(presas.length)}</Text>
+                {presas.map((obra) => (
+                  <Pressable
+                    key={obra.id}
+                    style={styles.presaRow}
+                    onPress={() => void resolverObraPresa(obra.id, obra.titulo)}
+                    disabled={shelfBusyId !== null}
+                  >
+                    <Text style={styles.presaTitulo} numberOfLines={1}>{obra.titulo}</Text>
+                    {shelfBusyId === obra.id ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Text style={styles.presaAcao}>resolver</Text>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+
+            {shelf && !newBookMode ? null : (
               // shelf === null (não carregou) cai aqui também — degradação para o
               // campo livre de sempre, nunca uma estante vazia lida como "sem livro".
               <>
@@ -2207,6 +2271,11 @@ const styles = StyleSheet.create({
   shelfTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 15, flex: 1 },
   shelfDetail: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12, marginTop: 2 },
   shelfAdd: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 12 },
+  presasBloco: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
+  presasAviso: { fontFamily: fonts.ui, color: colors.amber, fontSize: 11.5, marginBottom: 6 },
+  presaRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
+  presaTitulo: { fontFamily: fonts.ui, color: colors.text, fontSize: 13.5, flex: 1 },
+  presaAcao: { fontFamily: fonts.uiSemi, color: colors.primary, fontSize: 12 },
   shelfAddText: { fontFamily: fonts.uiSemi, color: colors.primary, fontSize: 13 },
   shelfLink: { fontFamily: fonts.ui, color: colors.primary, fontSize: 12, paddingVertical: 8 },
   shelfWarning: { fontFamily: fonts.ui, color: colors.danger, fontSize: 11.5, lineHeight: 16, paddingBottom: spacing.xs },

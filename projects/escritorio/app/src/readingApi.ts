@@ -22,12 +22,19 @@ export type ReadingBufferChunk = {
 export type Book = {
   id: number;
   titulo: string;
-  status: "lendo" | "terminado";
+  // "terminando" = reservada enquanto o resumão é criado no ClickUp. Terminar tem
+  // efeito externo, e o POST do ClickUp não é idempotente: a obra fica nesse estado
+  // até se provar o que aconteceu lá fora, e é por isso que ele existe na tela.
+  status: "lendo" | "terminando" | "terminado";
   ciclo: number;
   // Derivadas do servidor: null = a obra ainda não tem sessão compilada no ciclo.
   pagina_atual: number | null;
   ultima_sessao: number | null; // segundos, como o servidor manda
   sessoes_n: number;
+  // Só vem preenchido quando o resumão é DESTE ciclo: reabrir incrementa o ciclo e
+  // a tarefa da leitura anterior deixa de valer para a atual.
+  resumo_task_id?: string | null;
+  terminando_desde?: number | null;
 };
 
 export type ReadingSession = {
@@ -241,7 +248,7 @@ export async function discardReadingSession(
 }
 
 export async function listBooks(
-  status: "lendo" | "terminado" = "lendo",
+  status: "lendo" | "terminando" | "terminado" = "lendo",
 ): Promise<{ books: Book[] }> {
   return request(`/reading/books?status=${status}`);
 }
@@ -255,8 +262,32 @@ export async function createBook(
   });
 }
 
-export async function terminarBook(bookId: number): Promise<{ book: Book }> {
-  return request(`/reading/books/${bookId}/terminar`, { method: "POST" });
+// Cria a tarefa de resumão no Staging e fecha o ciclo. `resumo_task_id` vem null
+// quando o ciclo não teve sessão nenhuma — não há o que resumir.
+export async function terminarBook(
+  bookId: number,
+): Promise<{ book: Book; resumo_task_id: string | null }> {
+  // Passa pelo ClickUp, então herda a paciência do Hermes em vez dos 12s de rede.
+  return request(
+    `/reading/books/${bookId}/terminar`,
+    { method: "POST" },
+    TIMEOUT_HERMES_MS,
+  );
+}
+
+// Resolve uma obra presa em "terminando" perguntando ao ClickUp se a tarefa existe.
+// `resultado` diz o que foi decidido: "terminado" (achou e adotou) ou "liberado"
+// (provou que não existe e devolveu a obra para a estante).
+export async function reconciliarTerminarBook(bookId: number): Promise<{
+  book: Book;
+  resumo_task_id: string | null;
+  resultado: "terminado" | "liberado";
+}> {
+  return request(
+    `/reading/books/${bookId}/terminar/reconciliar`,
+    { method: "POST" },
+    TIMEOUT_HERMES_MS,
+  );
 }
 
 export async function reabrirBook(bookId: number): Promise<{ book: Book }> {
