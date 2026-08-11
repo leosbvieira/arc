@@ -1850,11 +1850,14 @@ export default function Capture({
                       onPress={() => confirmarTerminar(linha.id, linha.titulo)}
                       hitSlop={10}
                       disabled={shelfBusyId !== null}
+                      style={styles.shelfTerminar}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Terminar ${linha.titulo}`}
                     >
                       {shelfBusyId === linha.id ? (
                         <ActivityIndicator size="small" color={colors.primary} />
                       ) : (
-                        <Feather name="check" size={17} color={colors.textMuted} />
+                        <Text style={styles.shelfTerminarText}>terminar</Text>
                       )}
                     </Pressable>
                   </Pressable>
@@ -2277,6 +2280,14 @@ const styles = StyleSheet.create({
   shelfTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 15, flex: 1 },
   shelfDetail: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12, marginTop: 2 },
   shelfRecap: { fontFamily: fonts.ui, color: colors.text, fontSize: 12.5, lineHeight: 17, marginTop: 6 },
+  shelfTerminar: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  shelfTerminarText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11 },
   shelfAdd: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 12 },
   presasBloco: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
   presasAviso: { fontFamily: fonts.ui, color: colors.amber, fontSize: 11.5, marginBottom: 6 },
