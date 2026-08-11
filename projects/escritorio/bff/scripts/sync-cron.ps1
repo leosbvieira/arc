@@ -33,7 +33,7 @@ foreach ($r in $ritos) {
 }
 
 $desejadas = $registrar | ForEach-Object { $_.task }
-if ($null -ne $TarefasInstaladas) {
+if ($PSBoundParameters.ContainsKey("TarefasInstaladas")) {
   $instaladas = @($TarefasInstaladas -split "," | Where-Object { $_ })
 } else {
   $instaladas = @(Get-ScheduledTask -TaskName "Aeternum *" -ErrorAction SilentlyContinue |
