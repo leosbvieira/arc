@@ -2,10 +2,10 @@
 artifact: skill-spec
 capability: escritorio
 skill: estante (lane "Leitura")
-status: proposed
+status: built
 date: 2026-08-09
-revision: 4 (três rodadas de revisão hostil GPT-5.6 Sol; escopo fatiado)
-scope: "fatia 1 de 3 — estante, ciclo, progresso, deck. ClickUp e recap adiados."
+revision: 5 (as três fatias construídas; pendências das fatias 2 e 3 resolvidas no código)
+scope: "as três fatias — estante/ciclo/progresso/deck, resumão no ClickUp, recap da sessão"
 source_refs:
   - READING-STAGING-SPEC.md
   - AETERNUM-SPEC.md
@@ -15,7 +15,7 @@ source_refs:
 implements: "livro como entidade: retomar de onde parou, agrupar por obra, deck por obra"
 ---
 
-# SKILL SPEC — estante (lane "Leitura"), fatia 1
+# SKILL SPEC — estante (lane "Leitura")
 
 Promove **livro** de string redigitada a **entidade**. Hoje a lane Leitura pergunta "o que
 você vai ler?" num campo de texto livre (`Capture.tsx:1529`) e a página inicial você digita
@@ -38,9 +38,17 @@ Isso não é acaso — é a parte cara sinalizando que não pertence à mesma en
 
 | Fatia | Entrega | Estado |
 |---|---|---|
-| **1** | Estante, ciclo, progresso derivado, deck por obra, `terminar` como status local | **esta spec** |
-| **2** | Tarefa de resumão no ClickUp ao terminar a obra | adiada, ver no fim |
-| **3** | Recap da sessão anterior gerado pelo Hermes | adiada, ver no fim |
+| **1** | Estante, ciclo, progresso derivado, deck por obra, `terminar` como status local | **construída**, validada no aparelho do Leo em 11/ago |
+| **2** | Tarefa de resumão no ClickUp ao terminar a obra | **construída** em 11/ago, ver no fim |
+| **3** | Recap da sessão anterior gerado pelo Hermes | **construída** em 11/ago, ver no fim |
+
+O fatiamento se pagou pelo motivo previsto: a fatia 1 subiu, foi ao aparelho e **o uso real
+achou coisas que revisão nenhuma acharia** — o botão de terminar sem rótulo, "compilar" como
+palavra que o Leo não reconhecia, e o app desistindo aos 12s de uma chamada que o servidor
+levava mais para responder. Nada disso aparece em spec; aparece em dedo.
+
+As pendências que a revisão hostil deixou registradas para as fatias 2 e 3 foram todas
+resolvidas na construção, e o registro de **como** está no fim deste documento.
 
 Cortar o ClickUp da fatia 1 elimina o status `terminando`, o lease, o token de fencing, o
 marker e o tratamento de POST ambíguo — **sete dos dez itens que continuavam abertos na
@@ -396,52 +404,81 @@ lease, porque não há lease (D-Q).
 - `anki.tsv()` serializa a coluna de deck; card antigo com deck vazio ainda sai íntegro.
 - Retry de sessão já compilada não reinsere card nem duplica deck.
 
-## Fatia 2 — tarefa de resumão no ClickUp (adiada)
+## Fatia 2 — tarefa de resumão no ClickUp (construída em 11/ago)
 
-Ao marcar `terminado`, criar tarefa em Staging (lei 3) com template de resumão apontando pras
-notas do ciclo. **Pode ser retroativa**: as obras terminadas na fatia 1 já têm ciclo e
-sessões, então a fatia 2 consegue gerar o resumão delas depois.
+Ao terminar, nasce uma tarefa no **Staging** (lei 3: o sistema propõe, ele tria) com as
+sessões do ciclo e o formulário do que fica. Módulo `bff/app/resumo_obra.py` (puro: sem rede,
+sem relógio, sem banco), rotas em `main.py`, estado em `store.py`.
 
-O que a revisão hostil deixou registrado como pendência desta fatia, para não se perder:
+Como cada pendência da revisão hostil terminou:
 
-- **Status `terminando` + claim** volta a ser necessário, porque `terminar` passa a ter efeito
-  externo. Com ele voltam a recuperação de lease e a questão do fencing.
-- **Os `rowcount != 1` da fatia 1 viram ambíguos no momento em que existir um terceiro
-  status.** Hoje `terminar_book` e `reabrir_book` devolvem `ja_terminado`/`ja_lendo` para
-  qualquer status inesperado, e isso está certo porque só existem dois. Assim que `terminando`
-  entrar, um `reabrir` durante o fechamento responderia `ja_lendo` — mentira. As duas funções
-  precisam reler o status e discriminar antes de devolver o estado. (Achado do revisor da
-  Task 4 na implementação da fatia 1.)
-- **POST ambíguo:** se o ClickUp cria a tarefa mas a resposta se perde, liberar para `lendo` é
-  errado — uma sessão nova entraria no ciclo e o retry reconciliaria uma tarefa que não a
-  contém. A obra deve **ficar em `terminando`** até se provar que nenhuma tarefa foi criada.
-  O argumento do revisor procede e derruba a analogia que eu tinha feito com o vault: o vault
-  escreve em path determinístico, o POST do ClickUp não é idempotente.
-- **Marker** `[book-summary:{book_id}:{ciclo}]` na primeira linha da descrição, para
-  `find_task_by_marker` (`capture_pipeline.py:175-182`).
-- **Ciclo vazio:** obra terminada sem sessão não tem `primeira_data` nem `ultima_data`. Definir
-  o template vazio ou recusar o resumão nesse caso.
-- **Páginas parciais:** as linhas `p. X–Y` do template e o agregado `{min}–{max}` precisam dos
-  quatro formatos definidos, como o frontmatter já tem.
-- **Link da tarefa na API:** `GET /reading/books?status=terminado` precisa devolver
-  `resumo_task_id` e o contrato da URL, senão a tela não mostra o link.
-- **Obra presa em `terminando`:** precisa aparecer em alguma listagem, com ação de reconciliar.
+- **Status `terminando` + claim — feito.** `iniciar_terminar_book` reserva `lendo →
+  terminando` antes do POST; `concluir_terminar_book` fecha; `liberar_terminar_book` desiste.
+  **Não há lease por tempo.** Um lease expirando sozinho liberaria a obra sem prova, que é
+  exatamente o que a pendência do POST ambíguo proíbe — a saída é o reconciliar explícito.
+- **`rowcount != 1` ambíguo — feito.** `iniciar_terminar_book` e `reabrir_book` leem o status
+  antes do UPDATE e devolvem `em_andamento` quando a obra está fechando. A rota traduz para
+  `409 book_terminando`, e `reabrir` parou de responder `ja_lendo` para uma obra que não está
+  lendo.
+- **POST ambíguo — feito, e é o eixo da fatia.** Falha ao criar → `502` e a obra **fica**
+  reservada. Quem decide o que houve é `POST /reading/books/{id}/terminar/reconciliar`, que
+  procura pelo marker: achou, adota a tarefa; **provou que não existe**, devolve para `lendo`.
+  A busca falhar **não é prova de ausência** — nesse caso a obra fica onde está e o endpoint
+  pode ser chamado de novo.
+- **Marker — feito.** `[book-summary:{book_id}:{ciclo}]` na primeira linha da descrição,
+  achado por `find_task_by_marker` na lista do Staging.
+- **Ciclo vazio — resolvido por corte.** Obra sem sessão nenhuma **termina sem criar tarefa**:
+  não há o que resumir, e o caso comum é obra criada por engano. É como o Leo tira da estante
+  um cadastro errado.
+- **Páginas parciais — feito.** `faixa_de_paginas` tem os quatro formatos do frontmatter
+  (`p. X–Y`, `a partir da p. X`, `até a p. Y`, `sem página registrada`), e o agregado usa o
+  menor início e o maior fim **registrados**, sem inventar o limite que falta.
+- **Link da tarefa na API — feito com uma ressalva.** `resumo_task_id` entra na estante, mas
+  **só quando `resumo_ciclo = ciclo`**: reabrir incrementa o ciclo, e mostrar a tarefa da 1ª
+  leitura na 2ª é a mesma armadilha que a página derivada já evita. A **URL** do ClickUp não
+  entrou: o app mostra que o resumão foi para o Staging, e ele tria por lá.
+- **Obra presa — feito.** `GET /reading/books?status=terminando` lista, e a estante mostra as
+  presas com ação de resolver. Obra invisível é obra que ninguém reconcilia.
 
-## Fatia 3 — recap da sessão anterior (adiada)
+**Fencing:** `concluir_terminar_book` e `liberar_terminar_book` levam o ciclo no `WHERE`. Se a
+obra foi reaberta enquanto o POST corria, a conclusão é de um ciclo que não existe mais.
 
-Segunda chamada ao Hermes no compile, 2–4 linhas sobre onde a leitura parou, guardadas em
-`reading_sessions.recap` e mostradas na estante ao começar a próxima sessão. Gerado no fim da
-sessão anterior para não custar espera na hora de ler.
+**Retroativo:** obras terminadas na fatia 1 não ganham resumão automaticamente. Elas já estão
+em `terminado` e o caminho passa por `terminando`; para gerar depois seria preciso reabrir e
+terminar de novo, o que abriria um ciclo novo. Não vale o mecanismo — o Leo tinha uma obra
+terminada quando isto subiu.
 
-Pendências registradas:
+## Fatia 3 — recap da sessão anterior (construída em 11/ago)
 
-- **Sai do payload sem citações:** o mesmo `model_chunks` que o `READING_FRAME` recebe
-  (`hermes_client.py:315-317`), com o mesmo enquadramento `<sessao>` de dado não confiável.
-  Gerar "a partir da nota pronta" desfaria o isolamento — a nota tem as citações coladas
-  (`:346`), e o payload do modelo as exclui de propósito.
-- **Best-effort e não regenerável:** o buffer é purgado depois do compile (`store.py:1291`), e
-  a nota que sobra tem citações. Falhou uma vez, aquela sessão fica sem recap para sempre.
-- **Sem portão humano:** não vai para o vault, não vira card, não sai do app.
+`hermes_client.recap_reading` escreve 2–4 linhas no fim do `/compile`, guardadas em
+`reading_sessions.recap`. A estante devolve o da última sessão do ciclo; a tela mostra na obra
+**selecionada** (na lista inteira, três linhas por obra viram parede).
+
+- **Sem citações — feito.** Reusa o mesmo recorte de `compile_reading`: ordena por `seq`,
+  descarta `hook == "quote"`, e enquadra o resto em `<sessao>` como dado não confiável. Um
+  teste passa uma citação e exige que ela **não** apareça no prompt.
+- **Best-effort e não regenerável — mantido, com o motivo explícito.** Quando o recap é
+  tentado, a nota **já está no vault**: estourar devolveria `502` para uma publicação que deu
+  certo. A falha é engolida e logada como `reading_recap_failed`. Preço aceito: aquela sessão
+  fica sem recap para sempre.
+- **Sem portão humano — mantido.** Não vai para o vault, não vira card, não sai do app.
+- **Acrescentado na construção:** sessão sem recap **não apaga** o da anterior (mesma regra da
+  página final), recap vazio conta como ausente, e o recap não atravessa ciclos — reabrir zera,
+  porque dizer "você parou no capítulo 5" para quem está na página 1 da releitura é a armadilha
+  de sempre.
+- **Teto de 600 caracteres**, e a saída é achatada em uma linha. Não é estilo: o recap ocupa a
+  linha da estante, e um modelo que resolve escrever uma página empurraria a lista para fora
+  da tela.
+
+**Custo que ficou:** aprovar uma sessão agora faz **duas** chamadas ao Hermes no mesmo toque —
+o recap e os cards do Anki. O timeout do app subiu para 165s por causa disso. Se incomodar na
+prática, o recap é o candidato natural a virar trabalho de fundo.
+
+**Higiene que a fatia 3 forçou:** a suíte passou de 56s para 200s porque os testes de compile
+fingem `compile_reading`, e o recap é **outra** chamada — que caiu no `_oneshot` real e subiu o
+`hermes.exe` como subprocesso, em silêncio, porque o erro é engolido. O `conftest` agora proíbe
+o `_oneshot` por padrão; quem testa o próprio `_oneshot` pede exceção com
+`@pytest.mark.hermes_oneshot`.
 
 ## Fora de escopo (todas as fatias)
 
