@@ -11,6 +11,10 @@ import httpx
 from .config import settings
 
 API = "https://api.clickup.com/api/v2"
+# Só para trocar a home list de uma tarefa: a v2 não tem esse endpoint, e o caminho
+# que tentava emular (adicionar no destino, remover da origem) é impossível — ver
+# `move_task`. Todo o resto do arquivo continua na v2.
+API_V3 = "https://api.clickup.com/api/v3"
 
 AREA_LISTS: dict[str, str] = {
     "Trabalho": "901327729093",
@@ -142,9 +146,12 @@ async def find_task_by_marker(list_id: str, marker: str) -> str | None:
 async def fetch_open() -> list[dict]:
     """Tarefas abertas das 10 áreas; cada dict ganha `_area`.
 
-    Deduplica por id: `move_task` é GET → add → DELETE sem compensação, então um
-    DELETE que falha deixa a tarefa NAS DUAS listas. Sem isso ela apareceria 2× na
-    tela, 2× no digest e contaria 2× em "N abertas · N atrasadas".
+    Deduplica por id. A causa histórica era o `move_task` antigo, que deixava a
+    tarefa NAS DUAS listas sempre que o DELETE da home list falhava — e ele falhava
+    sempre. O dedupe continua: a tarefa pode legitimamente estar em mais de uma lista
+    pelo ClickApp `Tasks in Multiple Lists`, e o resíduo das triagens antigas segue no
+    ClickUp. Sem isso ela apareceria 2× na tela, 2× no digest e contaria 2× em
+    "N abertas · N atrasadas".
 
     O desempate é pela ÁREA, não pela ordem de varredura (Staging é a 2ª de 10 em
     AREA_LISTS): Staging é o resíduo do move que falhou, a área de destino é a
@@ -233,10 +240,17 @@ async def get_task(task_id: str) -> dict:
 
 
 async def move_task(task_id: str, to_list_id: str) -> bool:
-    """Move uma tarefa usando o ClickApp ``Tasks in Multiple Lists``.
+    """Troca a HOME LIST da tarefa, que é o que a triagem quer dizer com "mover".
 
-    A lista de origem vem do GET para que a remoção não dependa de estado local.
-    O chamador trata individualmente falhas como o ClickApp desabilitado.
+    O caminho anterior — adicionar no destino pelo ClickApp ``Tasks in Multiple
+    Lists`` e remover da origem — não movia nada e nunca poderia: a origem é a home
+    list da tarefa, e o ClickUp recusa removê-la com ``TASK_035 Task home list cannot
+    be altered``. O add respondia 200 e o delete 400, então toda triagem deixava a
+    tarefa NAS DUAS listas e reportava falha sem dizer por quê. Confirmado contra o
+    ClickUp real em 2026-08-10 (é a origem do dedupe em `fetch_open`).
+
+    A troca de home list só existe na v3, e o workspace sai do próprio GET — assim
+    não entra configuração nova só para montar a URL.
     """
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
         task_response = await client.get(
@@ -245,19 +259,14 @@ async def move_task(task_id: str, to_list_id: str) -> bool:
         )
         task_response.raise_for_status()
         task = task_response.json()
-        from_list_id = task["list"]["id"]
+        workspace_id = task["team_id"]
 
-        add_response = await client.post(
-            f"{API}/list/{to_list_id}/task/{task_id}",
+        move_response = await client.put(
+            f"{API_V3}/workspaces/{workspace_id}/tasks/{task_id}/home_list/{to_list_id}",
             headers=_headers(),
+            json={},
         )
-        add_response.raise_for_status()
-
-        remove_response = await client.delete(
-            f"{API}/list/{from_list_id}/task/{task_id}",
-            headers=_headers(),
-        )
-        remove_response.raise_for_status()
+        move_response.raise_for_status()
 
     return True
 
