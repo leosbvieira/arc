@@ -352,7 +352,7 @@ export type Fonte =
   | { tipo: "fresco";       params: Params }
   | { tipo: "cache";        params: Params; salvoEm: string }   // ISO-8601 parseável
   | { tipo: "padrao";       params: Params }                    // o embutido, declarado (§3.3)
-  | { tipo: "indisponivel"; motivo: "sem-cache" | "sessao" | "rede" };
+  | { tipo: "indisponivel"; motivo: "sem-cache" | "sessao" };
 
 export type Entrada = {
   resposta: { ok: true; corpo: unknown } | { ok: false; status: number | null };
@@ -596,13 +596,24 @@ que é a coluna que em v3 ficava no wiring.
 | 200 e valida | `fresco` | `gravar` | Números, sem selo |
 | 200 e **não** valida | `cache` ou `indisponivel` | `manter` | Tratada como falha. **O cache bom não é tocado** |
 | Falha de rede, com cache | `cache` | `manter` | Números + selo `valores de 10/ago/2026` |
-| Falha de rede, sem cache | `indisponivel: "rede"` | `manter` | `—`, aviso e botão `tentar de novo` |
+| Falha de rede, sem cache | **`padrao`** | `manter` | Na wiki: `—`, aviso e botão `tentar de novo` (o `fonteParaWiki` converte). Nas outras telas: o embutido + indicador |
 | 401, com cache | `cache` | `manter` | Cache + nota "sessão expirada — entre em Ajustes para atualizar os valores" |
-| 401, sem cache | `indisponivel: "sessao"` | `manter` | `—` + a mesma nota. **A wiki nunca expulsa para o login** — é tela de referência, e expulsar quem só quer ler é hostil |
+| 401, sem cache | `indisponivel: "sessao"` | `manter` | `—` + a mesma nota. **A wiki nunca expulsa para o login** — é tela de referência, e expulsar quem só quer ler é hostil. É o único caso de `indisponivel` que `decidir` produz, e o app já está em fluxo de login |
 | Cache corrompido, sem `salvoEm`, ou `salvoEm` não-ISO | conforme a resposta | `descartar` | Cai no caso "sem cache" |
 | **Precedência** | — | — | **Resposta válida sempre `gravar`.** `descartar` só quando não há resposta válida. Em v4 um 200 válido com cache corrompido casava com as duas linhas, e a implementação podia apagar em vez de persistir o valor fresco |
-| Nada ainda: primeira abertura, sem rede | `padrao` | `manter` | **`—` e a nota "ainda não li os valores do servidor"** — a wiki recusa `padrao` (§3.3). As outras telas mostram o embutido |
+| Nada ainda: primeira abertura, sem rede | `padrao` | `manter` | Mesmo caso da linha "falha de rede, sem cache" acima — não são estados diferentes |
 | Lista vazia onde é permitido | qualquer | — | Bloco com nota "não consegui ler a lista", não erro |
+
+
+**Quem produz `padrao`, e por que não é o provider.** Até a v6 o §6 mandava `decidir` devolver
+`indisponivel: "rede"` para rede caída sem cache, enquanto o §10.6a exigia que Mesa e Home mostrassem o
+embutido — o que só `padrao` permite. Como `decidir` não recebia `DEFAULT_PARAMS`, as duas ordens eram
+incompatíveis, e o implementador seria empurrado a resolver **dentro do provider**, que é onde §3.3 proíbe que
+exista política. Corrigido: **`decidir` importa `DEFAULT_PARAMS` e devolve `padrao` ela mesma.** O provider
+continua sem um `if` seu.
+
+Efeito colateral bom: o motivo `"rede"` some do tipo. Sobram dois estados de `indisponivel`, e os dois são
+alcançáveis — `"sessao"` vem de `decidir`, `"sem-cache"` vem só do `fonteParaWiki`.
 
 **O texto nunca falha** — mora no bundle. A wiki abre sempre; o que pode faltar são os números, e quando faltam
 ela diz **de onde não veio**.
