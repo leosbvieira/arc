@@ -41,3 +41,6 @@ output/playwright/
 # Artefatos temporarios de inspecao de APK.
 .tmp-apk-inspect/
 .tmp-apk-inspect-*.apk
+
+# Worktrees isolados do Claude Code (scratch, nunca commitado).
+.claude/worktrees/
