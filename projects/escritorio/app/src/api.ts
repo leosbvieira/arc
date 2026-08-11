@@ -376,6 +376,19 @@ export async function getPontos(): Promise<Pontos> {
   return (await r.json()) as Pontos;
 }
 
+/** Como o SISTEMA funciona (tarifas, limiares, horários). O SEU estado é /pontos.
+ *  Devolve o corpo cru: quem valida é o parametrosCore, contra o schema. */
+export async function getParametros(): Promise<{ ok: boolean; corpo?: unknown; status: number | null }> {
+  try {
+    const base = await getBffUrl();
+    const r = await fetch(`${base}/wiki/parametros`, { headers: await authHeaders() });
+    if (!r.ok) return { ok: false, status: r.status };
+    return { ok: true, corpo: await r.json(), status: r.status };
+  } catch {
+    return { ok: false, status: null };
+  }
+}
+
 // ---- Hábitos a reduzir ----------------------------------------------------
 export type ReductionHabit = {
   id: number;
