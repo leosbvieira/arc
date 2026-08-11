@@ -116,7 +116,7 @@ dele é o contrato** (§3.6). Nenhum literal na rota.
                 { "slug": "jornal",     "hora": "08:30", "dia": null },
                 { "slug": "digest",     "hora": "09:00", "dia": null },
                 { "slug": "shutdown",   "hora": "19:00", "dia": null },
-                { "slug": "fechamento", "hora": "21:00", "dia": null },
+                { "slug": "closing",    "hora": "21:00", "dia": null },
                 { "slug": "review",     "hora": "20:00", "dia": "domingo" } ]
 }
 ```
@@ -151,7 +151,7 @@ Um arquivo, lido por Python e por PowerShell. JSON porque as duas linguagens lee
   { "slug": "jornal",     "hora": "08:30", "dia": null,      "task": "Aeternum Jornal",     "script": "nudge" },
   { "slug": "digest",     "hora": "09:00", "dia": null,      "task": "Aeternum Digest",     "script": "digest" },
   { "slug": "shutdown",   "hora": "19:00", "dia": null,      "task": "Aeternum Shutdown",   "script": "nudge" },
-  { "slug": "fechamento", "hora": "21:00", "dia": null,      "task": "Aeternum Fechamento", "script": "nudge" },
+  { "slug": "closing",    "hora": "21:00", "dia": null,      "task": "Aeternum Fechamento", "script": "nudge" },
   { "slug": "review",     "hora": "20:00", "dia": "domingo", "task": "Aeternum Review",     "script": "nudge" } ]
 ```
 
@@ -166,17 +166,28 @@ Cinco consumidores, nenhuma cópia:
   `hora_curta(slug)` (`"19h"`, `"5h30"`).
 - **`NUDGE_COPY`** — as horas saem do texto e viram interpolação. O tom seco da lei 4 fica igual; só o número
   passa a ser lido.
-- **`nudge.ps1`** — hoje tem `[ValidateSet("toque","checkin","jornal","shutdown","closing","review")]` na
-  linha 1. **É por aqui que a renomeação de v2 quebraria o rito das 21h**: o instalador passaria
-  `-Kind fechamento` e o script morreria no ValidateSet, antes de qualquer chamada HTTP — o nudge do
-  fechamento sumiria em silêncio. O `ValidateSet` entra na migração e um teste exige que seus membros sejam
-  exatamente os slugs com `script: "nudge"`.
+- **`nudge.ps1`** — tem `[ValidateSet("toque","checkin","jornal","shutdown","closing","review")]` na linha 1.
+  **Não muda** (ver a nota de slug abaixo), mas um teste passa a exigir que seus membros sejam exatamente os
+  slugs com `script: "nudge"` — se um rito for adicionado ao JSON sem entrar no ValidateSet, o gatilho novo
+  morreria antes de qualquer chamada HTTP.
 - **`sync-cron.ps1`** (extraído do `install-cron.ps1`) — gera os `Register-ScheduledTask` do JSON:
   `dia: null` → `-Daily`, `dia: "domingo"` → `-Weekly -DaysOfWeek Sunday`. Nenhum `-At` literal.
 - **`GET /wiki/parametros`** — projeta slug/hora/dia.
 
-**Renomeação `closing` → `fechamento`:** um único vocabulário, aplicado em `NUDGE_COPY`, `nudge.ps1` e no nome
-da task. A lição do B3 (Ritmos × Rotinas) antes de doer.
+**Nota de slug: o rito das 21h continua `closing`, e isto é uma correção da v6.** Até a v5 a spec mandava
+renomear para `fechamento` "por um único vocabulário". Ao planejar a implementação eu fui ver os consumidores:
+`closing` é o vocabulário **estabelecido do BFF** — `/closing/routines`, `/closing/draft`, `/closing/approve`,
+o evento `closing_approved` (`main.py:2833`), o kind de notificação `nudge_closing` (`notify.py:148`) e o
+`Literal` de `main.py:483`. Renomear só o nudge não unificaria nada: criaria um racha novo entre as rotas e o
+gatilho, e faria as linhas de `notif_log` pararem de casar com o histórico.
+
+A lição do B3 (Ritmos × Rotinas) era sobre **palavras que o Leo vê** — três superfícies, duas palavras, ele
+procurou "Rotinas" e não achou. `closing` nunca aparece na tela: o que ele lê é "Fechar o dia". Slug interno em
+inglês e rótulo em português não é o defeito do B3.
+
+**O que isso cancela:** a migração inteira do achado CRÍTICO da rodada 2 (o `ValidateSet` que mataria o rito das
+21h). O risco some porque a mudança some — só fica o teste que vigia a igualdade. O nome da task do Windows
+(`Aeternum Fechamento`) continua como está, porque é rótulo, não slug.
 
 #### Reconciliação do estado instalado
 
@@ -572,8 +583,8 @@ item("comofunciona", "Como funciona", "o sistema explicado")
 
 `openDestination` (`App.tsx:164`) aceita `comofunciona` com slug de página opcional.
 
-**Renomeações:** nenhuma no app. Fora dele, `closing` → `fechamento` em `NUDGE_COPY`, `nudge.ps1` e no nome da
-task (§3.2).
+**Renomeações:** nenhuma, em lugar nenhum. A v6 cancelou a renomeação `closing` → `fechamento` que as versões
+anteriores mandavam fazer (§3.2).
 
 ## 6. Falhas e cache
 
@@ -659,9 +670,8 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 
 **Alterados**
 
-- `bff/app/main.py` — rota nova; `NUDGE_COPY` interpola hora e nº de prioridades; `closing` → `fechamento`
+- `bff/app/main.py` — rota nova; `NUDGE_COPY` interpola hora e nº de prioridades (slug `closing` **preservado**)
 - `bff/scripts/install-cron.ps1` — passa a chamar `sync-cron.ps1`
-- `bff/scripts/nudge.ps1` — `ValidateSet` com o vocabulário novo
 - `bff/scripts/start-bff.ps1` — chama `sync-cron.ps1` no boot
 - `bff/app/pontos.py` — expõe a constante da janela (`semana_iso`)
 - `app/src/api.ts` — tipo + fetch
@@ -710,8 +720,8 @@ gatilho do Agendador, o texto do push, a Mesa e o hero da Home**.
 **4. Degradação.** BFF desligado e sem cache: a wiki abre, o texto aparece inteiro, os números viram `—` com
 aviso e retry. Com cache: aparecem com selo de data completa. Com sessão expirada: a wiki **não** expulsa.
 
-**5. O nudge não quebrou.** Depois da renomeação `closing` → `fechamento`, o nudge das 21h chega. Drill
-manual — este é o caminho que a v2 teria quebrado em silêncio.
+**5. O nudge não quebrou.** Depois de o `NUDGE_COPY` passar a interpolar a hora, o nudge das 21h chega com o
+texto certo. Drill manual, no aparelho.
 
 **6a. Primeira abertura é honesta — fora da wiki (1A).** App recém-instalado, sem rede: Mesa e Home mostram o
 embutido e funcionam, **e o indicador `valores padrão · sem conexão` está visível**. Ele some assim que uma
@@ -785,7 +795,7 @@ D9 caiu por um achado próprio: os horários estavam também no `NUDGE_COPY`.
 | Achado da rodada 2 | Resposta |
 |---|---|
 | CRÍTICO — `ritos.json` não era fonte única: Mesa e Home têm hora hardcoded | Confirmado no código (`mesaView.ts:70,74`, `homeAction.ts:131`). Provider (§3.3) — **decisão do Leo, D10′** |
-| CRÍTICO — renomear `closing` quebraria o `nudge.ps1` | Confirmado: `ValidateSet` na linha 1 mataria o rito das 21h antes do HTTP. `nudge.ps1` entra na migração + teste 6 |
+| CRÍTICO — renomear `closing` quebraria o `nudge.ps1` | Confirmado: `ValidateSet` na linha 1 mataria o rito das 21h antes do HTTP. **Resolvido na v6 cancelando a renomeação** (§3.2): `closing` é o vocabulário do BFF, não uma inconsistência. Fica o teste 6 vigiando a igualdade |
 | ALTO — instalador não reconcilia task removida/renomeada | `sync-cron.ps1` compara e remove obsoletas, preservando `Aeternum BFF` (§3.2) |
 | ALTO — consumidor PowerShell sem teste | Modo `-DryRun` devolvendo o plano + teste 9 |
 | ALTO — allowlist impedia escrever "N1" | Regra em três categorias; tokens `N1…Nn` validados contra `niveis.limiares` (§4.2) |
@@ -848,6 +858,12 @@ correções de v5 **pioraram** o que consertavam, e a resposta à pergunta que i
 | MÉDIO — dois arquivos canônicos para o mesmo schema | Erro meu de v5: citei `app/tests/fixtures/wiki-schema.json` em §3.6 e `app/src/wiki-schema.json` em §8. Arquivo único: `app/src/wiki-schema.json` |
 | PARCIAL — revalidação por foco sem cobertura | Aceito como drill manual explícito (§10.7), não como teste inexistente. O que vem **depois** do foco é `decidir` + `aplicar`, e isso é testado |
 | *"Um implementador consegue construir sem voltar a perguntar?"* → **NÃO** | Ele travaria nos três pontos acima. É a razão de existir a v6 |
+
+
+**Correção da v6 encontrada ao planejar a implementação:** a renomeação `closing` → `fechamento`, que as versões
+1–5 mandavam fazer, foi **cancelada**. `closing` é o vocabulário estabelecido do BFF (rotas, evento, kind de
+notificação, `Literal`); renomear só o nudge criaria um racha novo em vez de fechar um. Isso elimina a migração
+mais arriscada da 1A — o achado CRÍTICO da rodada 2 deixa de existir em vez de ser gerenciado. Ver §3.2.
 
 ## 14. Fatias seguintes
 
