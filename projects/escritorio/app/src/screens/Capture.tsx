@@ -512,7 +512,7 @@ export default function Capture({
         draft,
         stagedPreview !== null
           ? "preview recuperado — salve no vault ou rejeite para editar"
-          : "sessão de leitura recuperada — revise e retome ou compile",
+          : "sessão de leitura recuperada — revise e retome ou feche a nota",
       );
       if (stagedPreview !== null) setPreview(stagedPreview);
       try {
@@ -691,7 +691,7 @@ export default function Capture({
       );
       setStatus(
         fresh.status === "compiled"
-          ? "esta sessão já foi compilada"
+          ? "esta nota já foi fechada"
           : fresh.status === "discarded"
             ? "esta sessão já foi descartada"
             : "esta sessão está sendo processada no servidor",
@@ -712,7 +712,7 @@ export default function Capture({
       setPreview(stagedPreview);
       setStatus("preview recuperado — salve no vault ou rejeite para editar");
     } else {
-      setStatus("sessão pendente aberta — retome ou compile");
+      setStatus("sessão pendente aberta — retome ou feche a nota");
     }
     await saveReadingDraft(draft);
   }
@@ -765,7 +765,7 @@ export default function Capture({
 
   function appendTranscript(raw: string): void {
     if (compileLockRef.current) {
-      setSpeechError("aguarde a compilação terminar — a fala não foi adicionada");
+      setSpeechError("aguarde a nota terminar de fechar — a fala não foi adicionada");
       return;
     }
     const parsed = parseReadingEntry(raw);
@@ -1084,9 +1084,9 @@ export default function Capture({
     return new Promise((resolve) => {
       const ref = session.vault_path
         ? `Nota confirmada no vault: ${session.vault_path}.`
-        : "O servidor confirma que a sessão foi compilada.";
+        : "O servidor confirma que a nota já foi fechada.";
       Alert.alert(
-        "Sessão já compilada",
+        "Nota já fechada",
         `${ref} Esta sessão é anterior à verificação automática por hash. Remover apenas a cópia local?`,
         [
           { text: "Manter local", style: "cancel", onPress: () => resolve(false) },
@@ -1125,9 +1125,9 @@ export default function Capture({
     );
     resetSessionUi();
     Alert.alert(
-      legacy ? "Cópia local removida" : "Sessão compilada",
+      legacy ? "Cópia local removida" : "Nota fechada",
       legacy
-        ? "A nota já estava gravada no servidor; nenhum conteúdo foi recompilado."
+        ? "A nota já estava gravada no servidor; nada foi refeito."
         : ankiCards.length > 0
           ? `${ankiCards.length} candidato(s) Anki aguardam revisão.`
           : "Nota gravada. Nenhum candidato Anki foi sugerido.",
@@ -1162,7 +1162,7 @@ export default function Capture({
       if (confirmed) {
         await finishLocalCompile(snapshot, remoteId, [], "done", true);
       } else {
-        setStatus("sessão já compilada — cópia local mantida por sua escolha");
+        setStatus("nota já fechada — cópia local mantida por sua escolha");
       }
       return "handled";
     }
@@ -1263,10 +1263,10 @@ export default function Capture({
         // O rascunho sumiu no servidor (rejeitado/expirado): o buffer voltou a
         // ser editável. Fecha o preview e devolve o editor cru para re-gerar.
         setPreview(null);
-        setStatus("o preview expirou no servidor — compile de novo para gerar outro");
+        setStatus("o preview expirou no servidor — feche a nota de novo para gerar outro");
         Alert.alert(
           "Preview indisponível",
-          "O servidor não tem mais o rascunho desta sessão. Ele foi liberado para edição; toque em Compilar para gerar um novo preview.",
+          "O servidor não tem mais o rascunho desta sessão. Ele foi liberado para edição; toque em Fechar a nota para gerar um novo preview.",
         );
         return;
       }
@@ -1277,10 +1277,10 @@ export default function Capture({
         // do draft ausente: soltar o preview e compilar de novo regenera via
         // /draft já no formato atual.
         setPreview(null);
-        setStatus("o preview ficou desatualizado — compile de novo para gerar outro");
+        setStatus("o preview ficou desatualizado — feche a nota de novo para gerar outro");
         Alert.alert(
           "Preview desatualizado",
-          "Este preview foi gerado num formato antigo. Ele foi liberado para edição; toque em Compilar para gerar um novo preview.",
+          "Este preview foi gerado num formato antigo. Ele foi liberado para edição; toque em Fechar a nota para gerar um novo preview.",
         );
         return;
       }
@@ -1299,7 +1299,7 @@ export default function Capture({
       }
       const message =
         detail === "reading_compile_em_andamento"
-          ? "A compilação ainda está em andamento no servidor. A sessão foi preservada."
+          ? "A nota ainda está sendo fechada no servidor. A sessão foi preservada."
           : detail === "reading_compiled_snapshot_divergente"
             ? "O resultado salvo não corresponde ao rascunho deste aparelho. A cópia local foi preservada para revisão."
           : detail === "reading_session_descartada"
@@ -1385,10 +1385,10 @@ export default function Capture({
         // /draft sempre regenera no formato atual, então esta rota não é
         // alcançável pelo servidor hoje, mas tratar do mesmo jeito custa nada.
         setPreview(null);
-        setStatus("o preview ficou desatualizado — compile de novo para gerar outro");
+        setStatus("o preview ficou desatualizado — feche a nota de novo para gerar outro");
         Alert.alert(
           "Preview desatualizado",
-          "Este preview foi gerado num formato antigo. Ele foi liberado para edição; toque em Compilar para gerar um novo preview.",
+          "Este preview foi gerado num formato antigo. Ele foi liberado para edição; toque em Fechar a nota para gerar um novo preview.",
         );
         return;
       }
@@ -1399,7 +1399,7 @@ export default function Capture({
         setStatus("essa obra foi terminada — reabra na estante antes de gerar o preview");
         Alert.alert(
           "Obra terminada",
-          "A obra desta sessão foi marcada como terminada. Reabra-a na estante e toque em Compilar de novo — nada do que você registrou foi perdido.",
+          "A obra desta sessão foi marcada como terminada. Reabra-a na estante e toque em Fechar a nota de novo — nada do que você registrou foi perdido.",
         );
         return;
       }
@@ -1409,7 +1409,7 @@ export default function Capture({
           : detail === "pagina_final_invalida"
             ? "A página final precisa ser maior ou igual à inicial."
           : detail === "reading_compile_em_andamento"
-            ? "A compilação ainda está em andamento no servidor. A sessão foi preservada."
+            ? "A nota ainda está sendo fechada no servidor. A sessão foi preservada."
           : detail === "reading_session_descartada"
             ? "O servidor informa que esta sessão já foi descartada. O rascunho local foi preservado."
             : "A sessão foi preservada para tentar novamente.";
@@ -1448,7 +1448,7 @@ export default function Capture({
         replaceDraft(editable);
         await saveReadingDraft(editable);
       }
-      setStatus("rascunho rejeitado — edite e compile de novo");
+      setStatus("rascunho rejeitado — edite e feche a nota de novo");
     } catch (error) {
       const detail = readingErrorDetail(error);
       const message =
@@ -1470,7 +1470,7 @@ export default function Capture({
 
   async function compilar(): Promise<void> {
     if (speech.starting) {
-      setStatus("aguarde o microfone iniciar antes de compilar");
+      setStatus("aguarde o microfone iniciar antes de fechar a nota");
       return;
     }
     if (speech.recognizing) {
@@ -2101,7 +2101,7 @@ export default function Capture({
             ) : (
               <>
                 <AppButton
-                  title={items.length === 0 ? "Adicione algo para compilar" : `Compilar ${items.length} registro${items.length === 1 ? "" : "s"}`}
+                  title={items.length === 0 ? "Adicione algo para fechar a nota" : `Fechar a nota · ${items.length} registro${items.length === 1 ? "" : "s"}`}
                   variant="ghost"
                   onPress={compilar}
                   loading={compiling}

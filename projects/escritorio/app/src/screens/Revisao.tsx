@@ -173,7 +173,7 @@ function Reviews({
           <Text style={styles.reviewPct}>{semanal.scorecard.pct}%</Text>
         </View>
         <View style={styles.metricas}>
-          <Metrica valor={semanal.dailies} label="fechamentos" />
+          <Metrica valor={semanal.dailies} label="dias fechados" />
           <Metrica valor={semanal.capturas} label="capturas" />
           <Metrica valor={`${semanal.sessoes_leitura.min_total}m`} label="leitura" />
           <Metrica valor={semanal.staging_pendentes ?? "—"} label="staging" />
@@ -668,7 +668,7 @@ export default function Revisao({
         ) : readingPending.length > 0 ? (
           <>
             <View style={styles.pendingHead}>
-              <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 0 }]}>sessões por compilar</Text>
+              <Text style={[styles.sectionLabel, { marginTop: 0, marginBottom: 0 }]}>notas por fechar</Text>
               <View style={styles.pendingBadge}>
                 <Text style={styles.pendingBadgeText}>{readingPending.length}</Text>
               </View>
@@ -687,7 +687,7 @@ export default function Revisao({
                 </View>
               ))}
               <Text style={styles.reviewHint}>
-                Abra Capturar para retomar ou compilar. Nada será descartado automaticamente.
+                Abra Capturar para retomar ou fechar a nota. Nada será descartado automaticamente.
               </Text>
               <Pressable style={styles.miniAction} onPress={onOpenCapture}>
                 <Feather name="arrow-right" size={13} color={colors.primary} />

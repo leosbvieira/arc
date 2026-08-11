@@ -129,7 +129,7 @@ export function actionForAt(
     return { icon: "sunset", eyebrow: "shutdown", title: "Fechar o trabalho", subtitle: "Pendências, follow-ups e três prioridades de amanhã.", target: "shutdown" };
   }
   if (hour >= 21) {
-    return { icon: "moon", eyebrow: "encerrar o dia", title: "Fechamento de 90 segundos", subtitle: "Uma linha, seus ritmos e nada carregado para a cama.", target: "fechar" };
+    return { icon: "moon", eyebrow: "rito das 21h", title: "Fechar o dia", subtitle: "Uma linha, seus ritmos e nada carregado para a cama. 90 segundos.", target: "fechar" };
   }
   return { icon: "crosshair", eyebrow: "agora", title: "Executar o que importa", subtitle: "Abra o foco e conclua uma coisa antes da próxima.", target: "tarefas" };
 }
