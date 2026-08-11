@@ -24,6 +24,7 @@ from . import (
     pontos,
     reading_digest,
     reading_frontmatter,
+    resumo_obra,
     routines,
     store,
     tasks,
@@ -1062,9 +1063,11 @@ class BookCreateIn(BaseModel):
 
 @app.get("/reading/books")
 def listar_books(
-    status: Literal["lendo", "terminado"] = "lendo",
+    status: Literal["lendo", "terminando", "terminado"] = "lendo",
     _auth: None = Depends(require_auth),
 ) -> dict:
+    """`terminando` é listável de propósito: obra presa nesse estado some das duas
+    listas normais, e uma obra invisível é uma obra que ninguém reconcilia."""
     return {"books": store.list_books(status)}
 
 
@@ -1080,19 +1083,103 @@ def criar_book(
     return {"book": book, "created": created}
 
 
+async def _criar_resumao(book: dict, sessoes: list[dict]) -> str | None:
+    """Cria a tarefa de resumão no Staging e devolve o id. Lei 3: vai para a triagem
+    como qualquer outra, ele decide a área e o prazo."""
+    criada = await tasks.criar_resumao_de_obra(
+        nome=resumo_obra.nome(book["titulo"], book["ciclo"]),
+        descricao=resumo_obra.descricao(
+            titulo=book["titulo"],
+            book_id=book["id"],
+            ciclo=book["ciclo"],
+            sessoes=sessoes,
+        ),
+    )
+    return criada
+
+
 @app.post("/reading/books/{book_id}/terminar")
-def terminar_book(
+async def terminar_book(
     book_id: int,
     _auth: None = Depends(require_auth),
 ) -> dict:
-    estado, payload = store.terminar_book(book_id)
+    """Terminar virou duas fases porque agora tem efeito externo.
+
+    A obra é reservada em 'terminando' ANTES do POST no ClickUp e só sai de lá com
+    resposta: com a tarefa criada, vira 'terminado'; sem prova de que nada foi
+    criado, FICA reservada. Liberar no escuro é o erro caro — uma sessão nova
+    entraria no ciclo e o retry reconciliaria um resumão que não a contém.
+    """
+    estado, payload = store.iniciar_terminar_book(book_id)
     if estado == "missing":
         raise HTTPException(404, "book_nao_encontrado")
     if estado == "sessao_aberta":
         raise HTTPException(409, "book_com_sessao_aberta")
     if estado == "ja_terminado":
         raise HTTPException(409, "book_ja_terminado")
-    return {"book": payload}
+    if estado == "em_andamento":
+        raise HTTPException(409, "book_terminando")
+
+    book = payload
+    sessoes = store.sessoes_do_ciclo(book_id, book["ciclo"])
+    if not sessoes:
+        # Ciclo vazio: não há o que resumir, e o caso comum é obra criada por engano.
+        _, final = store.concluir_terminar_book(book_id, book["ciclo"], None)
+        store.log_event("book_terminado", ref=str(book_id), meta={"resumao": False})
+        return {"book": final, "resumo_task_id": None}
+
+    try:
+        task_id = await _criar_resumao(book, sessoes)
+    except Exception as exc:
+        # Só a classe: mensagem de erro remoto carrega conteúdo (lei 7). A obra
+        # continua reservada — quem decide o que houve lá fora é o reconciliar.
+        store.log_event(
+            "book_resumao_falhou",
+            ref=str(book_id),
+            meta={"error": type(exc).__name__},
+        )
+        raise HTTPException(502, "book_resumao_indisponivel") from None
+
+    _, final = store.concluir_terminar_book(book_id, book["ciclo"], task_id)
+    store.log_event("book_terminado", ref=str(book_id), meta={"resumao": True})
+    return {"book": final, "resumo_task_id": task_id}
+
+
+@app.post("/reading/books/{book_id}/terminar/reconciliar")
+async def reconciliar_terminar_book(
+    book_id: int,
+    _auth: None = Depends(require_auth),
+) -> dict:
+    """Resolve uma obra presa em 'terminando' consultando o ClickUp, não adivinhando.
+
+    Acha a tarefa pelo marker → conclui com ela. Prova que não existe → devolve a
+    obra para 'lendo'. A busca em si falhar NÃO é prova de ausência: nesse caso a
+    obra fica onde está, e é por isso que este endpoint pode ser chamado de novo.
+    """
+    book = store.get_book(book_id)
+    if book is None:
+        raise HTTPException(404, "book_nao_encontrado")
+    if book["status"] != "terminando":
+        raise HTTPException(409, "book_nao_esta_terminando")
+
+    try:
+        task_id = await tasks.achar_resumao_de_obra(
+            resumo_obra.marker(book_id, book["ciclo"])
+        )
+    except Exception as exc:
+        store.log_event(
+            "book_reconcilia_falhou",
+            ref=str(book_id),
+            meta={"error": type(exc).__name__},
+        )
+        raise HTTPException(502, "book_resumao_indisponivel") from None
+
+    if task_id is None:
+        _, final = store.liberar_terminar_book(book_id, book["ciclo"])
+        return {"book": final, "resumo_task_id": None, "resultado": "liberado"}
+
+    _, final = store.concluir_terminar_book(book_id, book["ciclo"], task_id)
+    return {"book": final, "resumo_task_id": task_id, "resultado": "terminado"}
 
 
 @app.post("/reading/books/{book_id}/reabrir")
@@ -1103,6 +1190,10 @@ def reabrir_book(
     estado, payload = store.reabrir_book(book_id)
     if estado == "missing":
         raise HTTPException(404, "book_nao_encontrado")
+    if estado == "em_andamento":
+        # Nem lendo nem terminada: dizer `ja_lendo` aqui seria mentira, e a fatia 1
+        # dizia — o rowcount != 1 só era suficiente enquanto existiam dois estados.
+        raise HTTPException(409, "book_terminando")
     if estado == "ja_lendo":
         raise HTTPException(409, "book_ja_lendo")
     return {"book": payload}

@@ -98,6 +98,10 @@ _MOCK: list[_Task] = [
     _Task("t6", "Renovar seguro do carro", "Finance", due_offset=-8),
 ]
 _next = 7
+# `_Task` não tem descrição (é o shape que o app recebe), e o resumão precisa dela
+# para o marker sobreviver no modo mock — sem isto, reconciliar nunca acharia nada
+# fora do ClickUp real, e o caminho mais perigoso ficaria sem teste.
+_MOCK_DESCRICOES: dict[str, str] = {}
 
 
 def _display(t: _Task) -> Task:
@@ -803,6 +807,44 @@ def _timestamp_do_prazo(due: str) -> float:
     """Data civil → instante local. Mesma conversão do POST /tasks e do adiar: a
     validação do formato mora no modelo da rota, aqui só chega data já conferida."""
     return datetime.combine(date.fromisoformat(due), time.min, tzinfo=tz.TZ).timestamp()
+
+
+async def criar_resumao_de_obra(*, nome: str, descricao: str) -> str | None:
+    """Cria a tarefa de resumão no Staging e devolve o id do ClickUp.
+
+    Vai para o Staging, não direto para uma área: lei 3, o sistema propõe e ele
+    decide onde mora e quando faz. É o mesmo caminho da captura.
+    """
+    if _use_clickup():
+        criada = await clickup_client.create(
+            nome,
+            clickup_client.STAGING,
+            description=descricao,
+        )
+        task_id = criada.get("id")
+        return str(task_id) if task_id is not None else None
+
+    global _next
+    tarefa = _Task(f"t{_next}", nome, clickup_client.STAGING)
+    _next += 1
+    _MOCK.append(tarefa)
+    _MOCK_DESCRICOES[tarefa.id] = descricao
+    return tarefa.id
+
+
+async def achar_resumao_de_obra(marker: str) -> str | None:
+    """Procura o resumão pelo marker. `None` é PROVA de ausência, não "não sei" —
+    quem chama libera a obra com base nisso, então falha de rede tem que estourar,
+    nunca virar `None`."""
+    if _use_clickup():
+        return await clickup_client.find_task_by_marker(
+            clickup_client.AREA_LISTS[clickup_client.STAGING],
+            marker,
+        )
+    for task_id, descricao in _MOCK_DESCRICOES.items():
+        if marker in descricao and any(item.id == task_id for item in _MOCK):
+            return task_id
+    return None
 
 
 async def aplicar_triagem(

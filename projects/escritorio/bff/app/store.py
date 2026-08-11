@@ -117,7 +117,10 @@ CREATE TABLE IF NOT EXISTS books (
   status TEXT NOT NULL DEFAULT 'lendo',
   ciclo INTEGER NOT NULL DEFAULT 1,
   created REAL NOT NULL,
-  updated REAL NOT NULL
+  updated REAL NOT NULL,
+  resumo_task_id TEXT,
+  resumo_ciclo INTEGER,
+  terminando_desde REAL
 );
 CREATE TABLE IF NOT EXISTS telemetry (
   ts REAL NOT NULL, evento TEXT NOT NULL, ref TEXT DEFAULT '', meta_json TEXT DEFAULT '{}'
@@ -315,6 +318,19 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_reading_sessions_book "
             "ON reading_sessions(book_id, book_ciclo, compiled_at)"
         )
+
+        # Fatia 2: terminar uma obra passou a ter efeito externo (a tarefa de resumão
+        # no ClickUp), então precisa de estado intermediário e de onde guardar o que
+        # foi criado. `resumo_ciclo` existe porque reabrir incrementa o ciclo: sem ele
+        # o resumão da 1ª leitura pareceria ser o da 2ª.
+        book_columns = {row["name"] for row in con.execute("PRAGMA table_info(books)")}
+        for coluna, tipo in (
+            ("resumo_task_id", "TEXT"),
+            ("resumo_ciclo", "INTEGER"),
+            ("terminando_desde", "REAL"),
+        ):
+            if coluna not in book_columns:
+                con.execute(f"ALTER TABLE books ADD COLUMN {coluna} {tipo}")
 
         con.execute(
             "UPDATE anki_cards SET status = 'aprovado', export_claimed = NULL "
@@ -987,7 +1003,11 @@ def get_book(book_id: int) -> dict | None:
 
 _ESTANTE_SQL = """
 SELECT
-  b.id, b.titulo, b.status, b.ciclo,
+  b.id, b.titulo, b.status, b.ciclo, b.terminando_desde,
+  -- Só o resumão DESTE ciclo. Reabrir incrementa `ciclo` e mantém a tarefa da
+  -- leitura anterior na linha; mostrá-la faria o resumão da 1ª leitura passar por
+  -- resumão da 2ª — a mesma armadilha que a página derivada já evita.
+  CASE WHEN b.resumo_ciclo = b.ciclo THEN b.resumo_task_id END AS resumo_task_id,
   (SELECT s.pagina_final FROM reading_sessions s
      WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
        AND s.status = 'compiled' AND s.pagina_final IS NOT NULL
@@ -1017,11 +1037,14 @@ def list_books(status: str = "lendo") -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def terminar_book(book_id: int) -> tuple[str, dict | None]:
-    """Fecha o ciclo. Sem efeito externo: é um UPDATE condicional e acabou.
+def iniciar_terminar_book(book_id: int) -> tuple[str, dict | None]:
+    """Reserva a obra para terminar: 'lendo' → 'terminando'.
 
-    A tarefa de resumão no ClickUp é a fatia 2. Enquanto ela não existe, não há
-    nada a reconciliar, então não há claim, lease nem status 'terminando'.
+    Existe porque terminar passou a ter efeito externo — a tarefa de resumão no
+    ClickUp. O POST do ClickUp **não é idempotente** (o vault escreve em path
+    determinístico; aqui não há isso), então a obra fica reservada até se provar o
+    que aconteceu lá fora. Quem termina o trabalho é `concluir_terminar_book`; quem
+    desiste é `liberar_terminar_book`, e só quando ficar provado que nada foi criado.
     """
     with closing(_connect()) as con:
         con.execute("BEGIN IMMEDIATE")
@@ -1029,6 +1052,12 @@ def terminar_book(book_id: int) -> tuple[str, dict | None]:
         if row is None:
             con.rollback()
             return "missing", None
+        if row["status"] == "terminando":
+            con.rollback()
+            return "em_andamento", dict(row)
+        if row["status"] != "lendo":
+            con.rollback()
+            return "ja_terminado", dict(row)
         abertas = con.execute(
             "SELECT id FROM reading_sessions WHERE book_id = ? AND book_ciclo = ? "
             "AND status IN ('pending', 'compiling') ORDER BY id",
@@ -1037,14 +1066,50 @@ def terminar_book(book_id: int) -> tuple[str, dict | None]:
         if abertas:
             con.rollback()
             return "sessao_aberta", {"sessions": [r["id"] for r in abertas]}
+        agora = time.time()
         cur = con.execute(
-            "UPDATE books SET status = 'terminado', updated = ? "
+            "UPDATE books SET status = 'terminando', terminando_desde = ?, updated = ? "
             "WHERE id = ? AND status = 'lendo'",
-            (time.time(), book_id),
+            (agora, agora, book_id),
+        )
+        if cur.rowcount != 1:
+            # Outro pedido ganhou a corrida entre o SELECT e o UPDATE.
+            con.rollback()
+            return "em_andamento", None
+        atualizado = con.execute(
+            "SELECT * FROM books WHERE id = ?", (book_id,)
+        ).fetchone()
+        con.commit()
+        return "terminando", dict(atualizado)
+
+
+def concluir_terminar_book(
+    book_id: int,
+    ciclo: int,
+    resumo_task_id: str | None,
+) -> tuple[str, dict | None]:
+    """'terminando' → 'terminado', guardando a tarefa criada (ou a falta dela).
+
+    `resumo_task_id=None` é o ciclo vazio: obra sem sessão nenhuma não tem o que
+    resumir, e resumir o nada é ruído — o caso comum é obra criada por engano.
+
+    O `ciclo` entra no WHERE como fencing: se a obra foi reaberta enquanto isto
+    corria, o ciclo mudou e a conclusão é de um ciclo que não existe mais.
+    """
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        cur = con.execute(
+            "UPDATE books SET status = 'terminado', resumo_task_id = ?, "
+            "resumo_ciclo = ?, terminando_desde = NULL, updated = ? "
+            "WHERE id = ? AND status = 'terminando' AND ciclo = ?",
+            (resumo_task_id, ciclo, time.time(), book_id, ciclo),
         )
         if cur.rowcount != 1:
             con.rollback()
-            return "ja_terminado", None
+            row = con.execute(
+                "SELECT * FROM books WHERE id = ?", (book_id,)
+            ).fetchone()
+            return "nao_reservado", (dict(row) if row else None)
         atualizado = con.execute(
             "SELECT * FROM books WHERE id = ?", (book_id,)
         ).fetchone()
@@ -1052,14 +1117,66 @@ def terminar_book(book_id: int) -> tuple[str, dict | None]:
         return "terminado", dict(atualizado)
 
 
-def reabrir_book(book_id: int) -> tuple[str, dict | None]:
-    """Releitura abre um ciclo NOVO: a página recomeça e o histórico fica intacto."""
+def liberar_terminar_book(book_id: int, ciclo: int) -> tuple[str, dict | None]:
+    """Devolve a obra para 'lendo'. Só chame com PROVA de que nada foi criado lá fora.
+
+    Liberar no escuro é o erro caro: uma sessão nova entraria no ciclo e o retry
+    reconciliaria uma tarefa de resumão que não a contém.
+    """
     with closing(_connect()) as con:
         con.execute("BEGIN IMMEDIATE")
-        row = con.execute("SELECT id FROM books WHERE id = ?", (book_id,)).fetchone()
+        cur = con.execute(
+            "UPDATE books SET status = 'lendo', terminando_desde = NULL, updated = ? "
+            "WHERE id = ? AND status = 'terminando' AND ciclo = ?",
+            (time.time(), book_id, ciclo),
+        )
+        if cur.rowcount != 1:
+            con.rollback()
+            row = con.execute(
+                "SELECT * FROM books WHERE id = ?", (book_id,)
+            ).fetchone()
+            return "nao_reservado", (dict(row) if row else None)
+        atualizado = con.execute(
+            "SELECT * FROM books WHERE id = ?", (book_id,)
+        ).fetchone()
+        con.commit()
+        return "liberado", dict(atualizado)
+
+
+def sessoes_do_ciclo(book_id: int, ciclo: int) -> list[dict]:
+    """As sessões compiladas do ciclo, em ordem de leitura, para montar o resumão.
+
+    Ordena por `compiled_at` (relógio do servidor) e não por `fim`, que vem do
+    celular — a mesma razão que faz a página da estante ser derivada assim.
+    """
+    with closing(_connect()) as con:
+        rows = con.execute(
+            "SELECT id, compiled_at, pagina_inicial, pagina_final, vault_path "
+            "FROM reading_sessions "
+            "WHERE book_id = ? AND book_ciclo = ? AND status = 'compiled' "
+            "ORDER BY compiled_at, id",
+            (book_id, ciclo),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def reabrir_book(book_id: int) -> tuple[str, dict | None]:
+    """Releitura abre um ciclo NOVO: a página recomeça e o histórico fica intacto.
+
+    Lê o status antes de tentar o UPDATE porque com três estados o `rowcount != 1`
+    virou ambíguo: reabrir durante o fechamento responderia `ja_lendo`, que é mentira
+    — a obra está em 'terminando', nem lendo nem terminada. (Na fatia 1 só existiam
+    dois estados e o atalho estava correto.)
+    """
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT * FROM books WHERE id = ?", (book_id,)).fetchone()
         if row is None:
             con.rollback()
             return "missing", None
+        if row["status"] == "terminando":
+            con.rollback()
+            return "em_andamento", dict(row)
         cur = con.execute(
             "UPDATE books SET status = 'lendo', ciclo = ciclo + 1, updated = ? "
             "WHERE id = ? AND status = 'terminado'",

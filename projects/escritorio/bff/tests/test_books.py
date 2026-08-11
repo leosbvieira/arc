@@ -118,11 +118,23 @@ def test_derivadas_ignoram_sessao_pendente(db):
     assert store.list_books("lendo")[0]["sessoes_n"] == 0
 
 
+def _terminar(book_id: int, task_id: str | None = None) -> tuple[str, dict | None]:
+    """As duas fases da fatia 2 no gesto único que a fatia 1 tinha.
+
+    Existe para os testes de CICLO seguirem falando de ciclo. Quem exercita a
+    reserva, o fencing e o resumão em si é `test_resumao_de_obra.py`.
+    """
+    estado, obra = store.iniciar_terminar_book(book_id)
+    if estado != "terminando":
+        return estado, obra
+    return store.concluir_terminar_book(book_id, obra["ciclo"], task_id)
+
+
 def test_terminar_e_reabrir_abrem_ciclo_novo(db):
     livro, _ = store.create_book("Sapiens")
     _sessao_compilada(livro["id"], pagina_final=300, compiled_at=10.0, fim=10.0, key="a")
 
-    estado, obra = store.terminar_book(livro["id"])
+    estado, obra = _terminar(livro["id"])
     assert estado == "terminado" and obra["status"] == "terminado"
     assert store.list_books("lendo") == []
     assert store.list_books("terminado")[0]["id"] == livro["id"]
@@ -138,8 +150,8 @@ def test_terminar_e_reabrir_abrem_ciclo_novo(db):
 
 def test_terminar_duas_vezes(db):
     livro, _ = store.create_book("Sapiens")
-    assert store.terminar_book(livro["id"])[0] == "terminado"
-    assert store.terminar_book(livro["id"])[0] == "ja_terminado"
+    assert _terminar(livro["id"])[0] == "terminado"
+    assert _terminar(livro["id"])[0] == "ja_terminado"
 
 
 def test_terminar_com_sessao_aberta_e_recusado(db):
@@ -147,7 +159,7 @@ def test_terminar_com_sessao_aberta_e_recusado(db):
     sessao, _ = store.create_reading_session(
         "aberta", "x", inicio=1.0, book_id=livro["id"]
     )
-    estado, detalhe = store.terminar_book(livro["id"])
+    estado, detalhe = _terminar(livro["id"])
     assert estado == "sessao_aberta"
     assert detalhe["sessions"] == [sessao["id"]]
     assert store.get_book(livro["id"])["status"] == "lendo"
@@ -156,7 +168,7 @@ def test_terminar_com_sessao_aberta_e_recusado(db):
 def test_terminar_obra_sem_sessao_funciona(db):
     # É assim que se tira da estante uma obra criada por engano.
     livro, _ = store.create_book("Criada sem querer")
-    assert store.terminar_book(livro["id"])[0] == "terminado"
+    assert _terminar(livro["id"])[0] == "terminado"
 
 
 def test_reabrir_obra_que_ja_esta_lendo(db):
@@ -166,7 +178,7 @@ def test_reabrir_obra_que_ja_esta_lendo(db):
 
 
 def test_estados_de_obra_inexistente(db):
-    assert store.terminar_book(9999)[0] == "missing"
+    assert store.iniciar_terminar_book(9999)[0] == "missing"
     assert store.reabrir_book(9999)[0] == "missing"
 
 
@@ -182,7 +194,7 @@ def test_sessao_usa_o_titulo_canonico_e_o_ciclo_da_obra(db):
 
 def test_sessao_em_obra_terminada_e_recusada(db):
     livro, _ = store.create_book("Sapiens")
-    store.terminar_book(livro["id"])
+    _terminar(livro["id"])
     with pytest.raises(store.BookIndisponivel):
         store.create_reading_session("s1", "x", inicio=1.0, book_id=livro["id"])
     assert store.get_reading_session(1) is None
