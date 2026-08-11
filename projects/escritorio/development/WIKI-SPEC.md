@@ -5,9 +5,11 @@
 > (Leo, 09/ago/2026). Terceiro pedido: já constava na SPEC como "Manual/SOP" (§7) e no corte
 > "diagramas derivados do vault → tooltips + cheatsheet estático".
 >
-> **Data:** 10/ago/2026. **Versão:** v3. Duas rodadas de revisão hostil (GPT-5.6 Sol xhigh) incorporadas —
-> rodada 1: 15 achados, `REDESENHAR`; rodada 2: 8 achados novos, `IMPLEMENTAR COM CORREÇÕES`. Ver §13.
-> **Estado:** não implementado.
+> **Data:** 11/ago/2026. **Versão:** v4. Três rodadas de revisão hostil (GPT-5.6 Sol xhigh) incorporadas —
+> r1: 15 achados, `REDESENHAR`; r2: 8 novos, `IMPLEMENTAR COM CORREÇÕES`; r3: 9 novos, **nenhum crítico**,
+> veredito mantido. Ver §13. **Estado:** não implementado.
+>
+> **Entrega em duas fatias** (§12): **1A** é a fonte única e fecha sozinha; **1B** é a tela e depende dela.
 
 ---
 
@@ -83,7 +85,7 @@ config.py (settings) ───────────────────�
                         ▼                    ▼                     ▼               ▼
                  ComoFunciona.tsx      mesaView(ritos,points)  homeAction(ritos)  Fechar·Tasks·Capture
                         │
-        wikiResolve.ts (puro: validar · decidirFonte · resolver) + wikiContent.ts (texto)
+     wikiResolve.ts (puro: validar · decidir · resolver) · wikiNav.ts · wikiContent.ts (texto)
 ```
 
 ### 3.1 `GET /wiki/parametros`
@@ -193,41 +195,75 @@ o BFF roda na mesma máquina Windows, então há como reconciliar. Duas medidas:
 sem registrar nada. Sem isso, caminho errado do JSON, tradução errada de `domingo` ou escolha errada entre
 `nudge.ps1` e `run-digest.ps1` passariam com toda a suíte verde (§7.9).
 
-### 3.3 `ParametrosProvider` — o provider do app (D10′)
+### 3.3 `ParametrosProvider` — a autoridade única do app (D10′)
 
-A rota vira fonte única também para o app. Hidrata uma vez, com os valores de hoje como ponto de partida.
+**O provider é o único dono de buscar, validar, gravar cache e revalidar.** Nenhuma tela — nem a wiki — faz
+fetch por conta própria. Em v3 o provider "hidratava" e o `ComoFunciona.tsx` também buscava e revalidava por
+foco: dois donos, e a wiki podia receber valor novo enquanto a Mesa continuava no anterior. Agora há um dono.
 
-- **Valor inicial** = a tabela que hoje está em `theme.ts:POINTS` + as horas de hoje. Nada pisca e nada quebra
-  se a rede falhar: o app parte do que já mostrava.
+```ts
+export function useParametros(): Fonte;      // §3.5
+export function useRevalidar(): () => void;  // o botão "tentar de novo" e o refresh por foco
+```
+
 - **Encaixa no padrão que já existe.** `mesaView.montarMesa` e `closingPoints` **já recebem** a tabela por
   parâmetro, com o comentário *"a tabela de pontos entra por parâmetro; o teste é quem importa o POINTS de
-  produção"*. A mudança é passar também `ritos` e trocar a origem — não é arquitetura nova, é usar a que está
-  lá.
+  produção"*. A mudança é passar também `ritos` e trocar a origem — não é arquitetura nova, é usar a que está lá.
 - **Call sites:** 7 de `POINTS.` (`Capture.tsx:1698`, `Fechar.tsx:360,369,418`, `Tasks.tsx:72,107,416`) e 3 de
   hora (`mesaView.ts:70,74`, `homeAction.ts:131`).
-- **`theme.ts:POINTS`** deixa de ser lido pelas telas e passa a ser o **valor de partida do provider**, com
-  comentário dizendo isso. Não é apagado: é o fallback honesto de primeira abertura.
+- **Guarda de migração** (teste 11): nenhum arquivo fora de `theme.ts` e `parametros.tsx` pode importar
+  `POINTS`. Sem isso, `Capture.tsx` podia continuar lendo `POINTS.despejoBonus` e o aceite baseado em
+  `pontos_por_rotina` passaria mesmo assim.
 
-#### D11 — o que NÃO deriva, e por quê
+#### O bootstrap tem procedência
+
+Eu escrevi em v3 que `theme.ts:POINTS` seria o "valor de partida honesto". Não é honesto se não se identifica:
+numa primeira abertura sem rede, o app mostraria as tarifas e horas embutidas **sem selo**, indistinguíveis do
+valor real do servidor — a segunda fonte silenciosa que esta fatia existe para matar.
+
+Correção: o valor embutido é uma **variante declarada** de `Fonte` (`padrao`, §3.5), e a política de uso é por
+superfície:
+
+| Superfície | Aceita `padrao`? |
+|---|---|
+| Mesa, Home, Fechar, Tarefas | **Sim.** Mostrar `—` no lugar de `19h` e `+80` numa primeira abertura seria pior do que hoje, e essas telas não prometem ser a referência. |
+| **Como funciona** | **Não.** Renderiza `—` e a nota *"ainda não li os valores do servidor"*. A tela cuja razão de existir é ser confiável nunca apresenta um embutido como se fosse o valor do sistema. |
+
+A diferença é explícita no tipo, não em convenção: quem quiser recusar `padrao` recusa no `switch`.
+
+#### Comparação de hora é por minuto, nunca por `getHours()`
+
+`actionForAt` compara `now.getHours()` com inteiros. Com o horário virando parâmetro, isso quebra no primeiro
+rito com minuto não-zero: shutdown às **18:30** ativaria às 18:00 ou às 19:00, dependendo do arredondamento — e
+um teste que só troca horas inteiras não pegaria.
+
+Toda comparação passa a ser em **minutos desde a meia-noite** (`minutos("18:30") === 1110`), e o teste 10
+exercita o instante anterior, o exato e o posterior de um rito com minuto não-zero.
+
+#### D11 — o que deriva e o que não deriva
 
 `homeAction.actionForAt` usa hora como **fluxo de controle**, não só como texto:
 
 | Linha | Condição | Deriva? |
 |---|---|---|
-| 116 | `hour < 8 && !template` | **Não.** Janela da abertura, não o horário do toque (05:30) |
-| 119 | `hour < 12 && !checkin.feito` | **Não.** Janela do check-in, não o horário dele (08:20) |
-| 122 | `reading > 0 && hour < 19` | **Sim** → `ritos.shutdown.hora` |
-| 125 | `sunday && hour >= 17` | **Não.** Antecedência de 3h para o review das 20h |
+| 116 | `hour < 8 && !template` | **Não.** É um **prazo** para abrir o dia, não o horário do toque (05:30) |
+| 119 | `hour < 12 && !checkin.feito` | **Não.** Prazo do check-in, não o horário dele (08:20) |
+| 122 | `reading > 0 && hour < 19` | **Sim** → `shutdown` |
+| 125 | `sunday && hour >= 17` | **Sim** → `review − 3h` |
 | 128 | `hour >= 19 && hour < 21` | **Sim** → `shutdown` e `fechamento` |
-| 131 | `hour >= 21` | **Sim** → `ritos.fechamento.hora` |
+| 131 | `hour >= 21` | **Sim** → `fechamento` |
 
-Os três que derivam são o horário do rito. Os outros três são janelas escolhidas, e convertê-los mecanicamente
-mudaria comportamento e quebraria os testes que fixam a lógica atual (`homeAction.test.mjs`) — mudança de
-comportamento contrabandeada dentro de uma fatia de wiki. Ficam como estão, com comentário no código dizendo
-que são janelas, não horários.
+Em v3 eu deixei a linha 125 fixa **e ao mesmo tempo a descrevi** como "antecedência de 3h para o review das
+20h". Nomear a relação e não derivá-la é criar exatamente a divergência que a fatia combate: mudar o review
+para 18h deixaria o hero sugerindo review a partir das 17h, uma hora antes do que a própria descrição promete.
+Derivar `review − 3h` dá **17:00 hoje** — comportamento idêntico, relação preservada.
 
-`actionForAt` ganha um parâmetro `ritos` no mesmo estilo de `montarMesa(sinais, points)`; os testes existentes
-passam a tabela explicitamente.
+As duas que ficam fixas não referenciam rito nenhum: são prazos (*"abra o dia antes das 8"*, *"faça o check-in
+antes do meio-dia"*). O comentário no código passa a dizer **prazo**, não "janela de antecedência", para não
+repetir o erro de nomear uma relação que não existe.
+
+`actionForAt` ganha o parâmetro `ritos`, no estilo de `montarMesa(sinais, points)`; os testes existentes passam
+a tabela explicitamente.
 
 ### 3.4 `app/src/wikiContent.ts` — o texto
 
@@ -266,7 +302,8 @@ export type Params = { /* espelha o schema */ };
 
 export type Fonte =
   | { tipo: "fresco";       params: Params }
-  | { tipo: "cache";        params: Params; salvoEm: string }   // ISO-8601
+  | { tipo: "cache";        params: Params; salvoEm: string }   // ISO-8601 parseável
+  | { tipo: "padrao";       params: Params }                    // o embutido, declarado (§3.3)
   | { tipo: "indisponivel"; motivo: "sem-cache" | "sessao" | "rede" };
 
 export type Entrada = {
@@ -274,21 +311,35 @@ export type Entrada = {
   cache: unknown;                                   // o que veio do storage, cru
 };
 
+// A decisão inclui o EFEITO, não só a fonte.
+export type Decisao = { fonte: Fonte; cache: "gravar" | "manter" | "descartar" };
+
 export function validar(bruto: unknown): Params | null;   // null se o formato não bate
-export function decidirFonte(e: Entrada): Fonte;          // toda a política de §6, pura
+export function decidir(e: Entrada): Decisao;             // toda a política de §6, pura
+export function minutos(hora: string): number;            // "18:30" → 1110
 export function resolver(texto: string, f: Fonte): string;
 export function paginaPronta(p: Pagina, f: Fonte): BlocoPronto[];
 ```
 
-`Fonte` é **união discriminada**. Em v2 era `{params, idade: string|null}`, e `idade: null` significava tanto
-"resposta fresca" quanto "cache sem timestamp" — a tela não tinha como distinguir e podia apresentar cache
-como fresco. Agora `cache` **exige** `salvoEm`; envelope de cache sem timestamp não valida e é descartado.
+Três coisas que mudaram desde v2, cada uma fechando um buraco real:
 
-`validar` é a mesma função que guarda a escrita e a leitura do cache. Payload que não valida nunca entra no
-cache e nunca substitui um bom.
+**`Fonte` é união discriminada.** Em v2 era `{params, idade: string|null}`, e `idade: null` significava tanto
+"resposta fresca" quanto "cache sem timestamp" — a tela podia apresentar cache como fresco. Agora `cache`
+**exige** `salvoEm`, e `salvoEm` precisa **parsear como ISO-8601**: um envelope com `"salvoEm": "ontem"`
+passaria numa checagem de tipo `string` e produziria um selo inválido, então é descartado.
 
-`decidirFonte` concentra o que sobraria no componente: 200-válido, 200-inválido, 401, erro de rede, sem cache,
-cache corrompido. O que fica no `.tsx` é wiring — buscar, chamar, desenhar.
+**`decidir` devolve o efeito, não só a fonte.** Em v3 ela retornava `Fonte`, o que a impedia de provar as duas
+regras mais importantes de §6 — *"substitui o cache"* e *"não toca no cache bom"*. Essa decisão voltava para o
+wiring não testado. Agora vem no retorno, e **o provider executa o comando mecanicamente**, sem `if` próprio.
+
+**`padrao` é uma fonte como as outras.** Não é `null`, não é ausência: é um valor com procedência, que cada
+superfície aceita ou recusa segundo a política de §3.3.
+
+`validar` é a mesma função na escrita e na leitura do cache. Payload que não valida nunca entra e nunca
+substitui um bom.
+
+O que sobra no `.tsx`: desenhar. Buscar, decidir, gravar e revalidar são do provider; a política é de `decidir`;
+a navegação por slug é de `wikiNav.ts` (§7.12).
 
 ### 3.6 O contrato: schema derivado, não fixture artesanal
 
@@ -306,7 +357,21 @@ O FastAPI já gera JSON Schema do modelo Pydantic. **O schema é o contrato:**
   contrato.
 
 Caminho de array é `areas[]` / `ritos[].hora`: o schema descreve a forma do elemento, e cardinalidade fica de
-fora. Array vazio é válido, e a tela renderiza lista vazia com nota.
+fora. Array vazio é válido em geral, e a tela renderiza lista vazia com nota.
+
+**Duas exceções à cardinalidade livre**, porque o conteúdo depende delas:
+
+- `niveis.limiares` tem **`minItems: 1`**. Um payload com `[]` seria válido e cacheado enquanto a página
+  `pontos` afirma "a caminho do N1" — um nível que não existiria. Como o token `N1…Nn` é validado contra o
+  comprimento dessa lista (§4.2), lista vazia torna o conteúdo obrigatório impossível.
+- `ritos` tem **`minItems: 1`**. Sem nenhum rito, a pergunta de aceite `g` não tem resposta e o `homeAction`
+  perde os limiares que passou a derivar (§3.3).
+
+**Equivalência `validar()` × schema** (teste 8). `validar()` é escrito à mão em TypeScript e o schema é gerado
+do Pydantic: nada garante que aceitem o mesmo conjunto. O teste percorre uma tabela de casos derivada campo a
+campo do schema — ausente, tipo errado, array vazio, fora do domínio, extra não previsto — e exige que
+`validar()` e a validação por schema **concordem em cada caso**. Não é prova exaustiva; é a mesma tabela nos
+dois lados, que é o que pega divergência real.
 
 ## 4. Conteúdo
 
@@ -390,8 +455,21 @@ Regra nova, em três categorias:
    *quantos* níveis existem ou *quanto falta*, usa-se slot, nunca literal.
 2. **Contagens estruturais fixas** — "as três camadas", "as três leis", "as duas IAs". Permitidas **por
    frase**, casadas contra uma lista curta de expressões exatas; não é o dígito solto que libera.
-3. **Todo o resto é proibido**, inclusive **por extenso**: uma blocklist de numerais escritos (`vinte`,
-   `oitenta`, `doze`, …) impede fugir do teste trocando `20` por "vinte" — o furo que a rodada 2 apontou.
+3. **Todo o resto é proibido**, inclusive **por extenso**.
+
+A blocklist de numerais escritos não pode ser "`vinte`, `oitenta`, … " com reticências — reticência não é
+especificação, e a rodada 3 apontou que ordinais e frações ficavam de fora. Ela é **enumerada e fechada**, mora
+ao lado do teste, e cobre quatro famílias:
+
+| Família | Cobertura |
+|---|---|
+| Cardinais | `um`…`vinte`, mais `trinta`, `quarenta`, `cinquenta`, `sessenta`, `setenta`, `oitenta`, `noventa`, `cem`, `cento`, `duzentos`…`novecentos`, `mil` |
+| Ordinais | `primeiro`…`décimo` (e femininos) |
+| Frações e multiplicativos | `meio`, `meia`, `metade`, `terço`, `quarto`, `dobro`, `triplo` |
+| Coletivos de tempo | `dezena`, `dúzia`, `quinzena`, `trimestre`, `semestre` |
+
+O teste casa palavra inteira, sem acento-sensibilidade, e ignora ocorrências dentro de slot. Toda entrada nova
+na lista exige uma linha de comentário dizendo qual número ela protege — lista sem motivo apodrece.
 
 ## 5. Navegação e portas de entrada
 
@@ -416,21 +494,23 @@ task (§3.2).
 
 ## 6. Falhas e cache
 
-Toda esta política vive em `decidirFonte()` (§3.5) e é testada como função pura.
+Toda esta política vive em `decidir()` (§3.5) e é testada como função pura — **incluindo o efeito no cache**,
+que é a coluna que em v3 ficava no wiring.
 
-| Situação | `Fonte` | O que a tela mostra |
-|---|---|---|
-| 200 e valida | `fresco` | Números, sem selo. Cache substituído. |
-| 200 e **não** valida | `cache` ou `indisponivel` | Tratada como falha. **O cache bom NÃO é tocado.** |
-| Falha de rede, com cache | `cache` | Números + selo `valores de 10/ago/2026` |
-| Falha de rede, sem cache | `indisponivel: "rede"` | Slots viram `—`, aviso e botão `tentar de novo` |
-| 401, com cache | `cache` | Cache + nota "sessão expirada — entre em Ajustes para atualizar os valores" |
-| 401, sem cache | `indisponivel: "sessao"` | `—` + a mesma nota. **A wiki nunca expulsa para o login** — é tela de referência, e expulsar quem só quer ler é hostil |
-| Cache corrompido ou sem `salvoEm` | descartado | Cai no caso "sem cache" |
-| Lista vazia (`areas: []`) | qualquer | Bloco com nota "não consegui ler a lista", não erro |
+| Situação | `Fonte` | Cache | O que a wiki mostra |
+|---|---|---|---|
+| 200 e valida | `fresco` | `gravar` | Números, sem selo |
+| 200 e **não** valida | `cache` ou `indisponivel` | `manter` | Tratada como falha. **O cache bom não é tocado** |
+| Falha de rede, com cache | `cache` | `manter` | Números + selo `valores de 10/ago/2026` |
+| Falha de rede, sem cache | `indisponivel: "rede"` | `manter` | `—`, aviso e botão `tentar de novo` |
+| 401, com cache | `cache` | `manter` | Cache + nota "sessão expirada — entre em Ajustes para atualizar os valores" |
+| 401, sem cache | `indisponivel: "sessao"` | `manter` | `—` + a mesma nota. **A wiki nunca expulsa para o login** — é tela de referência, e expulsar quem só quer ler é hostil |
+| Cache corrompido, sem `salvoEm`, ou `salvoEm` não-ISO | conforme a resposta | `descartar` | Cai no caso "sem cache" |
+| Nada ainda: primeira abertura, sem rede | `padrao` | `manter` | **`—` e a nota "ainda não li os valores do servidor"** — a wiki recusa `padrao` (§3.3). As outras telas mostram o embutido |
+| Lista vazia onde é permitido | qualquer | — | Bloco com nota "não consegui ler a lista", não erro |
 
 **O texto nunca falha** — mora no bundle. A wiki abre sempre; o que pode faltar são os números, e quando faltam
-ela diz.
+ela diz **de onde não veio**.
 
 **Cache — last-known-good validado.** Três regras:
 
@@ -442,20 +522,23 @@ ela diz.
 
 ## 7. Testes
 
-Dez. Os cinco primeiros são o que faz o aceite ser verdade em vez de promessa.
+Treze. Os cinco primeiros são o que faz o aceite ser verdade em vez de promessa.
 
 | # | Arquivo | O que prova |
 |---|---|---|
 | 1 | `app/tests/wikiContent.test.mjs` | **Slot órfão** — todo `{...}` existe no schema (§3.6), com o tipo certo |
-| 2 | idem | **Literal proibido** — dígito fora de slot que não caia nas três categorias de §4.2 quebra; inclui a blocklist de numerais por extenso |
+| 2 | idem | **Literal proibido** — dígito fora de slot que não caia nas três categorias de §4.2 quebra; inclui a blocklist enumerada de numerais por extenso |
 | 3 | idem | **Valores-sentinela** — renderiza todas as páginas com um `Params` em que cada número é um sentinela distinto, e falha se qualquer valor de produção aparecer no texto. Pega o número copiado à mão que casualmente bate com o real |
 | 4 | idem | **Inventário coberto** — todo slot de §4.2 é usado por alguma página; e todo slug de `ritos.json` tem `RITOS_TEXTO` com `nome`/`pede`/`grava` não vazios |
-| 5 | `app/tests/wikiResolve.test.mjs` | **`decidirFonte`** nos oito casos da tabela de §6; **`validar`** com payload completo, parcial, tipo errado, array vazio, `null` e cache sem `salvoEm`; **`resolver`** com slot presente, ausente e malformado; fallback de rito desconhecido. Nenhum caminho devolve `undefined` |
-| 6 | `bff/tests/test_ritos.py` | `ritos.json` carrega e valida: `slug` único, **`task` único**, `hora` `HH:MM`, `dia` válido, `script ∈ {nudge,digest}`; o `ValidateSet` do `nudge.ps1` é exatamente os slugs com `script: "nudge"`; e **nenhum texto do `NUDGE_COPY` contém hora escrita à mão** |
-| 7 | `bff/tests/test_wiki_parametros.py` | 401 sem token; cada valor vem de `settings`/`ritos.py` (muda o setting → muda a resposta); e o JSON Schema regenerado do modelo é idêntico ao commitado |
-| 8 | `app/tests/mesaView.test.mjs` | `comofunciona` em `TODOS_OS_DESTINOS` (11 → 12) e nas três asserções de ordem; e a hora exibida vem do parâmetro `ritos`, não de literal |
-| 9 | `bff/tests/test_sync_cron.py` | O plano do `sync-cron.ps1 -DryRun` bate com o `ritos.json`: sete tasks, gatilho certo (`-Daily` × `-Weekly -DaysOfWeek Sunday`), script certo; e uma task `Aeternum *` que não está no JSON aparece na lista de remoção, enquanto `Aeternum BFF` não |
-| 10 | `app/tests/homeAction.test.mjs` | Os três limiares que derivam (§3.3) mudam quando a tabela `ritos` muda; as três janelas de antecedência **não** mudam |
+| 5 | `app/tests/wikiResolve.test.mjs` | **`decidir`** nos nove casos de §6, conferindo **fonte e comando de cache**; **`validar`** com payload completo, parcial, tipo errado, array vazio, `null`, cache sem `salvoEm` e com `salvoEm` não parseável; **`resolver`** com slot presente, ausente e malformado; fallback de rito desconhecido. Nenhum caminho devolve `undefined` |
+| 6 | `bff/tests/test_ritos.py` | `ritos.json` carrega e valida: `slug` único, **`task` único**, `hora` `HH:MM`, `dia` válido, `script ∈ {nudge,digest}`; o `ValidateSet` do `nudge.ps1` é **exatamente** os slugs com `script: "nudge"` |
+| 7 | idem | **`NUDGE_COPY` ligado ao slug certo** — renderiza cada copy com uma hora sentinela **distinta por slug** e exige que cada texto mostre a sua. Em v3 o teste só provava ausência de literal: o fechamento podia interpolar a hora do shutdown e passar, anunciando a hora errada no push |
+| 8 | `bff/tests/test_wiki_parametros.py` | 401 sem token; cada valor vem de `settings`/`ritos.py` (muda o setting → muda a resposta); o JSON Schema regenerado é idêntico ao commitado; e **`validar()` e o schema concordam** na tabela de casos de §3.6 |
+| 9 | `bff/tests/test_sync_cron.py` | O plano do `sync-cron.ps1 -DryRun` bate com o `ritos.json`: sete tasks, gatilho certo (`-Daily` × `-Weekly -DaysOfWeek Sunday`), script certo; task `Aeternum *` ausente do JSON entra na lista de remoção e `Aeternum BFF` não; e a **política de falha** de §3.2 (JSON inválido aborta; erro do Agendador não impede o boot e gera alerta) |
+| 10 | `app/tests/homeAction.test.mjs` | Os quatro limiares que derivam (§3.3) mudam quando a tabela `ritos` muda, incluindo o domingo em `review − 3h`; os dois prazos **não** mudam. Com um rito em minuto não-zero (`18:30`), o instante anterior, o exato e o posterior caem no ramo certo |
+| 11 | `app/tests/migracaoPoints.test.mjs` | **Guarda estática:** nenhum arquivo fora de `theme.ts` e `parametros.tsx` importa `POINTS`. Sem ela, um call site esquecido passa despercebido e o aceite §10.2 ainda fica verde |
+| 12 | `app/tests/wikiNav.test.mjs` | Navegação por slug: slug válido, slug desconhecido, ausência de slug (abre o índice), e voltar do último nível sai da tela |
+| 13 | `app/tests/mesaView.test.mjs` | `comofunciona` em `TODOS_OS_DESTINOS` (11 → 12) e nas três asserções de ordem; e a hora exibida vem do parâmetro `ritos`, não de literal |
 
 **Correção ao que o B2 diz:** o backlog avisa que isto "muda a contagem de 11 destinos e o teste de 2160
 combinações". As 2160 (`mesaView.test.mjs:86`) são `5 × 4 × 3 × 3 × 3 × 4`, o produto das **combinações de
@@ -465,9 +548,11 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 
 - **Se o texto está bom.** Nenhuma suíte prova que uma frase esclarece. Por isso o aceite (§10) é uma lista de
   perguntas concretas respondidas pelo Leo.
-- **A composição do `.tsx`.** `decidirFonte` tira a política do componente, mas o wiring (buscar, navegar por
-  slug, desenhar) fica sem teste automatizado — este projeto não tem infraestrutura de render de RN, e criar
-  uma é fatia própria. Coberto pelo aceite manual §10.4.
+- **A composição visual do `.tsx`.** Depois de `decidir` (política), do provider (busca e cache) e de `wikiNav`
+  (navegação), o que resta no componente é desenhar — e disso não há teste automatizado, porque o projeto não
+  tem infraestrutura de render de RN e criar uma é fatia própria (§14). Coberto pelo aceite manual §10.4.
+  Em v3 esse buraco era maior e eu o declarei em vez de reduzi-lo; a rodada 3 apontou que dava para extrair
+  mais, e deu.
 
 ## 8. Arquivos tocados
 
@@ -475,9 +560,9 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 
 - `bff/ritos.json` · `bff/app/ritos.py` · `bff/scripts/sync-cron.ps1`
 - `bff/tests/test_ritos.py` · `bff/tests/test_wiki_parametros.py` · `bff/tests/test_sync_cron.py`
-- `app/src/wikiContent.ts` · `app/src/wikiResolve.ts` · `app/src/screens/ComoFunciona.tsx`
+- `app/src/wikiContent.ts` · `app/src/wikiResolve.ts` · `app/src/wikiNav.ts` · `app/src/screens/ComoFunciona.tsx`
 - `app/src/parametros.tsx` (o provider)
-- `app/tests/wikiContent.test.mjs` · `app/tests/wikiResolve.test.mjs`
+- `app/tests/wikiContent.test.mjs` · `app/tests/wikiResolve.test.mjs` · `app/tests/wikiNav.test.mjs` · `app/tests/migracaoPoints.test.mjs`
 - `app/tests/fixtures/wiki-schema.json` · `app/tests/fixtures/wiki-parametros.json`
 
 **Alterados**
@@ -500,7 +585,7 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 - **Diagramas** (D8) — fatia 2.
 - **Busca dentro da wiki** — nove páginas cabem num índice.
 - **Testes de render de React Native** — infraestrutura que o projeto não tem; fatia própria.
-- **Derivar as janelas de antecedência do `homeAction`** (D11) — seria mudança de comportamento.
+- **Derivar os dois prazos do `homeAction`** (`hour < 8`, `hour < 12`) — não referenciam rito nenhum (D11).
 - Qualquer mudança no pipeline de captura, na economia ou em `/pontos`. A rota nova é read-only.
 
 ## 10. Critério de aceite
@@ -536,7 +621,11 @@ aviso e retry. Com cache: aparecem com selo de data completa. Com sessão expira
 **5. O nudge não quebrou.** Depois da renomeação `closing` → `fechamento`, o nudge das 21h chega. Drill
 manual — este é o caminho que a v2 teria quebrado em silêncio.
 
-**6. Suíte.** `python -m pytest -q` e os testes `.mjs` passam, incluindo os dez de §7.
+**6. Primeira abertura é honesta.** App recém-instalado, sem rede: Mesa e Home mostram o embutido e funcionam;
+a wiki mostra `—` e diz *"ainda não li os valores do servidor"*. Nenhuma tela apresenta o embutido como se
+fosse o valor do sistema.
+
+**7. Suíte.** `python -m pytest -q` e os testes `.mjs` passam, incluindo os treze de §7.
 
 ## 11. Complexidade
 
@@ -549,21 +638,38 @@ O que a rodada 2 apontou como excesso era o **contrato artesanal** (Pydantic + v
 comparação de caminhos, que ainda assim não garantia tipo). Aceito: §3.6 troca isso por schema derivado. É a
 única parte da v3 que ficou **mais simples** que a v2.
 
-O crescimento restante — provider, `sync-cron.ps1`, reconciliação, dez testes — não é ornamento: é o preço de
+O crescimento restante — provider, `sync-cron.ps1`, reconciliação, treze testes — não é ornamento: é o preço de
 a wiki não ser a sexta cópia. O revisor recomendou exatamente isso no veredito de complexidade da rodada 2.
 
-## 12. Ordem de implementação
+**O que a rodada 3 cobrou, com razão, foi a etiqueta.** O veredito dela: *"a v3 virou duas fatias acopladas"*, e
+o remédio não é cortar conteúdo nem migração — é **parar de chamar duas coisas de uma**. §12 responde a isso.
 
-Três blocos, cada um verificável sozinho. O primeiro não tem tela nenhuma e já paga por si.
+## 12. Duas fatias, não uma
 
-1. **Fonte única no servidor** — `ritos.json`, `ritos.py`, `sync-cron.ps1` com reconciliação e `-DryRun`,
-   `NUDGE_COPY` interpolado, `nudge.ps1` renomeado, `start-bff.ps1` chamando o sync. Testes 6 e 9.
-   **Verificação:** mudar uma hora no JSON, reiniciar, e ver o Agendador e o push mudarem juntos.
-2. **Rota e provider** — `GET /wiki/parametros`, schema commitado, `ParametrosProvider`, os 7 call sites de
-   `POINTS.` e os 3 de hora. Testes 7, 8 e 10. **Verificação:** mudar `pontos_por_rotina` e ver Mesa, Fechar e
-   Tarefas mudarem.
-3. **A tela** — `wikiContent.ts`, `wikiResolve.ts`, `ComoFunciona.tsx`, portas, item da Mesa. Testes 1–5.
-   **Verificação:** as 14 perguntas de §10.
+Chamar tudo de "fatia 1" era ficção: o bloco de fonte única não tem tela nenhuma, é verificável sozinho, e
+**entrega valor mesmo que a wiki nunca seja escrita** — hoje mudar um horário deixa quatro superfícies
+mentindo. A wiki é a razão de a gente ter olhado, não a razão de valer a pena.
+
+### Fatia 1A — Fonte única (pré-requisito verificável)
+
+| | |
+|---|---|
+| **Entrega** | `ritos.json`, `ritos.py`, `sync-cron.ps1` (reconciliação + `-DryRun` + política de falha), `NUDGE_COPY` interpolado, `nudge.ps1` renomeado, `start-bff.ps1` chamando o sync, `GET /wiki/parametros` + schema commitado, `ParametrosProvider`, os 7 call sites de `POINTS.` e os 3 de hora |
+| **Testes** | 6, 7, 8, 9, 10, 11, 13 |
+| **Verificação** | Mudar uma hora no `ritos.json`, reiniciar, e ver **o Agendador, o push, a Mesa e o hero da Home** mudarem juntos. Mudar `pontos_por_rotina` e ver Mesa, Fechar e Tarefas mudarem. Aceite §10.2, §10.5 e §10.6 |
+| **Fecha sozinha?** | Sim. Nenhuma tela nova; nenhum texto novo |
+
+### Fatia 1B — A tela (imediatamente depois)
+
+| | |
+|---|---|
+| **Entrega** | `wikiContent.ts`, `wikiResolve.ts`, `wikiNav.ts`, `ComoFunciona.tsx`, as nove páginas, o item da Mesa, as duas portas contextuais |
+| **Testes** | 1, 2, 3, 4, 5, 12 |
+| **Verificação** | As 14 perguntas de §10.1, mais §10.3 e §10.4 |
+| **Depende de 1A?** | Sim, inteiramente. Sem o provider e o schema, a tela não tem de onde tirar número — e escrevê-los à mão é o que a fatia inteira existe para impedir |
+
+**Não é para paralelizar.** 1A primeiro, verificada no aparelho, e só então 1B. A tentação de escrever as nove
+páginas enquanto o encanamento não está pronto é exatamente como se produz um texto com número chumbado.
 
 ## 13. Histórico de revisão
 
@@ -593,10 +699,30 @@ D9 caiu por um achado próprio: os horários estavam também no `NUDGE_COPY`.
 | PARCIAL 11 — cache/401/foco sem teste | `decidirFonte` puro cobre a política inteira (teste 5); o que resta sem teste está declarado em §7 |
 | §11 julgado SÓLIDO | Mantido, com a ressalva sobre custo de conteúdo incorporada |
 
+**v3 → v4** — rodada 3 (7 dos 8 achados da rodada 2 resolvidos; 3 dos 7 pendentes da rodada 1 resolvidos;
+**nenhum achado crítico novo**; veredito mantido em `IMPLEMENTAR COM CORREÇÕES`):
+
+| Achado da rodada 3 | Resposta |
+|---|---|
+| ALTO — provider sem autoridade única: ele hidratava e a tela também buscava | O provider é o **único** dono de fetch, validação, cache e revalidação; expõe `useParametros()` e `useRevalidar()` (§3.3) |
+| ALTO — bootstrap era segunda fonte sem procedência | `padrao` vira variante declarada de `Fonte`; Mesa/Home aceitam, **a wiki recusa** e diz que ainda não leu o servidor (§3.3, §6) |
+| ALTO — `decidir` não decidia o efeito no cache | Passa a devolver `{fonte, cache: gravar\|manter\|descartar}`, executado mecanicamente pelo provider (§3.5) |
+| ALTO — `HH:MM` não cabe em `getHours()` | Comparação em minutos desde a meia-noite; teste 10 usa um rito em `18:30` e testa antes/no instante/depois |
+| ALTO — migração dos 7 call sites sem guarda | Teste 11: nenhum arquivo fora de `theme.ts` e `parametros.tsx` importa `POINTS` |
+| ALTO — `niveis.limiares: []` válido com `N1` obrigatório | `minItems: 1` em `niveis.limiares` e em `ritos` (§3.6) |
+| ALTO — teste do `NUDGE_COPY` provava ausência, não ligação | Teste 7: hora sentinela **distinta por slug**; o fechamento interpolando a hora do shutdown agora quebra |
+| ALTO — sync no boot sem política de falha | JSON inválido aborta; erro do Agendador não impede o boot e gera alerta (§3.2, teste 9) |
+| MÉDIO — `salvoEm` não garantia ISO-8601 | Precisa parsear; `"ontem"` é descartado (§3.5, teste 5) |
+| D11 julgada **parcialmente defensável** | Aceito: o domingo passa a derivar `review − 3h` (17:00 hoje, comportamento idêntico). Nomear a relação e não derivá-la era criar a divergência. Os dois que ficam são **prazos**, e o comentário no código deixa de chamá-los de antecedência |
+| Buraco do `.tsx` — "o achado 11 sobrevive, menor" | Aceito: `wikiNav.ts` extraído e testado (teste 12). Sobra só o desenho, e §7 diz isso sem eufemismo |
+| PARCIAL — blocklist com reticências não é especificação | Lista **enumerada e fechada** em quatro famílias, incluindo ordinais e frações (§4.2) |
+| PARCIAL — equivalência `validar()` × schema não provada | Teste 8 percorre a mesma tabela de casos derivada do schema nos dois lados (§3.6) |
+| Complexidade: *"virou duas fatias acopladas"* | Aceito. §12 vira **1A (fonte única) + 1B (a tela)**, com 1A como pré-requisito verificável que fecha sozinho |
+
 ## 14. Fatias seguintes
 
 | Fatia | O quê | Por que depois |
 |---|---|---|
 | 2 | Diagramas dos fluxos principais | Custo de layout real; o aceite não pede diagrama |
 | 3 | Infraestrutura de teste de render de RN | Fecharia o buraco declarado em §7; vale para o app todo, não só a wiki |
-| 4 | Links "o que é isso?" nas demais telas | Aditivo; só faz sentido com a fatia 1 no ar |
+| 4 | Links "o que é isso?" nas demais telas | Aditivo; só faz sentido com 1B no ar |
