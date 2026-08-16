@@ -121,22 +121,32 @@ def test_a_estante_mostra_o_recap_da_ultima_sessao(db):
     assert store.list_books("lendo")[0]["recap"] == "parou no capítulo 5"
 
 
-def test_sessao_sem_recap_nao_apaga_o_da_anterior(db):
-    """O recap é best-effort: uma sessão em que o Hermes falhou não pode zerar o
-    lembrete que existia — a mesma regra da página final."""
+def test_sessao_sem_recap_NAO_herda_o_da_anterior(db):
+    """Regra deliberadamente OPOSTA à da página, e a revisão hostil é que apontou.
+
+    Página é fato que envelhece bem: "p. 42" segue sendo a última página conhecida.
+    Recap é afirmação sobre onde ele parou — se a última sessão foi até o capítulo 8
+    e o Hermes falhou nela, exibir "você parou no capítulo 2" da sessão anterior é
+    dizer algo falso na tela. Silêncio é melhor que lembrete errado.
+    """
     livro, _ = store.create_book("Sapiens")
     _sessao_compilada(livro["id"], compiled_at=10.0, key="a", recap="parou no capítulo 2")
     _sessao_compilada(livro["id"], compiled_at=20.0, key="b", recap=None)
 
-    assert store.list_books("lendo")[0]["recap"] == "parou no capítulo 2"
+    assert store.list_books("lendo")[0]["recap"] is None
+    # E a página, que segue a regra contrária, continua vindo da sessão que a tem.
+    assert store.list_books("lendo")[0]["pagina_atual"] is None
 
 
-def test_recap_vazio_conta_como_ausente(db):
+def test_recap_vazio_tambem_nao_ressuscita_o_anterior(db):
+    """String vazia é o que sobra quando o modelo devolve nada. A normalização de
+    ""→null é da tela (`shelfView`), não do banco: aqui só importa que o recap velho
+    não volte."""
     livro, _ = store.create_book("Sapiens")
     _sessao_compilada(livro["id"], compiled_at=10.0, key="a", recap="parou no capítulo 2")
     _sessao_compilada(livro["id"], compiled_at=20.0, key="b", recap="")
 
-    assert store.list_books("lendo")[0]["recap"] == "parou no capítulo 2"
+    assert not store.list_books("lendo")[0]["recap"]
 
 
 def test_o_recap_da_leitura_anterior_nao_vaza_para_a_releitura(db):

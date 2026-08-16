@@ -1020,11 +1020,17 @@ SELECT
      WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
        AND s.status = 'compiled') AS ultima_sessao,
   -- Onde a leitura parou, escrito no fim da sessão anterior. Mesma ordenação da
-  -- página: `compiled_at` é do servidor, `fim` vem do celular. Sessão sem recap
-  -- (falhou, ou só teve citação) não apaga o da anterior — daí o NOT NULL.
+  -- página: `compiled_at` é do servidor, `fim` vem do celular.
+  --
+  -- É o recap da ÚLTIMA sessão, mesmo que seja NULL — e aqui a regra é o oposto
+  -- da página de propósito. Página é um fato que envelhece bem: "p. 42" continua
+  -- sendo a última página conhecida. Recap é uma afirmação sobre onde ele parou:
+  -- se a última sessão foi até o capítulo 8 e o Hermes falhou nela, mostrar
+  -- "você parou no capítulo 2" da sessão anterior é dizer algo falso. Silêncio é
+  -- melhor que lembrete errado.
   (SELECT s.recap FROM reading_sessions s
      WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo
-       AND s.status = 'compiled' AND s.recap IS NOT NULL AND s.recap <> ''
+       AND s.status = 'compiled'
      ORDER BY s.compiled_at DESC, s.id DESC LIMIT 1) AS recap,
   (SELECT COUNT(*) FROM reading_sessions s
      WHERE s.book_id = b.id AND s.book_ciclo = b.ciclo

@@ -49,10 +49,20 @@ def faixa_de_paginas(inicial: int | None, final: int | None) -> str:
 
 
 def agregado_de_paginas(sessoes: list[dict]) -> str:
-    """A faixa da leitura inteira. Usa o menor início e o maior fim REGISTRADOS."""
+    """A faixa da leitura inteira. Usa o menor início e o maior fim REGISTRADOS.
+
+    Os dois limites podem vir de sessões diferentes, e aí a faixa pode sair
+    invertida: uma sessão registra só `final=100`, a seguinte só `inicial=101`, e o
+    agregado ingênuo diria "p. 101–100". Nesse caso não há faixa honesta a montar —
+    os limites são mostrados separados.
+    """
     inicios = [s["pagina_inicial"] for s in sessoes if s.get("pagina_inicial") is not None]
     finais = [s["pagina_final"] for s in sessoes if s.get("pagina_final") is not None]
-    return faixa_de_paginas(min(inicios) if inicios else None, max(finais) if finais else None)
+    menor = min(inicios) if inicios else None
+    maior = max(finais) if finais else None
+    if menor is not None and maior is not None and menor > maior:
+        return f"começou na p. {menor} · chegou até a p. {maior}"
+    return faixa_de_paginas(menor, maior)
 
 
 def nome(titulo: str, ciclo: int) -> str:

@@ -809,11 +809,16 @@ def _timestamp_do_prazo(due: str) -> float:
     return datetime.combine(date.fromisoformat(due), time.min, tzinfo=tz.TZ).timestamp()
 
 
-async def criar_resumao_de_obra(*, nome: str, descricao: str) -> str | None:
+async def criar_resumao_de_obra(*, nome: str, descricao: str) -> str:
     """Cria a tarefa de resumão no Staging e devolve o id do ClickUp.
 
     Vai para o Staging, não direto para uma área: lei 3, o sistema propõe e ele
     decide onde mora e quando faz. É o mesmo caminho da captura.
+
+    Estoura quando o ClickUp responde 2xx sem `id`. Devolver `None` aqui seria pior
+    que o erro: `None` é o mesmo valor que significa "ciclo vazio, nada a resumir",
+    e a obra sairia da estante com o app dizendo que não havia sessão nenhuma —
+    mentira sobre um livro que ele leu.
     """
     if _use_clickup():
         criada = await clickup_client.create(
@@ -822,7 +827,9 @@ async def criar_resumao_de_obra(*, nome: str, descricao: str) -> str | None:
             description=descricao,
         )
         task_id = criada.get("id")
-        return str(task_id) if task_id is not None else None
+        if task_id is None or not str(task_id).strip():
+            raise RuntimeError("resumao_sem_id")
+        return str(task_id)
 
     global _next
     tarefa = _Task(f"t{_next}", nome, clickup_client.STAGING)
@@ -835,12 +842,26 @@ async def criar_resumao_de_obra(*, nome: str, descricao: str) -> str | None:
 async def achar_resumao_de_obra(marker: str) -> str | None:
     """Procura o resumão pelo marker. `None` é PROVA de ausência, não "não sei" —
     quem chama libera a obra com base nisso, então falha de rede tem que estourar,
-    nunca virar `None`."""
+    nunca virar `None`.
+
+    Procura em TODAS as listas, não só no Staging. O resumão nasce no Staging, mas
+    o passo seguinte natural do Leo é triá-lo para uma área: se ele fizer isso antes
+    de reconciliar, uma busca só no Staging concluiria "não existe" e liberaria a
+    obra — criando o segundo resumão que este mecanismo inteiro existe para evitar.
+    """
     if _use_clickup():
-        return await clickup_client.find_task_by_marker(
-            clickup_client.AREA_LISTS[clickup_client.STAGING],
-            marker,
-        )
+        # Staging primeiro: é onde a tarefa está na esmagadora maioria das vezes, e
+        # achar cedo evita varrer as outras nove listas.
+        ordem = [clickup_client.AREA_LISTS[clickup_client.STAGING]] + [
+            list_id
+            for area, list_id in clickup_client.AREA_LISTS.items()
+            if area != clickup_client.STAGING
+        ]
+        for list_id in ordem:
+            achado = await clickup_client.find_task_by_marker(list_id, marker)
+            if achado is not None:
+                return achado
+        return None
     for task_id, descricao in _MOCK_DESCRICOES.items():
         if marker in descricao and any(item.id == task_id for item in _MOCK):
             return task_id
@@ -872,6 +893,25 @@ async def aplicar_triagem(
                     == clickup_client.AREA_LISTS[clickup_client.STAGING]
                 )
                 if not esta_no_staging:
+                    # Já está no destino pedido: é o RETRY de um movimento que deu
+                    # certo e cuja resposta se perdeu (ou cujo prazo não chegou a
+                    # ser aplicado porque o servidor caiu no meio). Chamar isso de
+                    # `fora_do_staging` faria o prazo que ele aprovou nunca entrar,
+                    # e mostraria falha para uma tarefa que está exatamente onde ele
+                    # mandou.
+                    ja_no_destino = isinstance(task_list, dict) and (
+                        task_list.get("id") == clickup_client.AREA_LISTS.get(area)
+                    )
+                    if ja_no_destino:
+                        resultados.append(
+                            {
+                                "task_id": task_id,
+                                "ok": True,
+                                "erro": None,
+                                "prazo": await _marcar_prazo(task_id, due),
+                            }
+                        )
+                        continue
                     resultados.append(
                         {
                             "task_id": task_id,

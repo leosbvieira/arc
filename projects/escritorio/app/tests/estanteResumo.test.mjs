@@ -64,3 +64,12 @@ test("singular e plural do aviso de obra presa", () => {
   assert.equal(avisoDeObrasPresas(1), "1 obra ficou fechando sem resposta do ClickUp");
   assert.match(avisoDeObrasPresas(3), /^3 obras ficaram/);
 });
+
+test("reserva perdida manda conferir, nunca tentar de novo", () => {
+  // Achado da revisão hostil: se a reserva se perde depois do POST, a tarefa pode
+  // existir. "Tente de novo" criaria o segundo resumão da mesma leitura.
+  const msg = mensagemDeTerminoFalho("book_reserva_perdida");
+  assert.match(msg, /recarregue a estante/);
+  // Nenhuma variação de "de novo": a frase não pode empurrar o gesto que duplica.
+  assert.doesNotMatch(msg, /de novo|novamente/i);
+});

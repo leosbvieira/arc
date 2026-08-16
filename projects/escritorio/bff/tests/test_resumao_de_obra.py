@@ -349,3 +349,74 @@ def test_a_segunda_leitura_gera_o_seu_proprio_resumao(client):
     assert criada.name == "Resumão: Sapiens (leitura 2)"
     # E o resumão da leitura 2 só fala das sessões da leitura 2.
     assert "[book-summary:%d:2]" % livro["id"] in tasks._MOCK_DESCRICOES[criada.id]
+
+
+# ---- achados da revisão hostil (GPT-5.6 Sol, 11/ago) ---------------------------
+
+
+async def test_marker_e_procurado_em_todas_as_listas_nao_so_no_staging(monkeypatch):
+    """CRÍTICO. O resumão nasce no Staging, mas o passo seguinte natural do Leo é
+    triá-lo para uma área. Se ele fizer isso antes de reconciliar, uma busca só no
+    Staging concluiria "não existe", liberaria a obra, e o próximo terminar criaria
+    o SEGUNDO resumão — exatamente o que a máquina de estados existe para evitar."""
+    monkeypatch.setattr(tasks, "_use_clickup", lambda: True)
+    consultadas = []
+
+    async def fake_find(list_id, marker):
+        consultadas.append(list_id)
+        # Está em Estudo, não no Staging: ele já triou.
+        return "t42" if list_id == clickup_client.AREA_LISTS["Estudo"] else None
+
+    monkeypatch.setattr(clickup_client, "find_task_by_marker", fake_find)
+
+    assert await tasks.achar_resumao_de_obra("[book-summary:1:1]") == "t42"
+    # E o Staging vem primeiro, que é onde ela está quase sempre.
+    assert consultadas[0] == clickup_client.AREA_LISTS[clickup_client.STAGING]
+
+
+async def test_clickup_sem_id_e_falha_nao_ciclo_vazio(monkeypatch):
+    """IMPORTANTE. `None` é o mesmo valor que significa "ciclo vazio, nada a
+    resumir". Devolvê-lo numa resposta 2xx sem `id` tiraria a obra da estante com o
+    app dizendo "não havia sessão para resumir" — sobre um livro que ele leu."""
+    monkeypatch.setattr(tasks, "_use_clickup", lambda: True)
+
+    async def cria_sem_id(*_args, **_kwargs):
+        return {"status": "ok"}
+
+    monkeypatch.setattr(clickup_client, "create", cria_sem_id)
+
+    with pytest.raises(RuntimeError, match="resumao_sem_id"):
+        await tasks.criar_resumao_de_obra(nome="Resumão: x", descricao="y")
+
+
+def test_reserva_perdida_no_meio_nao_vira_200(client, monkeypatch):
+    """IMPORTANTE. Se a reserva se perde enquanto o POST corre, `concluir` não casa
+    e a obra segue em `lendo`. Responder 200 diria que ela saiu da estante."""
+    livro, _ = store.create_book("Sapiens")
+    _sessao_compilada(livro["id"], inicial=1, final=10, compiled_at=10.0, key="a")
+
+    async def cria_e_perde_a_reserva(**kwargs):
+        # Simula uma reconciliação de outra aba liberando a obra no meio do POST.
+        store.liberar_terminar_book(livro["id"], 1)
+        return "t7"
+
+    monkeypatch.setattr(tasks, "criar_resumao_de_obra", cria_e_perde_a_reserva)
+
+    resposta = client.post(f"/reading/books/{livro['id']}/terminar")
+
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == "book_reserva_perdida"
+    assert store.get_book(livro["id"])["status"] == "lendo"
+
+
+def test_faixa_agregada_nunca_sai_invertida():
+    """MENOR. Os dois limites podem vir de sessões diferentes: uma registra só o
+    final, a seguinte só o início. O agregado ingênuo diria "p. 101–100"."""
+    texto = resumo_obra.agregado_de_paginas(
+        [
+            {"pagina_inicial": None, "pagina_final": 100},
+            {"pagina_inicial": 101, "pagina_final": None},
+        ]
+    )
+    assert "101–100" not in texto
+    assert texto == "começou na p. 101 · chegou até a p. 100"

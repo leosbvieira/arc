@@ -414,3 +414,56 @@ def test_due_malformado_e_recusado_na_rota(client, monkeypatch):
             json={"movimentos": [{"task_id": "t", "area": "Corpo", "due": ruim}]},
         )
         assert resposta.status_code == 422, ruim
+
+
+async def test_retry_de_movimento_ja_feito_aplica_o_prazo_em_vez_de_falhar(monkeypatch):
+    """Achado da revisão hostil (11/ago). O move deu certo, o servidor caiu antes do
+    prazo, e o app repetiu o lote. Como a tarefa já saiu do Staging, o retry recebia
+    `fora_do_staging` — o prazo que ele aprovou nunca entrava, e a tela mostrava
+    falha para uma tarefa que está exatamente onde ele mandou."""
+    prazos = []
+    monkeypatch.setattr(tasks, "_use_clickup", lambda: True)
+
+    async def fake_get_task(task_id):
+        # Já está em Corpo: é o retry.
+        return {
+            "id": task_id,
+            "list": {"id": clickup_client.AREA_LISTS["Corpo"], "name": "Corpo"},
+        }
+
+    async def move_proibido(*_args, **_kwargs):
+        raise AssertionError("não devia mover de novo o que já está no destino")
+
+    async def fake_set_due(task_id, due_ts, **kwargs):
+        prazos.append((task_id, due_ts))
+        return True
+
+    monkeypatch.setattr(clickup_client, "get_task", fake_get_task)
+    monkeypatch.setattr(clickup_client, "move_task", move_proibido)
+    monkeypatch.setattr(clickup_client, "set_due", fake_set_due)
+    monkeypatch.setattr(store, "log_event", lambda *a, **k: None)
+
+    resultados = await tasks.aplicar_triagem([("s1", "Corpo", "2026-08-12")])
+
+    assert resultados == [{"task_id": "s1", "ok": True, "erro": None, "prazo": "ok"}]
+    assert prazos and prazos[0][0] == "s1"
+
+
+async def test_tarefa_em_area_DIFERENTE_da_pedida_continua_recusada(monkeypatch):
+    """A folga do retry não pode virar "aceita qualquer lugar": tarefa que foi parar
+    em outra área não é o mesmo movimento, e mover de novo mudaria a decisão dele."""
+    monkeypatch.setattr(tasks, "_use_clickup", lambda: True)
+
+    async def fake_get_task(task_id):
+        return {
+            "id": task_id,
+            "list": {"id": clickup_client.AREA_LISTS["Finance"], "name": "Finance"},
+        }
+
+    monkeypatch.setattr(clickup_client, "get_task", fake_get_task)
+    monkeypatch.setattr(store, "log_event", lambda *a, **k: None)
+
+    resultados = await tasks.aplicar_triagem([("s1", "Corpo", None)])
+
+    assert resultados[0]["ok"] is False
+    assert resultados[0]["erro"] == "fora_do_staging"

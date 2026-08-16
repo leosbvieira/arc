@@ -27,6 +27,11 @@ export function mensagemDeTerminoFalho(detalhe: string | null): string {
     case "book_terminando":
       // Não é erro do gesto dele: é a obra reservada de uma tentativa anterior.
       return "esta obra está fechando — toque em resolver para saber como ficou";
+    case "book_reserva_perdida":
+      // A obra saiu de "fechando" no meio do caminho — outra aba reconciliou, ou ela
+      // foi reaberta. A tarefa pode ter nascido: mandar tentar de novo criaria a
+      // segunda. Recarregar e olhar é a única resposta honesta.
+      return "o estado da obra mudou no meio — recarregue a estante e veja como ela ficou";
     case "book_resumao_indisponivel":
       // O caso que a reserva existe para cobrir. A frase precisa dizer que a obra
       // NÃO voltou para a estante, senão ele tenta de novo e cria um segundo resumão.

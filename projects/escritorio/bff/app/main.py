@@ -7,7 +7,15 @@ from datetime import date, datetime, time as _time, timedelta
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -1043,6 +1051,29 @@ def _deck_da_sessao(session: dict) -> str:
     return "" if book is None else anki.deck_para_livro(book["titulo"])
 
 
+async def _gerar_recap_em_fundo(
+    session_id: int,
+    livro: str,
+    buffer: list[dict],
+) -> None:
+    """Escreve o recap depois da resposta do compile.
+
+    Roda fora do caminho da resposta porque serve à PRÓXIMA sessão, não a este toque.
+    Engole a exceção porque não há ninguém para recebê-la: a resposta já foi enviada,
+    e a nota já está no vault.
+    """
+    try:
+        recap = await hermes_client.recap_reading(livro, buffer)
+        if recap:
+            store.salvar_recap(session_id, recap)
+    except Exception as exc:
+        store.log_event(
+            "reading_recap_failed",
+            ref=str(session_id),
+            meta={"error": type(exc).__name__},
+        )
+
+
 async def _suggest_anki_once(session_id: int, notas: str, deck: str = "") -> list[dict]:
     state = store.claim_anki_suggestion(session_id)
     if state == "done":
@@ -1124,7 +1155,9 @@ async def terminar_book(
     sessoes = store.sessoes_do_ciclo(book_id, book["ciclo"])
     if not sessoes:
         # Ciclo vazio: não há o que resumir, e o caso comum é obra criada por engano.
-        _, final = store.concluir_terminar_book(book_id, book["ciclo"], None)
+        estado, final = store.concluir_terminar_book(book_id, book["ciclo"], None)
+        if estado != "terminado":
+            raise HTTPException(409, "book_reserva_perdida")
         store.log_event("book_terminado", ref=str(book_id), meta={"resumao": False})
         return {"book": final, "resumo_task_id": None}
 
@@ -1140,7 +1173,18 @@ async def terminar_book(
         )
         raise HTTPException(502, "book_resumao_indisponivel") from None
 
-    _, final = store.concluir_terminar_book(book_id, book["ciclo"], task_id)
+    estado, final = store.concluir_terminar_book(book_id, book["ciclo"], task_id)
+    if estado != "terminado":
+        # A reserva foi perdida no meio (uma reconciliação liberou, ou a obra foi
+        # reaberta). Responder 200 aqui diria que a obra saiu da estante enquanto
+        # ela continua em `lendo` — e a tarefa que acabou de nascer ficaria órfã,
+        # sem ninguém sabendo que existe. O marker é o que permite readotá-la.
+        store.log_event(
+            "book_reserva_perdida",
+            ref=str(book_id),
+            meta={"estado": estado},
+        )
+        raise HTTPException(409, "book_reserva_perdida")
     store.log_event("book_terminado", ref=str(book_id), meta={"resumao": True})
     return {"book": final, "resumo_task_id": task_id}
 
@@ -1175,10 +1219,14 @@ async def reconciliar_terminar_book(
         raise HTTPException(502, "book_resumao_indisponivel") from None
 
     if task_id is None:
-        _, final = store.liberar_terminar_book(book_id, book["ciclo"])
+        estado, final = store.liberar_terminar_book(book_id, book["ciclo"])
+        if estado != "liberado":
+            raise HTTPException(409, "book_reserva_perdida")
         return {"book": final, "resumo_task_id": None, "resultado": "liberado"}
 
-    _, final = store.concluir_terminar_book(book_id, book["ciclo"], task_id)
+    estado, final = store.concluir_terminar_book(book_id, book["ciclo"], task_id)
+    if estado != "terminado":
+        raise HTTPException(409, "book_reserva_perdida")
     return {"book": final, "resumo_task_id": task_id, "resultado": "terminado"}
 
 
@@ -1456,6 +1504,7 @@ async def draft_reading_session(
 async def compile_reading_session(
     session_id: int,
     body: ReadingCompileIn,
+    background_tasks: BackgroundTasks,
     _auth: None = Depends(require_auth),
 ):
     import time as _t
@@ -1582,26 +1631,22 @@ async def compile_reading_session(
         )
     store.log_event("reading_compiled", ref=str(session_id))
 
-    # Antes do purge de propósito: o recap nasce do buffer, e ainda que a chamada use
-    # o `session["buffer"]` já carregado, deixá-lo depois do DELETE convidaria a um
-    # futuro "melhor reler do banco" que sairia vazio em silêncio.
+    # FORA da resposta, de propósito. O recap é para a PRÓXIMA sessão, não para este
+    # toque — e as chamadas ao Hermes são serializadas por um lock, então somá-lo aos
+    # cards do Anki empurrava o compile para perto de dois timeouts em série. O app
+    # desistiria de uma publicação que deu certo, que é o defeito que a gente já
+    # consertou uma vez neste mesmo caminho.
     #
-    # Best-effort: falhar aqui não pode desfazer uma nota que JÁ está no vault. O
-    # preço é que a sessão fica sem recap para sempre — não há de onde regenerar,
-    # porque a nota que sobra tem as citações coladas.
-    try:
-        recap = await hermes_client.recap_reading(
-            session["livro"],
-            session["buffer"],
-        )
-        if recap:
-            store.salvar_recap(session_id, recap)
-    except Exception as exc:
-        store.log_event(
-            "reading_recap_failed",
-            ref=str(session_id),
-            meta={"error": type(exc).__name__},
-        )
+    # Best-effort: falhar não pode desfazer uma nota que JÁ está no vault. O preço é
+    # que a sessão fica sem recap para sempre — não há de onde regenerar, porque a
+    # nota que sobra tem as citações coladas. O buffer é lido AGORA, na captura do
+    # closure, porque o purge logo abaixo o apaga do banco.
+    background_tasks.add_task(
+        _gerar_recap_em_fundo,
+        session_id,
+        session["livro"],
+        list(session["buffer"]),
+    )
 
     cards: list[dict] = []
     anki_status = "pending"
