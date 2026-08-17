@@ -174,16 +174,65 @@ async function arquivarRejeitado(entry: IdxEntry): Promise<void> {
   );
 }
 
+async function lerRejeitados(): Promise<IdxEntry[]> {
+  const raw = await SecureStore.getItemAsync(IDX_REJEITADOS);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as IdxEntry[];
+  } catch {
+    return [];
+  }
+}
+
 /** Quantos itens o servidor recusou vezes demais. Sao os que exigem o Leo — nenhum
  * retry automatico resolve — e por isso a tela precisa saber contar. */
 export async function rejectedCount(): Promise<number> {
-  const raw = await SecureStore.getItemAsync(IDX_REJEITADOS);
-  if (!raw) return 0;
-  try {
-    return (JSON.parse(raw) as IdxEntry[]).length;
-  } catch {
-    return 0;
+  return (await lerRejeitados()).length;
+}
+
+/** O TEXTO dos recusados, pra tela poder mostrar o que ficou pra tras.
+ *
+ * Sem isto o escaninho era so-de-escrita: os chunks ficavam gravados e NENHUM codigo
+ * sabia le-los de volta. "Nada se perde" que ninguem consegue recuperar e perda com
+ * outro nome — e o badge vermelho nao tinha como voltar a zero. */
+export async function listRejected(): Promise<{ id: string; item: QueuedItem }[]> {
+  const saida: { id: string; item: QueuedItem }[] = [];
+  for (const entry of await lerRejeitados()) {
+    try {
+      saida.push({ id: entry.id, item: await readItem(entry) });
+    } catch {
+      // chunk sumiu: nao ha o que mostrar, e insistir travaria a lista inteira
+    }
   }
+  return saida;
+}
+
+/** Devolve os recusados pro fim da fila, com a contagem zerada. E o que faz sentido
+ * depois de entrar de novo, ou depois de o servidor voltar ao normal. */
+export function retryRejected(): Promise<number> {
+  return serialized(async () => {
+    const rejeitados = await lerRejeitados();
+    if (!rejeitados.length) return 0;
+    // Fila primeiro, escaninho depois: se morrer no meio, o item aparece nos dois
+    // (a drenagem resolve) em vez de em nenhum.
+    await writeIdx([
+      ...(await readIdx()),
+      ...rejeitados.map((e) => ({ id: e.id, chunks: e.chunks })),
+    ]);
+    await SecureStore.setItemAsync(IDX_REJEITADOS, "[]");
+    return rejeitados.length;
+  });
+}
+
+/** Descarta de vez. So o Leo pode mandar fazer isto: e a unica operacao do modulo
+ * que destroi conteudo dele de proposito. */
+export function discardRejected(): Promise<number> {
+  return serialized(async () => {
+    const rejeitados = await lerRejeitados();
+    await SecureStore.setItemAsync(IDX_REJEITADOS, "[]");
+    for (const entry of rejeitados) await deleteItem(entry);
+    return rejeitados.length;
+  });
 }
 
 export function flush(): Promise<ResultadoDoFlush> {

@@ -19,6 +19,9 @@ import {
   flush,
   pendingCount,
   rejectedCount,
+  discardRejected,
+  listRejected,
+  retryRejected,
 } from "../captureQueue";
 import { ehFalhaDeRede, mensagemDaRecusa } from "../offlineError";
 import {
@@ -644,6 +647,44 @@ export default function Capture({
     }, 1000);
     return () => clearInterval(timer);
   }, [active, mode, sessionStart]);
+
+  // O escaninho precisa de saída: um badge vermelho que nunca volta a zero é ruído,
+  // e conteúdo guardado que ninguém consegue ler é perda com outro nome.
+  async function verRecusados() {
+    const recusados = await listRejected();
+    if (!recusados.length) {
+      setRejected(0);
+      return;
+    }
+    const previa = recusados
+      .slice(0, 3)
+      .map((r) => `• ${String(r.item.payload?.text ?? r.item.kind).slice(0, 60)}`)
+      .join("\n");
+    const resto = recusados.length > 3 ? `\n… e mais ${recusados.length - 3}` : "";
+    Alert.alert(
+      `${recusados.length} não saíram`,
+      `O servidor recusou estes. Nenhum reenvio automático resolve.\n\n${previa}${resto}`,
+      [
+        { text: "Deixar aí", style: "cancel" },
+        {
+          text: "Tentar de novo",
+          onPress: async () => {
+            await retryRejected();
+            setPending(await pendingCount());
+            setRejected(await rejectedCount());
+          },
+        },
+        {
+          text: "Descartar",
+          style: "destructive",
+          onPress: async () => {
+            await discardRejected();
+            setRejected(await rejectedCount());
+          },
+        },
+      ],
+    );
+  }
 
   async function onSend() {
     const t = text.trim();
@@ -1771,12 +1812,18 @@ export default function Capture({
               Nenhum reenvio automático resolve — é o único estado da fila que
               precisa do Leo, então é o único que vale interromper a tela. */}
           {rejected > 0 ? (
-            <View style={styles.queueRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Ver ${rejected} capturas recusadas`}
+              onPress={verRecusados}
+              hitSlop={8}
+              style={styles.queueRow}
+            >
               <Feather name="alert-triangle" size={13} color={colors.danger} />
               <Text style={[styles.queueText, { color: colors.danger }]}>
-                {rejected} não saíram — o servidor recusou
+                {rejected} não saíram — o servidor recusou · ver
               </Text>
-            </View>
+            </Pressable>
           ) : null}
           {status ? <Text style={styles.status}>{status}</Text> : null}
           {/* Toast sálvia da C. Sem "desfazer": o /capture é fire-and-forget e o
