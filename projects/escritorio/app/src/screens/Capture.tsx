@@ -60,6 +60,8 @@ import {
 import {
   avisoDeObrasPresas,
   mensagemDeReconciliacao,
+  mensagemDeResolucaoFalha,
+  resolucaoMudouEstado,
   mensagemDeTermino,
   mensagemDeTerminoFalho,
 } from "../estanteResumo";
@@ -199,6 +201,7 @@ export default function Capture({
   // Obras que ficaram reservadas: o resumão foi pedido ao ClickUp e a resposta não
   // veio. Não voltam sozinhas — é ele quem manda perguntar como ficou.
   const [presas, setPresas] = useState<Book[]>([]);
+  const [presaErro, setPresaErro] = useState("");
 
   const loadShelf = useCallback(async () => {
     try {
@@ -328,6 +331,11 @@ export default function Capture({
         // Recarrega ANTES de avisar: `book_resumao_indisponivel` deixou a obra
         // reservada, e ela precisa aparecer na lista de presas junto com o aviso.
         await loadShelf();
+        // E SOLTA a seleção. Sem isto a obra continuava escolhida em estado
+        // "terminando", e "Começar leitura" respondia "essa obra foi terminada —
+        // reabra antes de ler": não foi terminada, e reabrir é impossível nesse
+        // estado. Duas frases erradas em sequência a partir de um toque só.
+        if (selectedBookId === bookId) setSelectedBookId(null);
         setSpeechError(mensagemDeTerminoFalho(detalhe));
       }
     } finally {
@@ -337,14 +345,20 @@ export default function Capture({
 
   async function resolverObraPresa(bookId: number, titulo: string): Promise<void> {
     setShelfBusyId(bookId);
+    setPresaErro("");
     try {
       const { resultado } = await reconciliarTerminarBook(bookId);
       await loadShelf();
       Alert.alert("Obra que ficou fechando", mensagemDeReconciliacao(resultado, titulo));
-    } catch {
-      // Continua presa de propósito: não saber o que houve no ClickUp não é prova
-      // de que nada foi criado, e liberar no escuro duplicaria o resumão.
-      setSpeechError("ainda não deu para falar com o ClickUp — a obra segue reservada");
+    } catch (error) {
+      // Continua presa de propósito QUANDO a causa é não saber o que houve no
+      // ClickUp: isso não é prova de que nada foi criado, e liberar no escuro
+      // duplicaria o resumão. Mas os 409 dizem o OPOSTO — a reserva já saiu — e
+      // tratá-los como "segue reservada" mandava ele bater de novo num endpoint
+      // que responderia 409 para sempre.
+      const detalhe = readingErrorDetail(error);
+      if (resolucaoMudouEstado(detalhe)) await loadShelf();
+      setPresaErro(mensagemDeResolucaoFalha(detalhe));
     } finally {
       setShelfBusyId(null);
     }
@@ -1971,6 +1985,13 @@ export default function Capture({
                     )}
                   </Pressable>
                 ))}
+                {presaErro ? (
+                  // Aqui, e não no `speechError` lá embaixo: aquele renderiza depois
+                  // do Card e depois do guideBlock, ou seja, fora da tela. Um resolver
+                  // que falhava não produzia MUDANÇA VISÍVEL nenhuma — mesma linha,
+                  // mesmo "resolver", explicação fora de vista.
+                  <Text style={styles.presaErro}>{presaErro}</Text>
+                ) : null}
               </View>
             ) : null}
 
@@ -2363,6 +2384,7 @@ const styles = StyleSheet.create({
   shelfAdd: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 12 },
   presasBloco: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
   presasAviso: { fontFamily: fonts.ui, color: colors.amber, fontSize: 11.5, marginBottom: 6 },
+  presaErro: { fontFamily: fonts.ui, color: colors.danger, fontSize: 11.5, marginTop: 6 },
   presaRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
   presaTitulo: { fontFamily: fonts.ui, color: colors.text, fontSize: 13.5, flex: 1 },
   presaAcao: { fontFamily: fonts.uiSemi, color: colors.primary, fontSize: 12 },

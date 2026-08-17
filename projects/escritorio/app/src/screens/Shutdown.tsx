@@ -11,22 +11,30 @@ import {
 
 import { Shutdown as ShutdownData, Task, completeTask, getShutdown, postShutdown } from "../api";
 import { TaskDetailModal } from "../TaskDetailModal";
+import { useParams } from "../parametros";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { AppButton, Card, ErrorState, Field, Skeleton } from "../ui";
 
 // As 19h: encerrar O TRABALHO. Não é o fechamento das 21h (diário + rotinas) —
 // são dois ritos. O entregável daqui são as 3 prioridades de amanhã, que
 // reaparecem na Abertura de amanhã.
-function tresCampos(prioridades: string[]): string[] {
-  return [0, 1, 2].map((i) => prioridades[i] ?? "");
+// Quantos campos, e não "três": o número vem do servidor, via /wiki/parametros.
+// Era mais uma cópia — main.py declara PRIORIDADES_SHUTDOWN, o endpoint publica, e a
+// tela desenhava 3 fixos. Trocar para 4 fazia o push e a wiki dizerem 4 enquanto esta
+// tela continuava com 3 caixas.
+function camposDePrioridade(prioridades: string[], quantos: number): string[] {
+  return Array.from({ length: quantos }, (_, i) => prioridades[i] ?? "");
 }
 
 export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void } = {}) {
+  const { shutdown } = useParams();
   const [data, setData] = useState<ShutdownData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [erro, setErro] = useState("");
-  const [campos, setCampos] = useState<string[]>(["", "", ""]);
+  const [campos, setCampos] = useState<string[]>(() =>
+    camposDePrioridade([], shutdown.prioridades),
+  );
   const [editando, setEditando] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -36,7 +44,7 @@ export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void
     try {
       const s = await getShutdown();
       setData(s);
-      setCampos(tresCampos(s.prioridades));
+      setCampos(camposDePrioridade(s.prioridades, shutdown.prioridades));
       setEditando(false);
       setError(false);
     } catch {
@@ -57,7 +65,7 @@ export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void
     try {
       await postShutdown(prioridades);
       setData((cur) => (cur ? { ...cur, prioridades, feito: true } : cur));
-      setCampos(tresCampos(prioridades));
+      setCampos(camposDePrioridade(prioridades, shutdown.prioridades));
       setEditando(false);
     } catch {
       setErro("não consegui gravar — nada se perdeu, tenta de novo");
@@ -152,7 +160,8 @@ export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void
         </Card>
       ) : (
         <Card style={{ gap: spacing.md }}>
-          {[0, 1, 2].map((i) => (
+          {/* Uma caixa por prioridade que o servidor pede — não três fixas. */}
+          {campos.map((_, i) => (
             <View key={i} style={styles.campoRow}>
               <Text style={styles.campoNum}>{i + 1}</Text>
               <Field
@@ -176,7 +185,7 @@ export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void
               title="Cancelar"
               variant="ghost"
               onPress={() => {
-                setCampos(tresCampos(data.prioridades));
+                setCampos(camposDePrioridade(data.prioridades, shutdown.prioridades));
                 setEditando(false);
                 setErro("");
               }}

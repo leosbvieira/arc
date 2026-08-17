@@ -65,6 +65,25 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
 
 # Fail-OPEN daqui pra baixo: erro do Agendador (permissão, política) não pode
 # impedir o BFF de subir -- mas grita, porque a agenda fica divergente.
+#
+# O grito precisava de OUVIDO. Write-Warning e Write-Host escreviam num console que
+# nunca existe: o start-bff.ps1 sobe -WindowStyle Hidden nos tres caminhos (tarefa
+# agendada, .cmd do Startup, Start-Process). Ou seja, um rito podia perder o push em
+# silencio, e a tabela esperado-x-instalado -- escrita justamente pra tornar
+# divergencia visivel "numa olhada" -- nao era olhada por ninguem. Agora tudo tambem
+# vai pra um log datado ao lado dos scripts, que e onde da pra conferir depois.
+$logDir = Join-Path $dir "logs"
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+$logFile = Join-Path $logDir ("sync-cron-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+
+function Write-Log {
+  param([string]$Texto)
+  $carimbo = Get-Date -Format "HH:mm:ss"
+  Add-Content -LiteralPath $logFile -Value "$carimbo  $Texto" -Encoding utf8
+  Write-Host $Texto
+}
+
+Write-Log "--- sync-cron rodou ---"
 foreach ($p in $registrar) {
   try {
     $r = $ritos | Where-Object { $_.slug -eq $p.slug }
@@ -78,18 +97,22 @@ foreach ($p in $registrar) {
     Register-ScheduledTask -TaskName $p.task -Force -Trigger $trigger `
       -Action (New-ScheduledTaskAction -Execute $ps -Argument $arg) -Settings $settings | Out-Null
   } catch {
-    Write-Warning "AGENDA DIVERGENTE: falhou registrar '$($p.task)' ($($p.trigger)): $_"
+    Write-Log "AGENDA DIVERGENTE: falhou registrar '$($p.task)' ($($p.trigger)): $_"
+    Write-Warning "AGENDA DIVERGENTE: falhou registrar '$($p.task)'"
   }
 }
 foreach ($t in $remover) {
   try { Unregister-ScheduledTask -TaskName $t -Confirm:$false }
-  catch { Write-Warning "AGENDA DIVERGENTE: falhou remover '$t': $_" }
+  catch {
+    Write-Log "AGENDA DIVERGENTE: falhou remover '$t': $_"
+    Write-Warning "AGENDA DIVERGENTE: falhou remover '$t'"
+  }
 }
 
 # Esperado x instalado, lado a lado: divergência visível numa olhada.
-Write-Host "`nRitos (esperado x instalado):"
+Write-Log "Ritos (esperado x instalado):"
 foreach ($p in $registrar) {
   $viva = Get-ScheduledTask -TaskName $p.task -ErrorAction SilentlyContinue
   $estado = if ($viva) { $viva.State } else { "AUSENTE" }
-  "{0,-22} {1,-24} {2}" -f $p.task, $p.trigger, $estado | Write-Host
+  Write-Log ("{0,-22} {1,-24} {2}" -f $p.task, $p.trigger, $estado)
 }

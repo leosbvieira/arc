@@ -371,3 +371,22 @@ def test_agenda_tambem_sobrevive_ao_clickup_fora_do_ar(client, monkeypatch):
     r = client.get("/agenda", headers=token(client))
     assert r.status_code == 200
     assert r.json()["tarefas_indisponivel"] is True
+
+
+def test_o_limite_de_prioridades_segue_a_constante(client, monkeypatch):
+    """O pior caso da 1A vivia dentro de um arquivo so.
+
+    `main.PRIORIDADES_SHUTDOWN` era declarado na linha 56 e doze linhas de codigo
+    abaixo o validador tinha o literal 3 na mao. Mudar para 4 fazia o push dizer 4 e
+    o /wiki/parametros dizer 4, enquanto o POST /shutdown respondia 422 na quarta.
+    """
+    hdr = token(client)
+    monkeypatch.setattr(main, "PRIORIDADES_SHUTDOWN", 4)
+
+    r = client.get("/wiki/parametros", headers=hdr)
+    assert r.json()["shutdown"]["prioridades"] == 4
+
+    quatro = {"prioridades": ["a", "b", "c", "d"]}
+    assert client.post("/shutdown", json=quatro, headers=hdr).status_code == 200
+    cinco = {"prioridades": ["a", "b", "c", "d", "e"]}
+    assert client.post("/shutdown", json=cinco, headers=hdr).status_code == 422

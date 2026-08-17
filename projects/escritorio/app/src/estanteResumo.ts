@@ -58,3 +58,36 @@ export function avisoDeObrasPresas(quantas: number): string | null {
     ? "1 obra ficou fechando sem resposta do ClickUp"
     : `${quantas} obras ficaram fechando sem resposta do ClickUp`;
 }
+
+/** O que dizer quando RESOLVER uma obra presa falha.
+ *
+ * O `catch` de `resolverObraPresa` era nu: dizia "a obra segue reservada" para os
+ * quatro desfechos, inclusive os três 409 que significam o CONTRÁRIO — a reserva já
+ * saiu, e mandar tentar de novo é mandar bater num endpoint que vai 409 para sempre.
+ * Só a falha de rede (502/timeout) mantém a obra reservada, e só ela pode pedir
+ * paciência. */
+export function mensagemDeResolucaoFalha(detalhe: string | null): string {
+  switch (detalhe) {
+    case "book_nao_esta_terminando":
+      // Alguém já reconciliou (outra aba, outro toque): não há nada preso aqui.
+      return "esta obra já não está mais fechando — a estante foi recarregada";
+    case "book_reserva_perdida":
+      return "o estado da obra mudou no meio — recarregue a estante e veja como ela ficou";
+    case "book_nao_encontrado":
+      return "esta obra não existe mais";
+    case "book_resumao_indisponivel":
+    default:
+      // O único caso em que ela CONTINUA reservada, e o único que pede espera.
+      return "ainda não deu para falar com o ClickUp — a obra segue reservada";
+  }
+}
+
+/** A resolução mexeu no estado da obra? Se sim, a estante precisa recarregar mesmo
+ * tendo falhado — senão a linha continua ali, oferecendo "resolver" para sempre. */
+export function resolucaoMudouEstado(detalhe: string | null): boolean {
+  return (
+    detalhe === "book_nao_esta_terminando" ||
+    detalhe === "book_reserva_perdida" ||
+    detalhe === "book_nao_encontrado"
+  );
+}

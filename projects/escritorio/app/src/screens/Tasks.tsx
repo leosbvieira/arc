@@ -22,10 +22,12 @@ import { TaskDetailModal } from "../TaskDetailModal";
 import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { AppButton, ErrorState, Field, PointTag, SectionHeader, Skeleton } from "../ui";
 
-const AREAS = [
-  "Trabalho", "Staging", "Corpo", "Saúde Mental", "Responsabilidade",
-  "Finance", "Carreira", "Estudo", "Relacionamentos", "Lazer",
-];
+// A lista vem do servidor (`/wiki/parametros` → `tasks.AREAS`). Esta cópia era
+// byte-idêntica à de lá: criar uma área nova no ClickUp deixava o filtro cego para
+// ela até alguém lembrar de editar este arquivo também.
+//
+// `AREAS_TRIAGEM` (api.ts) continua sendo OUTRA lista, e de propósito: a triagem tira
+// coisas DE Staging, então Staging não é destino válido. Não unifique as duas.
 
 type Bucket = "agora" | "proximas" | "programadas" | "backlog";
 
@@ -121,7 +123,7 @@ export default function Tasks({
   initialTaskId?: string | null;
   onInitialTaskConsumed?: () => void;
 }) {
-  const { tarifas } = useParams();
+  const { tarifas, areas } = useParams();
   const [data, setData] = useState<TasksByArea | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -323,7 +325,7 @@ export default function Tasks({
           <Field autoFocus value={name} onChangeText={setName} placeholder="O que precisa acontecer?" returnKeyType="done" onSubmitEditing={onCreate} />
           <Text style={styles.fieldLabel}>DESTINO</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.areaRail}>
-            {AREAS.map((item) => {
+            {areas.map((item) => {
               const active = item === area;
               return (
                 <Pressable key={item} onPress={() => setArea(item)} style={[styles.areaPill, active && { borderColor: areaColor(item), backgroundColor: `${areaColor(item)}20` }]}>
@@ -401,7 +403,7 @@ export default function Tasks({
       {/* Trilho quieto (decisão C): pills em mono miúdo, ativa com moldura
           neutra — nunca preenchimento bronze. */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-        {["Todas", ...AREAS].map((item) => {
+        {["Todas", ...areas].map((item) => {
           const active = item === areaFilter;
           return (
             <Pressable key={item} onPress={() => setAreaFilter(item)} style={[styles.filter, active && styles.filterActive]}>

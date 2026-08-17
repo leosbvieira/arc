@@ -597,8 +597,13 @@ class ShutdownIn(BaseModel):
     @classmethod
     def _prioridades(cls, v: list[str]) -> list[str]:
         limpas = [p.strip() for p in v if p and p.strip()]
-        if len(limpas) > 3:
-            raise ValueError("máximo 3 prioridades")
+        # `PRIORIDADES_SHUTDOWN`, e não o literal 3. Este era o pior caso da fatia 1A
+        # inteira, e dentro de um arquivo só: a constante é declarada na linha 56 e
+        # doze linhas de código abaixo o validador tinha o número na mão. Mudar para 4
+        # fazia o push dizer 4 e o /wiki/parametros dizer 4, enquanto ESTE endpoint
+        # respondia 422 na quarta prioridade.
+        if len(limpas) > PRIORIDADES_SHUTDOWN:
+            raise ValueError(f"máximo {PRIORIDADES_SHUTDOWN} prioridades")
         return limpas
 
 

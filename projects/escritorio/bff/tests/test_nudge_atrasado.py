@@ -144,3 +144,20 @@ def test_o_agendador_nao_registra_mais_os_ritos_com_start_when_available():
         if "-StartWhenAvailable" in linha and not linha.lstrip().startswith("#")
     ]
     assert ativas == [], f"voltou a agendar com catch-up: {ativas}"
+
+
+def test_a_divergencia_da_agenda_vai_parar_num_log():
+    """O reconciliador gritava num console que nunca existe.
+
+    `start-bff.ps1` sobe -WindowStyle Hidden nos tres caminhos, entao Write-Warning e
+    Write-Host iam pro nada: um rito podia perder o push em silencio, e a tabela
+    esperado-x-instalado, escrita pra tornar divergencia visivel "numa olhada", nao
+    era olhada por ninguem. (Tambem e o que da a wiki-1A drill 2 algo pra ler.)
+    """
+    texto = _SYNC_CRON.read_text(encoding="utf-8")
+    assert "function Write-Log" in texto
+    assert "Add-Content" in texto, "o log tem que ir pra arquivo, nao so pro console"
+    # Toda divergencia registrada tem que passar pelo Write-Log.
+    linhas = [l.strip() for l in texto.splitlines() if "AGENDA DIVERGENTE" in l]
+    assert linhas, "as mensagens de divergencia sumiram"
+    assert any(l.startswith("Write-Log") for l in linhas), linhas

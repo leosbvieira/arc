@@ -664,7 +664,9 @@ export async function postShutdown(prioridades: string[]): Promise<void> {
   const r = await fetch(`${base}/shutdown`, {
     method: "POST",
     headers: await authHeaders(),
-    body: JSON.stringify({ prioridades: prioridades.slice(0, 3) }),
+    // Sem `.slice(0, 3)`: era a QUARTA cópia do número. A tela desenha exatamente
+    // as caixas que o servidor manda, e o servidor valida contra a mesma constante.
+    body: JSON.stringify({ prioridades }),
   });
   if (!r.ok) throw new Error(`shutdown: ${r.status}`);
 }
