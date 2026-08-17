@@ -1,9 +1,21 @@
 // A Mesa é ordenação e agrupamento — lógica pura, sem import de valor (o Node
 // tira os tipos sozinho, mas não resolve import relativo em runtime). A tabela
-// de pontos entra por parâmetro; o teste é quem importa o POINTS de produção.
+// de pontos entra por parâmetro; o teste é quem importa a tabela de produção
+// real (`DEFAULT_PARAMS.tarifas`, em parametrosCore).
 
-// Estrutural, sem `despejoBonus`: o POINTS real de theme.ts é atribuível a ela.
+// Estrutural, sem `despejo`: `DEFAULT_PARAMS.tarifas`, real, é atribuível a ela.
 export type PointsTable = { tarefa: number; rotina: number; captura: number; fechamento: number; shutdown: number };
+
+// A hora entra por parâmetro, pelo mesmo motivo que a tabela de pontos: o
+// mesaView escrevia "19h" e "21h" à mão, e mudar o rito deixava a Mesa mentindo.
+export type Rito = { slug: string; hora: string; dia: string | null };
+
+function horaCurta(ritos: Rito[], slug: string): string {
+  const r = ritos.find((x) => x.slug === slug);
+  if (!r) return "";
+  const [h, m] = r.hora.split(":");
+  return m === "00" ? `${Number(h)}h` : `${Number(h)}h${m}`;
+}
 
 // O que a tela conseguiu carregar. null = NÃO CARREGOU, e null nunca vira estado:
 // sinal desconhecido manda o item para o arquivo, sem número inventado.
@@ -30,7 +42,7 @@ function item(destino: string, nome: string, sub: string, contador: string | nul
   return { destino, nome, sub, contador, feito };
 }
 
-export function montarMesa(sinais: MesaSinais, points: PointsTable): MesaGrupo[] {
+export function montarMesa(sinais: MesaSinais, points: PointsTable, ritos: Rito[]): MesaGrupo[] {
   const precisa: MesaItem[] = [];
   const rotina: MesaItem[] = [];
   const arquivo: MesaItem[] = [];
@@ -67,11 +79,13 @@ export function montarMesa(sinais: MesaSinais, points: PointsTable): MesaGrupo[]
     ));
   }
   if (sinais.shutdownFeito === false) {
-    precisa.push(item("shutdown", "Shutdown", "rito das 19h · fecha o trabalho", "19h"));
+    const h = horaCurta(ritos, "shutdown");
+    precisa.push(item("shutdown", "Shutdown", `rito das ${h} · fecha o trabalho`, h));
   }
   // Não existe flag de "fechamento feito" no BFF: Fechar o dia fica sempre aqui,
   // com a hora e o valor — e nunca com FEITO ✓.
-  precisa.push(item("fechar", "Fechar o dia", `rito das 21h · vale +${points.fechamento}`, "21h"));
+  const hFechar = horaCurta(ritos, "closing");
+  precisa.push(item("fechar", "Fechar o dia", `rito das ${hFechar} · vale +${points.fechamento}`, hFechar));
 
   // ROTINA DO DIA — o que tem estado conhecido.
   if (sinais.aberturaFeita !== null) {
@@ -126,7 +140,7 @@ export function montarMesa(sinais: MesaSinais, points: PointsTable): MesaGrupo[]
 }
 
 // Preço do hero da Home: mapeia o action.target do actionForAt() para a tabela
-// POINTS (provisória, display-only). null = sem preço, e a tela não desenha nada.
+// de tarifas (provisória, display-only). null = sem preço, e a tela não desenha nada.
 export function valorDaAcao(target: string, points: PointsTable): number | null {
   switch (target) {
     case "fechar":

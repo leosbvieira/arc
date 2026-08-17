@@ -66,7 +66,8 @@ import {
   formatReadingElapsed,
   normalizeReadingActiveSeconds,
 } from "../readingSessionState";
-import { colors, fonts, POINTS, radius, spacing } from "../theme";
+import { useParams } from "../parametros";
+import { colors, fonts, radius, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
 import { useReadingSpeech } from "../useReadingSpeech";
 
@@ -136,6 +137,8 @@ export default function Capture({
   modeRequestId?: number;
   active?: boolean;
 }) {
+  // Depois da 1A a tarifa vem do servidor, não mais de uma constante no theme.
+  const { tarifas } = useParams();
   const [mode, setMode] = useState<Mode>(initialMode);
   const modeRef = useRef<Mode>(initialMode);
   const modeSelectionRef = useRef(0);
@@ -1736,7 +1739,7 @@ export default function Capture({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.toastTitle}>Caiu na triagem. Organiza depois.</Text>
-                <Text style={styles.toastMeta}>agora · +{POINTS.captura}</Text>
+                <Text style={styles.toastMeta}>agora · +{tarifas.captura}</Text>
               </View>
             </View>
           ) : null}

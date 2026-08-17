@@ -25,7 +25,8 @@ import { listPendingReadingSessions } from "../readingApi";
 import { actionForAt, HomeSignals, nextAgendaAt } from "../homeAction";
 import { milhar } from "../format";
 import { valorDaAcao } from "../mesaView";
-import { areaColor, colors, fonts, POINTS, radius, spacing } from "../theme";
+import { useParametros, useParams } from "../parametros";
+import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { Badge, SectionHeader, SegmentBar, Skeleton } from "../ui";
 
 function greeting(): string {
@@ -44,6 +45,8 @@ function dateLabel(): string {
 }
 
 export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void }) {
+  const fonte = useParametros();
+  const params = useParams();
   const [digest, setDigest] = useState<Digest | null>(null);
   const [abertura, setAbertura] = useState<Abertura | null>(null);
   const [points, setPoints] = useState<Pontos | null>(null);
@@ -111,9 +114,19 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
   }, []);
 
   const partial = failures.size > 0;
-  const action = actionForAt(abertura, signals);
-  // Preço do hero (tabela POINTS, display-only). null = não desenha nada.
-  const valorHero = valorDaAcao(action.target, POINTS);
+  // Indicador único, no nível do app: aparece sempre que a fonte NÃO é
+  // `fresco` nem `cache` — ou seja, também em `indisponivel` (ex.: sessão
+  // expirada num 401 que não desloga). Sem isso, o número embutido aparece
+  // como se viesse do servidor, o defeito que esta fatia inteira mata.
+  const avisoParametros =
+    fonte.tipo === "padrao"
+      ? "valores padrão · sem conexão"
+      : fonte.tipo === "indisponivel"
+        ? "valores padrão · sessão expirada"
+        : null;
+  const action = actionForAt(abertura, signals, params.ritos);
+  // Preço do hero (tabela de tarifas, display-only). null = não desenha nada.
+  const valorHero = valorDaAcao(action.target, params.tarifas);
   const focus = (digest?.tasks ?? []).slice(0, 3);
   const routineDone = abertura?.rotinas_manha.filter((routine) => routine.feito).length ?? 0;
   const routineTotal = abertura?.rotinas_manha.length ?? 0;
@@ -154,6 +167,13 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
           end={{ x: 1, y: 0 }}
           style={styles.hairline}
         />
+
+        {avisoParametros ? (
+          <View style={styles.paramsAviso}>
+            <Feather name="cloud-off" size={12} color={colors.textMuted} />
+            <Text style={styles.paramsAvisoText}>{avisoParametros}</Text>
+          </View>
+        ) : null}
 
         {partial ? (
           <Pressable onPress={() => load(true)} style={styles.partial}>
@@ -318,6 +338,12 @@ const styles = StyleSheet.create({
   levelNumber: { fontFamily: fonts.display, fontSize: 18, color: colors.text, lineHeight: 20 },
   partial: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
   partialText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
+  // Vindos da 1A: o indicador de parâmetros (linha 177) usa os dois, e o JSX
+  // sobreviveu ao merge — perder estes estilos renderiza style={undefined}.
+  paramsAviso: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
+  paramsAvisoText: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 10.5 },
+  // hero/heroIcon ficam na versão da marca (moldura neutra, ícone 36 em 14):
+  // é restilização deliberada, mais nova que a da 1A.
   hero: { minHeight: 188, borderRadius: radius.xl, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(235,222,202,0.20)", overflow: "hidden" },
   heroIcon: { position: "absolute", top: 14, right: 14, width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(222,184,120,0.1)", borderWidth: 1, borderColor: "rgba(222,184,120,0.18)" },
   heroEyebrow: { fontFamily: fonts.mono, fontSize: 10, color: colors.primary, letterSpacing: 1.6, textTransform: "uppercase" },

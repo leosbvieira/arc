@@ -16,7 +16,8 @@ import {
 } from "../api";
 import { buildClosingChecks, seedDecisions } from "../closingChecks";
 import { closingLabel, closingReward } from "../closingPoints";
-import { POINTS, colors, fonts, spacing } from "../theme";
+import { useParams } from "../parametros";
+import { colors, fonts, spacing } from "../theme";
 import { BigAction, QuestRow, RewardSheet } from "../ui";
 
 // As rotinas já vêm filtradas pelo BFF (dia da semana + template). Não filtre aqui.
@@ -91,6 +92,7 @@ function GhostAction({
 }
 
 export default function Fechar() {
+  const { tarifas } = useParams();
   const [template, setTemplate] = useState<Template | null>(null);
   const [loadingDia, setLoadingDia] = useState(true);
   const [routines, setRoutines] = useState<ClosingRotina[]>([]);
@@ -212,10 +214,10 @@ export default function Fechar() {
         template,
         checks: buildClosingChecks(routines, checks),
       });
-      // O número que a RewardSheet mostra é o que o botão prometeu (tabela
-      // POINTS, display-only) — o saldo oficial chega pelo getPontos() abaixo.
+      // O número que a RewardSheet mostra é o que o botão prometeu (tabela de
+      // tarifas, display-only) — o saldo oficial chega pelo getPontos() abaixo.
       const marcadas = routines.filter((r) => checks[r.slug]).length;
-      setPontosFecho(closingReward(marcadas, routines.length, temTexto, POINTS).garantido);
+      setPontosFecho(closingReward(marcadas, routines.length, temTexto, tarifas).garantido);
       setDone(true);
       getPontos().then(setPlacar).catch(() => {/* o placar é bônus, não trava o fecho */});
     } catch {
@@ -357,7 +359,7 @@ export default function Fechar() {
                 />
                 <Text style={{ fontFamily: fonts.mono, fontSize: 9, color: colors.faint }}>
                   {feitas}/{doBloco.length}
-                  {feitas > 0 ? ` · +${feitas * POINTS.rotina}` : ""}
+                  {feitas > 0 ? ` · +${feitas * tarifas.rotina}` : ""}
                 </Text>
               </View>
 
@@ -366,7 +368,7 @@ export default function Fechar() {
                   key={r.slug}
                   name={r.nome}
                   done={!!checks[r.slug]}
-                  points={POINTS.rotina}
+                  points={tarifas.rotina}
                   steps={r.passos}
                   onPress={() => marcar(r.slug)}
                 />
@@ -415,7 +417,7 @@ export default function Fechar() {
           />
           <View style={{ marginTop: 10 }}>
             <GhostAction
-              title={`estruturar com o Hermes · +${POINTS.despejoBonus} bônus`}
+              title={`estruturar com o Hermes · +${tarifas.despejo} bônus`}
               icon="star"
               onPress={gerar}
               disabled={dumpActionsDisabled}
@@ -425,7 +427,7 @@ export default function Fechar() {
           <View style={{ marginTop: 12 }}>
             <BigAction
               title="Fechar o dia"
-              sub={closingLabel(marcadas, routines.length, temTexto, POINTS)}
+              sub={closingLabel(marcadas, routines.length, temTexto, tarifas)}
               onPress={() => aprovar(dump)}
               disabled={fecharDisabled}
               loading={busy}
@@ -455,7 +457,7 @@ export default function Fechar() {
           <View style={{ marginTop: 12 }}>
             <BigAction
               title="Aprovar e gravar"
-              sub={closingLabel(marcadas, routines.length, temTexto, POINTS)}
+              sub={closingLabel(marcadas, routines.length, temTexto, tarifas)}
               onPress={() => aprovar(draft)}
               disabled={busy}
               loading={busy}

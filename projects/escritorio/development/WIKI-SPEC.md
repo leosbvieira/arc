@@ -673,7 +673,7 @@ sinais** — não têm relação com quantos destinos existem, e **continuam 216
 - `bff/tests/test_ritos.py` · `bff/tests/test_wiki_parametros.py` · `bff/tests/test_sync_cron.py`
 - **1A:** `app/src/parametrosCore.ts` · `app/src/parametros.tsx` (o provider) ·
   `app/tests/parametrosCore.test.mjs` · `app/tests/migracaoPoints.test.mjs` ·
-  `app/src/wiki-schema.json` (arquivo único do contrato, §3.6) · `app/tests/fixtures/wiki-parametros.json` ·
+  `app/src/wiki-schema.json` (arquivo único do contrato, §3.6) ·
   `bff/app/wiki_schema.py` (a normalização)
 - **1B:** `app/src/wikiContent.ts` · `app/src/wikiResolve.ts` · `app/src/wikiNav.ts` ·
   `app/src/screens/ComoFunciona.tsx` · `app/tests/wikiContent.test.mjs` ·
@@ -741,7 +741,7 @@ resposta ou um cache chega.
 **6b. Primeira abertura é honesta — na wiki (1B).** Na mesma condição, `Como funciona` mostra `—` e diz
 *"ainda não li os valores do servidor"*. Nenhuma tela apresenta o embutido como se fosse o valor do sistema.
 
-**7. Revalidação por foco — drill manual (1A).** Abrir o app com o BFF desligado (números do cache, com selo),
+**7. Revalidação por foco — drill manual (1B).** Abrir o app com o BFF desligado (números do cache, com selo),
 ligar o BFF **sem sair da tela**, tirar o app do foco e voltar: o selo some e os números são os novos. É drill
 porque disparar o evento de foco exige render de RN, que o projeto não testa (§7); está aqui em vez de fingir
 cobertura.
@@ -773,9 +773,12 @@ mentindo. A wiki é a razão de a gente ter olhado, não a razão de valer a pen
 
 ### Fatia 1A — Fonte única (pré-requisito verificável)
 
+**Status: entregue em 11/ago/2026** — branch `wiki-1a`, commits `1ddfbf0..HEAD`. Os drills manuais no
+aparelho (§10.5, §10.7) continuam **pendentes**, a cargo do dono do projeto.
+
 | | |
 |---|---|
-| **Entrega** | `ritos.json`, `ritos.py`, `sync-cron.ps1` (reconciliação + `-DryRun` + política de falha), `NUDGE_COPY` interpolado, `nudge.ps1` renomeado, `start-bff.ps1` chamando o sync, `GET /wiki/parametros` + schema commitado, **`parametrosCore.ts`**, `ParametrosProvider`, o indicador de `padrao`, os 7 call sites de `POINTS.` e os 3 de hora |
+| **Entrega** | `ritos.json`, `ritos.py`, `sync-cron.ps1` (reconciliação + `-DryRun` + política de falha), `NUDGE_COPY` interpolado, `start-bff.ps1` chamando o sync, `GET /wiki/parametros` + schema commitado, **`parametrosCore.ts`**, `ParametrosProvider`, o indicador de `padrao`, os 7 call sites de `POINTS.` e os 3 de hora |
 | **Testes** | 5, 6, 7, 8, 9, 10, 11, 13, 14 |
 | **Verificação** | Mudar uma hora no `ritos.json`, reiniciar, e ver **o Agendador, o push, a Mesa e o hero da Home** mudarem juntos. Mudar `pontos_por_rotina` e ver Mesa, Fechar e Tarefas mudarem. Aceite §10.2, §10.5 e §10.6a |
 | **Fecha sozinha?** | Sim, **e agora de verdade**: em v4 o provider dependia de `validar`/`decidir`, que eu tinha listado na 1B — a fatia não compilava. O núcleo de parâmetros (§3.5) é da 1A |
@@ -883,3 +886,45 @@ mais arriscada da 1A — o achado CRÍTICO da rodada 2 deixa de existir em vez d
 | 2 | Diagramas dos fluxos principais | Custo de layout real; o aceite não pede diagrama |
 | 3 | Infraestrutura de teste de render de RN | Fecharia o buraco declarado em §7; vale para o app todo, não só a wiki |
 | 4 | Links "o que é isso?" nas demais telas | Aditivo; só faz sentido com 1B no ar |
+
+### 14.1 Herdado da 1A para a 1B — dois campos servidos que ninguém lê
+
+A revisão final da 1A encontrou isto, e a 1B é quem tem que resolver, porque é ela quem vai **exibir**
+esses números.
+
+**`shutdown.prioridades` é servido pela rota e não tem um consumidor.** O `3` continua escrito à mão em
+seis lugares, um deles no mesmo arquivo que declara a constante:
+
+| Onde | O quê |
+|---|---|
+| `bff/app/main.py:589` | `if len(limpas) > 3: raise ValueError("máximo 3 prioridades")` — 530 linhas abaixo de `PRIORIDADES_SHUTDOWN` |
+| `app/src/homeAction.ts:153` | *"Pendências, follow-ups e três prioridades de amanhã."* — por extenso |
+| `app/src/screens/Shutdown.tsx:21,134,155` | `[0,1,2]`, `"AS 3 PRIORIDADES DE AMANHÃ"`, `[0,1,2]` |
+| `app/src/api.ts:654` | `prioridades.slice(0, 3)` |
+
+Mude `PRIORIDADES_SHUTDOWN` para 4 e o push anuncia 4, a rota diz 4, o hero da Home diz "três", a tela
+desenha 3 campos, e o `POST /shutdown` **rejeita** a quarta. É o padrão das cinco cópias se formando de
+novo — desta vez dentro da fatia que existe para matá-lo.
+
+**`areas` idem:** servido pela rota, e `app/src/screens/Tasks.tsx:25-28` tem a lista copiada à mão. Uma
+11ª área em `bff/app/tasks.py:21` faria o BFF agrupar por ela enquanto o seletor de nova tarefa não a
+oferece. Conserto de uma linha: `useParams().areas`.
+
+**Menor, da mesma família:** `app/src/ui.tsx:468` tem `[1, 2, 3, 4]` chumbado para os diamantes,
+enquanto `niveis.limiares` já vem do servidor. Um 5º limiar em `config.py` mostraria 4 diamantes.
+
+### 14.2 Dívida conhecida da 1A
+
+- **A antecedência de 3h do review está escrita duas vezes, em duas linguagens:**
+  `app/src/homeAction.ts` (`em("review") - 180`) e `bff/app/ritos.py` (`_MIN_SEMANAL = 3 * 60`). O
+  comentário do `ritos.py` diz que a validação existe para proteger o `-180`; mude a antecedência para
+  4h e um review às 03:30 passa na validação e produz limiar às 00:30 — hero de revisão o domingo
+  inteiro.
+- **`horaCurta` tem três implementações** (`ritos.py`, `mesaView.ts`, `homeAction.ts`). As três
+  concordam byte a byte; as duas do TS são inerentes à regra de módulo puro sem import de valor.
+- **O indicador de procedência usa `fonts.mono`**, enquanto o irmão na mesma tela usa outro estilo. Não
+  consertado de propósito: o trabalho de identidade visual em andamento reestiliza a Home inteira.
+- **`bff/app/routines.py:38`** tem a rotina-semente `("acordar-5h30", "acordar 5h30", …)`. Mover o toque
+  para 06:00 deixa a rotina com o nome velho. **Não é defeito**: rótulo de rotina é dado editável do
+  usuário, e a rotina ("acordar") é coisa diferente do rito (o toque que avisa). Registrado porque é o
+  tipo de divergência que esta fatia treina o olho para ver.

@@ -3,9 +3,9 @@
 // react-native e sem imports de runtime, para rodar sob `node --test`
 // (padrão do repo: os módulos testados não importam nada — o Node exigiria
 // a extensão .ts que o tsconfig do app não permite). A tabela de pontos
-// entra por parâmetro: quem chama passa POINTS do theme.ts, que é
-// PROVISÓRIA e display-only — isto alimenta o rótulo do botão, não o
-// saldo; quem pontua de verdade é o BFF no approve.
+// entra por parâmetro: quem chama passa `tarifas` de `DEFAULT_PARAMS`
+// (parametrosCore), que é PROVISÓRIA e display-only — isto alimenta o
+// rótulo do botão, não o saldo; quem pontua de verdade é o BFF no approve.
 //
 // As duas grandezas são a mesma família, em função do dia inteiro:
 // - garantido = o que o toque registra AGORA: o fechamento, mais as rotinas
@@ -17,9 +17,9 @@
 // - Quando teto === garantido (marcou tudo e escreveu), o rótulo colapsa
 //   para "garante +N", sem prometer bônus que não existe.
 
-import type { POINTS } from "./theme";
+import type { DEFAULT_PARAMS } from "./parametrosCore";
 
-export type PointsTable = typeof POINTS;
+export type PointsTable = typeof DEFAULT_PARAMS.tarifas;
 
 export function closingReward(
   rotinasMarcadas: number,
@@ -30,8 +30,8 @@ export function closingReward(
   const garantido =
     points.fechamento +
     rotinasMarcadas * points.rotina +
-    (temTexto ? points.despejoBonus : 0);
-  const teto = points.fechamento + totalRotinas * points.rotina + points.despejoBonus;
+    (temTexto ? points.despejo : 0);
+  const teto = points.fechamento + totalRotinas * points.rotina + points.despejo;
   return { garantido, teto };
 }
 

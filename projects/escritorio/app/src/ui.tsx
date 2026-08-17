@@ -441,10 +441,10 @@ export function PendRow({
 // (saldo, nível, ciclo) — SEM linha de streak: o BFF não expõe sequência
 // corrida, e nenhum número se inventa. Pelo mesmo motivo o SALDO mostra só o
 // valor atual: o "antes → depois" da decisão 10=C pede o saldo anterior, que o
-// BFF não devolve. `pontosHoje` vem da tabela POINTS (provisória, display-only):
-// é o número que o botão prometeu. Tipografia da onda 2 entregue: herói em
-// display/Syne Bold, metadados em mono. O bronze do herói ficou só no "+" —
-// os dígitos são cor do texto (decisão 10=C).
+// BFF não devolve. `pontosHoje` vem da tabela de tarifas, que depois da 1A vem
+// do servidor: é o número que o botão prometeu. Tipografia da onda 2 entregue:
+// herói em display/Syne Bold, metadados em mono. O bronze do herói ficou só no
+// "+" — os dígitos são cor do texto (decisão 10=C).
 // Entra em fade + subida, 320ms.
 export function RewardSheet({
   pontosHoje,

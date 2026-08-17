@@ -1,0 +1,152 @@
+{
+  "properties": {
+    "areas": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "ciclo": {
+      "properties": {
+        "inicio": {
+          "type": "string"
+        },
+        "semanas": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "semanas",
+        "inicio"
+      ],
+      "type": "object"
+    },
+    "niveis": {
+      "properties": {
+        "limiares": {
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "limiares"
+      ],
+      "type": "object"
+    },
+    "punicao": {
+      "properties": {
+        "desconto_padrao": {
+          "type": "integer"
+        },
+        "janela": {
+          "type": "string"
+        },
+        "limiar_furos": {
+          "type": "integer"
+        },
+        "teto_semanal": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "limiar_furos",
+        "janela",
+        "desconto_padrao",
+        "teto_semanal"
+      ],
+      "type": "object"
+    },
+    "ritos": {
+      "items": {
+        "properties": {
+          "dia": {
+            "nullable": true,
+            "type": "string"
+          },
+          "hora": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "hora",
+          "dia"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "shutdown": {
+      "properties": {
+        "prioridades": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "prioridades"
+      ],
+      "type": "object"
+    },
+    "staging": {
+      "properties": {
+        "dias_para_alerta": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dias_para_alerta"
+      ],
+      "type": "object"
+    },
+    "tarifas": {
+      "properties": {
+        "captura": {
+          "type": "integer"
+        },
+        "despejo": {
+          "type": "integer"
+        },
+        "fechamento": {
+          "type": "integer"
+        },
+        "rotina": {
+          "type": "integer"
+        },
+        "shutdown": {
+          "type": "integer"
+        },
+        "tarefa": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rotina",
+        "tarefa",
+        "captura",
+        "fechamento",
+        "shutdown",
+        "despejo"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "tarifas",
+    "punicao",
+    "niveis",
+    "ciclo",
+    "staging",
+    "shutdown",
+    "areas",
+    "ritos"
+  ],
+  "type": "object"
+}

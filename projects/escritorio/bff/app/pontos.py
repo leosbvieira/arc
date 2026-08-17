@@ -39,6 +39,10 @@ from zoneinfo import ZoneInfo
 from . import routines, store, tz
 from .config import settings
 
+# A janela do padrão, como rótulo para quem precisa EXIBIR a regra (a wiki).
+# É a semana ISO por decisão de design -- ver o docstring acima.
+JANELA = "semana_iso"
+
 # `data` é TEXT ISO em routine_checks: qualquer data real é >= isto.
 _INICIO_DOS_TEMPOS = "0001-01-01"
 _LOCAL_TZ = tz.TZ          # mantido pelo nome antigo; a definicao mora em tz.py

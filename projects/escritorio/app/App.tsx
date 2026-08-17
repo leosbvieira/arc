@@ -47,6 +47,7 @@ import Habitos from "./src/screens/Habitos";
 import Home from "./src/screens/Home";
 import Melhorias from "./src/screens/Melhorias";
 import Mesa from "./src/screens/Mesa";
+import { ParametrosProvider } from "./src/parametros";
 import Revisao from "./src/screens/Revisao";
 import Rotinas from "./src/screens/Rotinas";
 import Shutdown from "./src/screens/Shutdown";
@@ -325,6 +326,7 @@ export default function App() {
   const title = TITLES[tab] ?? TABS.find((t) => t.key === tab)?.label ?? "";
 
   return (
+    <ParametrosProvider>
     <SafeAreaProvider>
       <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
@@ -424,6 +426,7 @@ export default function App() {
       </View>
       </SafeAreaView>
     </SafeAreaProvider>
+    </ParametrosProvider>
   );
 }
 

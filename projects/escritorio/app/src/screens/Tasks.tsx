@@ -16,9 +16,10 @@ import {
 import { completeTask, createTask, listTasks, Task, TasksByArea } from "../api";
 import { enqueue } from "../captureQueue";
 import { ehFalhaDeRede } from "../offlineError";
+import { useParams } from "../parametros";
 import { DueChoice, dueFromChoice, horaValida } from "../taskDue";
 import { TaskDetailModal } from "../TaskDetailModal";
-import { areaColor, colors, fonts, POINTS, radius, spacing } from "../theme";
+import { areaColor, colors, fonts, radius, spacing } from "../theme";
 import { AppButton, ErrorState, Field, PointTag, SectionHeader, Skeleton } from "../ui";
 
 const AREAS = [
@@ -61,6 +62,7 @@ function TaskRow({
   aceso: boolean;
   onCancelar: () => void;
 }) {
+  const { tarifas } = useParams();
   const color = severityColor(task);
   if (confirmando) {
     return (
@@ -69,7 +71,7 @@ function TaskRow({
           <Text style={styles.confirmLabel}>CONCLUIR?</Text>
           <Text style={styles.taskName} numberOfLines={1}>{task.name}</Text>
         </View>
-        <PointTag pontos={POINTS.tarefa} />
+        <PointTag pontos={tarifas.tarefa} />
         <Pressable onPress={onCancelar} hitSlop={8} disabled={concluindo}>
           <Text style={styles.confirmCancel}>cancelar</Text>
         </Pressable>
@@ -104,7 +106,7 @@ function TaskRow({
         <Text style={styles.taskName} numberOfLines={2}>{task.name}</Text>
         {task.assignee ? <Text style={styles.assignee}>com {task.assignee}</Text> : null}
       </Pressable>
-      <PointTag pontos={POINTS.tarefa} aceso={aceso} />
+      <PointTag pontos={tarifas.tarefa} aceso={aceso} />
       <Pressable accessibilityLabel={`Abrir ${task.name}`} onPress={onOpen} hitSlop={8}>
         <Feather name="arrow-up-right" size={16} color={colors.textMuted} />
       </Pressable>
@@ -119,6 +121,7 @@ export default function Tasks({
   initialTaskId?: string | null;
   onInitialTaskConsumed?: () => void;
 }) {
+  const { tarifas } = useParams();
   const [data, setData] = useState<TasksByArea | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -413,7 +416,7 @@ export default function Tasks({
         <View>
           {grouped.agora.length ? (
             <View style={styles.group}>
-              <SectionHeader eyebrow="execução" title="Agora" meta={`+${grouped.agora.length * POINTS.tarefa} na mesa`} />
+              <SectionHeader eyebrow="execução" title="Agora" meta={`+${grouped.agora.length * tarifas.tarefa} na mesa`} />
               {renderRows(grouped.agora)}
             </View>
           ) : null}

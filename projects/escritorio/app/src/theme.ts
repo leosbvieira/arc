@@ -67,18 +67,6 @@ export const light: Palette = {
 // Padrão do escritório = dark. (O ThemeProvider da fundação troca isto por light quando o usuário quiser.)
 export const colors = dark;
 
-// PROVISÓRIA e display-only: pontos por tipo de ação não existem no app nem no
-// BFF. Esta tabela só alimenta rótulos ("vale +N", "garante +N") — o saldo
-// oficial de getPontos() sempre vence. Valores da proposta C2 aprovada.
-export const POINTS = {
-  tarefa: 10,
-  rotina: 20,
-  captura: 5,
-  fechamento: 80,
-  shutdown: 30,
-  despejoBonus: 40,
-} as const;
-
 // Uma cor por área de vida (tom médio, dessaturado). As 10 áreas normativas (Task 6).
 export const AREA_COLORS: Record<string, string> = {
   Trabalho: "#C9A97E", Staging: "#8A8A93", Corpo: "#7FA98E",

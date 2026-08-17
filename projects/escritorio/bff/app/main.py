@@ -33,6 +33,7 @@ from . import (
     reading_digest,
     reading_frontmatter,
     resumo_obra,
+    ritos,
     routines,
     store,
     tasks,
@@ -47,14 +48,28 @@ logger = logging.getLogger(__name__)
 TZ = tz.TZ
 
 # Tom: seco e factual (lei 4 — o sistema não motiva, não envergonha; diz o fato e o custo).
-NUDGE_COPY = {
-    "toque": "5h30 — dia yoga ou dia corrida?",
-    "checkin": "8h20 — check-in: energia, clareza, prioridade nº1. 60 segundos.",
-    "jornal": "8h30 — jornal de leitura de notícias. Abra Capturar para iniciar.",
-    "shutdown": "19h — Shutdown: fechar o trabalho, follow-ups, 3 prioridades de amanhã.",
-    "closing": "21h — fechar o dia? 90 segundos bastam: 1 linha + checks.",
-    "review": "domingo 20h — review semanal. Os números da semana te esperam no app.",
+# A HORA NÃO SE ESCREVE AQUI: ela vem de `ritos.json`, a fonte única. Antes disto o
+# texto dizia "19h" enquanto o Agendador podia disparar em outra hora.
+PRIORIDADES_SHUTDOWN = 3
+
+NUDGE_TEMPLATE = {
+    "toque": "{hora} — dia yoga ou dia corrida?",
+    "checkin": "{hora} — check-in: energia, clareza, prioridade nº1. 60 segundos.",
+    "jornal": "{hora} — jornal de leitura de notícias. Abra Capturar para iniciar.",
+    "shutdown": "{hora} — Shutdown: fechar o trabalho, follow-ups, {prioridades} prioridades de amanhã.",
+    "closing": "{hora} — fechar o dia? 90 segundos bastam: 1 linha + checks.",
+    "review": "domingo {hora} — review semanal. Os números da semana te esperam no app.",
 }
+
+
+def montar_nudge_copy(hora_curta=ritos.hora_curta) -> dict[str, str]:
+    return {
+        slug: t.format(hora=hora_curta(slug), prioridades=PRIORIDADES_SHUTDOWN)
+        for slug, t in NUDGE_TEMPLATE.items()
+    }
+
+
+NUDGE_COPY = montar_nudge_copy()
 
 
 def _guard_default_secrets() -> None:
@@ -212,6 +227,59 @@ class LoginIn(BaseModel):
 
 class TokenOut(BaseModel):
     token: str
+
+
+class RitoOut(BaseModel):
+    slug: str
+    hora: str
+    # Sem `= None`: o campo é obrigatório porém anulável. Com default, o
+    # `model_json_schema()` emitiria `default: null`, fora do dialeto plano.
+    dia: str | None
+
+
+class TarifasOut(BaseModel):
+    rotina: int
+    tarefa: int
+    captura: int
+    fechamento: int
+    shutdown: int
+    despejo: int
+
+
+class PunicaoOut(BaseModel):
+    limiar_furos: int
+    janela: str
+    desconto_padrao: int
+    teto_semanal: int
+
+
+class NiveisOut(BaseModel):
+    limiares: list[int] = Field(min_length=1)
+
+
+class CicloOut(BaseModel):
+    semanas: int
+    inicio: str
+
+
+class StagingOut(BaseModel):
+    dias_para_alerta: int
+
+
+class ShutdownOut(BaseModel):
+    prioridades: int
+
+
+class ParametrosOut(BaseModel):
+    """Como o SISTEMA funciona. Como VOCÊ está continua em /pontos."""
+    tarifas: TarifasOut
+    punicao: PunicaoOut
+    niveis: NiveisOut
+    ciclo: CicloOut
+    staging: StagingOut
+    shutdown: ShutdownOut
+    areas: list[str] = Field(min_length=1)
+    ritos: list[RitoOut] = Field(min_length=1)
 
 
 class CaptureIn(BaseModel):
@@ -1867,6 +1935,34 @@ async def get_digest(_: str = Depends(require_auth)):
         "body": fresh["body_app"],
         "tasks": fresh["tasks"],
     }
+
+
+@app.get("/wiki/parametros", response_model=ParametrosOut)
+async def wiki_parametros(_=Depends(require_auth)) -> ParametrosOut:
+    """Read-only, sem estado do usuário. NENHUM literal aqui: tudo vem de
+    settings, de ritos.json ou de constante já canônica do BFF."""
+    return ParametrosOut(
+        tarifas=TarifasOut(
+            rotina=settings.pontos_por_rotina,
+            tarefa=settings.pontos_por_tarefa,
+            captura=settings.pontos_por_captura,
+            fechamento=settings.pontos_por_fechamento,
+            shutdown=settings.pontos_por_shutdown,
+            despejo=settings.pontos_por_despejo,
+        ),
+        punicao=PunicaoOut(
+            limiar_furos=settings.routine_miss_threshold,
+            janela=pontos.JANELA,
+            desconto_padrao=settings.desconto_padrao,
+            teto_semanal=settings.teto_desconto_semanal,
+        ),
+        niveis=NiveisOut(limiares=settings.nivel_limiares),
+        ciclo=CicloOut(semanas=settings.ciclo_semanas, inicio=settings.ciclo_inicio),
+        staging=StagingOut(dias_para_alerta=settings.staging_age_days),
+        shutdown=ShutdownOut(prioridades=PRIORIDADES_SHUTDOWN),
+        areas=list(tasks.AREAS),
+        ritos=[RitoOut(slug=r["slug"], hora=r["hora"], dia=r["dia"]) for r in ritos.RITOS],
+    )
 
 
 @app.get("/pontos")
