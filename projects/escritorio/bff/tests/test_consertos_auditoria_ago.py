@@ -701,3 +701,25 @@ def test_o_teto_do_app_bate_com_o_declarado_no_bff():
     from app import hermes_client
 
     assert int(achado.group(1).replace("_", "")) == hermes_client.TETO_CLIENTE_MS
+
+
+def test_a_captura_que_voltou_pra_fila_continua_contando(client):
+    """Contar so `status='failed'` amostrava um estado TRANSITORIO.
+
+    O worker reapresenta a falhada como `pending` depois de uma hora: entre a
+    reapresentacao e a proxima falha o contador caia a zero, e o "abrir o app" do
+    digest mostrava nada -- justamente quando havia o que ver.
+    """
+    hdr = token(client)
+    cid = store.enqueue_capture("captura que travou", None, "ck-osc")
+    with store._connect() as con:
+        con.execute(
+            "UPDATE capture_queue SET status = 'pending', attempts = 3 WHERE id = ?",
+            (cid,),
+        )
+        con.commit()
+    assert client.get("/captures/failed", headers=hdr).json()["n"] == 1
+
+    # E uma captura nova, que nunca foi tentada, NAO conta.
+    store.enqueue_capture("captura nova", None, "ck-nova")
+    assert client.get("/captures/failed", headers=hdr).json()["n"] == 1

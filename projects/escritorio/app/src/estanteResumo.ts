@@ -76,9 +76,15 @@ export function mensagemDeResolucaoFalha(detalhe: string | null): string {
     case "book_nao_encontrado":
       return "esta obra não existe mais";
     case "book_resumao_indisponivel":
-    default:
-      // O único caso em que ela CONTINUA reservada, e o único que pede espera.
+      // O único caso em que a obra COMPROVADAMENTE continua reservada, e o único que
+      // pode pedir espera: o servidor respondeu dizendo que não falou com o ClickUp.
       return "ainda não deu para falar com o ClickUp — a obra segue reservada";
+    default:
+      // Timeout, queda de rede, erro desconhecido: aqui o app NÃO SABE o que aconteceu
+      // do outro lado — a chamada pode ter chegado e concluído. Afirmar "segue
+      // reservada" era prometer um estado que ninguém verificou, e é o mesmo pecado
+      // que esta função existe para corrigir do outro lado.
+      return "não deu para saber como a obra ficou — recarregue a estante";
   }
 }
 

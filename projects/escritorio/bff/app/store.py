@@ -2037,6 +2037,22 @@ def recover_processing() -> int:
         return cur.rowcount
 
 
+def contar_capturas_paradas() -> int:
+    """Capturas que exigem o Leo: as que falharam de vez E as que estao voltando.
+
+    Contar so `status='failed'` amostrava um estado TRANSITORIO: o worker reapresenta a
+    falhada como `pending` depois de uma hora, entao entre a reapresentacao e a proxima
+    falha o numero caia a zero e "abrir o app" mostrava nada -- justamente quando havia
+    o que ver. `attempts > 0` e o que separa "nunca tentou" de "ja bateu e voltou".
+    """
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT COUNT(*) FROM capture_queue WHERE status = 'failed' "
+            "OR (status IN ('pending', 'processing') AND attempts > 0)"
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def failed_captures() -> list[dict]:
     with closing(_connect()) as con:
         rows = con.execute(

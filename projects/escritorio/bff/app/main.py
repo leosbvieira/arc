@@ -1160,8 +1160,7 @@ async def contar_capturas_falhadas(_: str = Depends(require_auth)):
     credencial "exige ação manual: nenhum retry resolve", então essa classe nunca sai
     sozinha da fila e volta a nagar todo dia.
     """
-    falhadas = store.failed_captures()
-    return {"n": len(falhadas)}
+    return {"n": store.contar_capturas_paradas()}
 
 
 @app.post("/captures/retry-failed")

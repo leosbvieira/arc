@@ -61,7 +61,6 @@ import {
   avisoDeObrasPresas,
   mensagemDeReconciliacao,
   mensagemDeResolucaoFalha,
-  resolucaoMudouEstado,
   mensagemDeTermino,
   mensagemDeTerminoFalho,
 } from "../estanteResumo";
@@ -370,7 +369,11 @@ export default function Capture({
       // tratá-los como "segue reservada" mandava ele bater de novo num endpoint
       // que responderia 409 para sempre.
       const detalhe = readingErrorDetail(error);
-      if (resolucaoMudouEstado(detalhe)) await loadShelf();
+      // Recarrega SEMPRE: é idempotente e barato, e nos desfechos em que o app não
+      // sabe o que houve (timeout, queda) a estante é a única fonte de verdade.
+      // Recarregar só nos casos conhecidos deixava a tela mostrando um estado que
+      // podia já não existir. `loadShelf` limpa `presaErro`, então a frase vem depois.
+      await loadShelf();
       setPresaErro(mensagemDeResolucaoFalha(detalhe));
     } finally {
       setShelfBusyId(null);

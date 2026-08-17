@@ -93,9 +93,24 @@ test("os 409 NÃO dizem que a obra segue reservada", () => {
 });
 
 test("só a falha de conversa com o ClickUp mantém a obra reservada", () => {
-  // É o único desfecho em que ela CONTINUA presa, e o único que pode pedir paciência.
+  // É o único desfecho em que o SERVIDOR respondeu dizendo que não falou com o
+  // ClickUp — logo, o único em que se sabe que ela continua presa.
   assert.match(mensagemDeResolucaoFalha("book_resumao_indisponivel"), /segue reservada/);
-  assert.match(mensagemDeResolucaoFalha(null), /segue reservada/);
+});
+
+test("quando o app não sabe o que houve, ele não afirma que a obra segue reservada", () => {
+  // Timeout, queda de rede, erro desconhecido: a chamada pode ter CHEGADO e concluído.
+  // A versão anterior deste teste exigia "segue reservada" também aqui — ou seja,
+  // cobrava uma promessa sobre um estado que ninguém verificou, o mesmo pecado que
+  // esta função existe para corrigir do outro lado. Uma revisão hostil pegou.
+  for (const desconhecido of [null, "reading_timeout", "coisa_nova_do_servidor"]) {
+    const msg = mensagemDeResolucaoFalha(desconhecido);
+    assert.ok(
+      !msg.includes("segue reservada"),
+      `afirmou estado não verificado para ${desconhecido}: ${msg}`,
+    );
+    assert.match(msg, /recarregue a estante/);
+  }
 });
 
 test("os desfechos que mexeram no estado pedem recarga da estante", () => {
