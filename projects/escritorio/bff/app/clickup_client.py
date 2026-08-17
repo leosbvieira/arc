@@ -9,6 +9,7 @@ from datetime import date, datetime
 import httpx
 
 from .config import settings
+from .tz import TZ, hoje_local
 
 API = "https://api.clickup.com/api/v2"
 # Só para trocar a home list de uma tarefa: a v2 não tem esse endpoint, e o caminho
@@ -70,11 +71,17 @@ def ssl_verify():
 
 
 def days_from_ms(ms) -> int | None:
-    """Dias de calendário de hoje até a data do timestamp (ms)."""
+    """Dias de calendário de hoje até a data do timestamp (ms).
+
+    As duas pontas no fuso do Leo. `tasks.py:622-633` já tinha sido corrigido com o
+    comentário explicando o porquê, e este irmão ficou para trás: num host em UTC, às
+    22h BRT o servidor já virou o dia, então uma tarefa vira `atrasada` um dia antes
+    e `due_hoje` puxa as de amanhã para a /abertura.
+    """
     if ms in (None, "", 0, "0"):
         return None
-    due = datetime.fromtimestamp(int(ms) / 1000).date()
-    return (due - date.today()).days
+    due = datetime.fromtimestamp(int(ms) / 1000, TZ).date()
+    return (due - hoje_local()).days
 
 
 async def _list_tasks(
@@ -82,12 +89,14 @@ async def _list_tasks(
     list_id: str,
     *,
     include_closed: bool = False,
+    archived: bool = False,
+    subtasks: bool = False,
 ) -> list[dict]:
     return await _fetch_list(
         list_id,
         params={
-            "archived": "false",
-            "subtasks": "false",
+            "archived": "true" if archived else "false",
+            "subtasks": "true" if subtasks else "false",
             "include_closed": "true" if include_closed else "false",
         },
         client=client,
@@ -128,18 +137,48 @@ async def _fetch_list(
         )
 
 
+class MarcadorSemId(RuntimeError):
+    """Achou o marker e não conseguiu nomear a tarefa. NÃO é ausência."""
+
+
 async def find_task_by_marker(list_id: str, marker: str) -> str | None:
-    """Procura inclusive tarefas fechadas cujo conteúdo contenha o marker da captura."""
+    """Procura tarefas cujo conteúdo contenha o marker. `None` = PROVA de ausência.
+
+    Quem chama LIBERA a obra com base no `None` (`tasks.achar_resumao_de_obra` diz
+    isso no docstring dela), então todo caminho que não seja "varri a lista inteira e
+    não estava lá" tem que estourar. Três buracos nesse contrato foram tapados aqui:
+
+    1. marker ENCONTRADO com payload sem `id` devolvia `None` — indistinguível de não
+       achar. O caller então criava um SEGUNDO resumão para a mesma obra, que é
+       exatamente o que a máquina de terminando/marker/fencing existe para impedir.
+    2. `archived=false` era fixo: um resumão arquivado lia como ausente. O parâmetro
+       do ClickUp é filtro, não união — arquivada só aparece com `archived=true`, daí
+       as duas varreduras.
+    3. `subtasks=false` era fixo: se o Leo triasse o resumão para debaixo de outra
+       tarefa, ele sumia da busca. `subtasks=true` é aditivo, então basta ligar.
+    """
     if not marker:
         return None
     async with httpx.AsyncClient(timeout=30, verify=ssl_verify()) as client:
-        tasks = await _list_tasks(client, list_id, include_closed=True)
+        tasks: list[dict] = []
+        for arquivadas in (False, True):
+            tasks.extend(
+                await _list_tasks(
+                    client,
+                    list_id,
+                    include_closed=True,
+                    archived=arquivadas,
+                    subtasks=True,
+                )
+            )
     for task in tasks:
         for field in ("description", "text_content"):
             content = task.get(field)
             if isinstance(content, str) and marker in content:
                 task_id = task.get("id")
-                return str(task_id) if task_id is not None else None
+                if task_id is None or not str(task_id).strip():
+                    raise MarcadorSemId(f"marker achado sem id utilizável: {marker}")
+                return str(task_id)
     return None
 
 

@@ -1,9 +1,20 @@
-fastapi
-uvicorn[standard]
-httpx
-icalendar  # parser dos feeds privados Google/Outlook
-recurring-ical-events  # expansão segura de RRULE dos calendários
-pydantic
-pydantic-settings
-PyJWT
-tzdata  # base IANA de timezones p/ zoneinfo (Windows/VPS não trazem system tz db) — Task 9 usa America/Sao_Paulo
+# Versões TRAVADAS no piso, com teto na major seguinte.
+#
+# Estas nove linhas eram nomes nus, sem lockfile em lugar nenhum. Reinstalar numa
+# máquina nova — ou construir o VPS — resolvia pro que fosse mais novo naquele dia.
+# O `config.py` importa `field_validator` e `BaseSettings`/`SettingsConfigDict`
+# direto, então um pulo de major do pydantic sozinho já não deixa o BFF BOOTAR, e
+# não há CI pra pegar isso antes do daily driver parar de subir.
+#
+# Os pisos são as versões medidas com a suíte verde em 16/ago/2026; o teto na major
+# seguinte deixa correção de segurança entrar sem deixar entrar quebra de contrato.
+# O `requirements-dev.txt` já pinava — o hábito existia e só não tinha chegado aqui.
+fastapi>=0.139.0,<1.0.0
+uvicorn[standard]>=0.50.0,<1.0.0
+httpx>=0.28.1,<1.0.0
+icalendar>=7.2.0,<8.0.0  # parser dos feeds privados Google/Outlook
+recurring-ical-events>=3.8.2,<4.0.0  # expansão segura de RRULE dos calendários
+pydantic>=2.13.4,<3.0.0
+pydantic-settings>=2.14.2,<3.0.0
+PyJWT>=2.13.0,<3.0.0
+tzdata>=2026.2  # base IANA de timezones p/ zoneinfo (Windows/VPS não trazem system tz db) — Task 9 usa America/Sao_Paulo

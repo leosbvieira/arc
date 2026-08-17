@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import secrets
+import time
 import re
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -1033,10 +1035,46 @@ async def health():
     return {"ok": True, "mock": settings.hermes_mock}
 
 
+# Tentativas de senha erradas seguidas antes do castigo, e quanto ele dura.
+# Números pequenos de propósito: o usuário é UM, digitando no próprio celular.
+# Quem erra 5 vezes em 5 minutos não é o Leo.
+_LOGIN_MAX_ERROS = 5
+_LOGIN_CASTIGO_S = 300.0
+_login_erros: list[float] = []
+
+
 @app.post("/auth/login", response_model=TokenOut)
 async def login(body: LoginIn):
-    if body.password != settings.app_password:
+    """Porta única do app. Um acerto emite token de 30 dias que autoriza escrita no
+    vault e create/complete no ClickUp, então ela merece contador e registro.
+
+    Antes era um `!=` puro: sem limite de taxa, sem backoff e — num arquivo com 20+
+    `log_event` — sem NENHUM rastro. Uma senha errada hoje não deixava marca em lugar
+    nenhum, então não havia como saber que alguém tentou. O BFF escuta em 0.0.0.0:8000
+    em texto claro e o app Android força `usesCleartextTraffic`, então "só a minha
+    rede" é uma suposição sobre a rede, não uma garantia do serviço.
+    """
+    agora = time.monotonic()
+    global _login_erros
+    _login_erros = [t for t in _login_erros if agora - t < _LOGIN_CASTIGO_S]
+
+    if len(_login_erros) >= _LOGIN_MAX_ERROS:
+        store.log_event("login_bloqueado")
+        logger.warning("login bloqueado: %d erros na janela", len(_login_erros))
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "tentativas demais; espere alguns minutos",
+        )
+
+    if not secrets.compare_digest(body.password, settings.app_password):
+        # `compare_digest` em vez de `!=`: comparação de senha não vaza tempo.
+        _login_erros.append(agora)
+        store.log_event("login_falhou")
+        logger.warning("login falhou (%d na janela)", len(_login_erros))
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "senha incorreta")
+
+    _login_erros = []
+    store.log_event("login_ok")
     return TokenOut(token=make_token())
 
 
@@ -2288,7 +2326,20 @@ async def abertura(
 
     # `due_hoje` é relativo a HOJE (o due vem do ClickUp em dias até vencer). Pedir a
     # abertura de outro dia devolve o estado daquele dia, mas não reescreve o calendário.
-    tarefas_due = await tasks.due_hoje() if ref == pontos.hoje_local() else []
+    #
+    # Dentro do try pelo mesmo motivo que o calendário já estava: "a abertura não
+    # depende de uma fonte externa". Esta linha ficava FORA dele, então um 429 ou um
+    # 5xx do ClickUp — e o 429 é auto-infligível, são 10 chamadas por invocação sem
+    # cache — apagava o pack da manhã INTEIRO: template, rotinas, shutdown de ontem,
+    # horários. Tudo SQLite local, tudo disponível, e o celular mostrando "erro 500".
+    tarefas_due: list = []
+    tarefas_indisponivel = False
+    if ref == pontos.hoje_local():
+        try:
+            tarefas_due = await tasks.due_hoje()
+        except Exception:
+            logger.exception("abertura: tarefas indisponíveis, seguindo sem elas")
+            tarefas_indisponivel = True
 
     temas = store.list_temas(agenda.semana_iso(ref))
     calendario: list[dict] = []
@@ -2323,6 +2374,9 @@ async def abertura(
         "temas": temas,
         "hoje": {
             "tarefas_due": tarefas_due,
+            # Sem isto, lista vazia por falha e lista vazia por não ter tarefa são a
+            # mesma coisa na tela — o mesmo defeito que a Home tem com o digest.
+            "tarefas_indisponivel": tarefas_indisponivel,
             "horarios": horarios,
             "calendario": calendario,
             "fontes_calendario": fontes_calendario,
@@ -2967,15 +3021,34 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
     # servidor já está em D+1 — o diário iria para amanhã e o dia vivido ficaria
     # sem linha nenhuma (que, por "linha ausente não é furo", some do scorecard).
     today = pontos.hoje_local().isoformat()
+
+    # O LOCAL vem ANTES do vault, e a ordem é o conserto.
+    #
+    # Era o contrário: `write_raw` e `append_file` rodavam primeiro, e qualquer falha
+    # do vault — o PAT é emprestado — estourava para fora do handler. Resultado: rotina
+    # nenhuma registrada, ponto nenhum creditado, nada enfileirado para retry (a captura
+    # tem `capture_queue`; o fechamento não tem nada). O rito das 21h é o único que o
+    # Leo completa, e perdê-lo inteiro porque o GitHub piscou é o pior negócio possível.
+    #
+    # Os dois já são idempotentes por dia (`record_checks` reescreve o dia,
+    # `log_event` deduplica por (evento, ref)), então adiantá-los não paga em dobro.
+    store.record_checks(
+        today,
+        body.template,
+        [(c.rotina, c.feito) for c in body.checks],
+    )
+    store.log_event("closing_approved", ref=today)
+
     raw_hash = hashlib.sha1(body.raw_text.encode("utf-8")).hexdigest()[:8]
     raw_path = await vault_client.write_raw(
         body.raw_text,
         f"f{today}-{raw_hash}",
     )
-    marker = (
-        f"<!-- fechamento:{today}:"
-        f"{hashlib.sha1(body.draft_md.encode()).hexdigest()[:8]} -->"
-    )
+    # Dedupe pelo DIA, não pelo texto. O marker antes carregava o sha1 do `draft_md`,
+    # então editar o despejo e fechar de novo produzia um marker novo e o append
+    # escrevia um SEGUNDO bloco "## Fechamento (HH:MM)" na mesma nota. Um dia tem um
+    # fechamento; reaprovar é retry, não um fechamento novo.
+    marker = f"<!-- fechamento:{today} -->"
     block = (
         f"## Fechamento ({datetime.now(TZ):%H:%M}) {marker}\n\n"
         f"{body.draft_md}\n\n_raw: [[{raw_path}]]_\n"
@@ -2987,12 +3060,6 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
         header_if_new=f"# {today}",
         dedupe_marker=marker,
     )
-    store.record_checks(
-        today,
-        body.template,
-        [(c.rotina, c.feito) for c in body.checks],
-    )
-    store.log_event("closing_approved", ref=today)
     # O despejo é bônus SEPARADO do fechamento (o app promete "garante +80 ·
     # bônus até +140"), e `closing_approved` sozinho não distingue quem escreveu
     # de quem só marcou as caixinhas. Evento próprio, ref = a data local: um

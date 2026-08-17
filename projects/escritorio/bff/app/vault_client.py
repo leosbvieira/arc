@@ -8,6 +8,7 @@ from datetime import datetime
 import httpx
 
 from .config import settings
+from .tz import TZ
 
 RAW_DIR = "1- Inbox/Raw"
 READING_DIR = "Leituras"
@@ -133,7 +134,11 @@ async def write_raw(text: str, capture_id: int | str, ts: float | None = None) -
     """Grava o texto EXATO. Path/commit neutros e DETERMINISTICOS: id + data do EVENTO.
     A data vem do ts de origem (enfileiramento), nao do relogio do retry =>
     crash/retry em qualquer momento (inclusive cruzando meia-noite) produz o MESMO path."""
-    d = datetime.fromtimestamp(ts) if ts else datetime.now()
+    # Fuso do Leo, não do processo. Este módulo é o que NOMEIA arquivo, e era o único
+    # produtor de data que nunca migrou para `tz.TZ` (`resumo_obra.py` já fazia certo).
+    # Num host em UTC — o VPS é o próximo passo declarado — uma captura das 22h BRT
+    # arquiva em D+1 enquanto a Daily que a referencia é D.
+    d = datetime.fromtimestamp(ts, TZ) if ts else datetime.now(TZ)
     path = f"{RAW_DIR}/{d:%Y-%m-%d} - raw-c{capture_id}.md"
     existing = await _get(path)
     if existing:                                              # ja gravado => idempotente
@@ -149,7 +154,7 @@ async def write_reading_note(
     client_key: str,
 ) -> str:
     """Publica uma vez em caminho neutro/determinístico; retry não cria outro commit."""
-    d = datetime.fromtimestamp(ts)
+    d = datetime.fromtimestamp(ts, TZ)  # fuso do Leo: ver write_raw
     key_hash = hashlib.sha256(client_key.encode("utf-8")).hexdigest()[:10]
     path = (
         f"{READING_DIR}/{d:%Y-%m-%d} - "
