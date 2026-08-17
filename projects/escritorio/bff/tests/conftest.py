@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app import hermes_client, store
+from app import hermes_client, ritos, store
 from app.config import DEFAULTS, settings
 
 for _field in DEFAULTS:
@@ -116,6 +116,21 @@ def _sem_hermes_de_verdade(request, monkeypatch):
 #
 # Mesma filosofia do `_oneshot` acima — falhar alto e na hora, com o método e a URL
 # no texto, em vez de esperar alguém notar a suíte lenta ou o dado estranho.
+@pytest.fixture
+def nudge_no_horario(monkeypatch):
+    """Para testes de nudge que NÃO são sobre horário (copy, dedupe, agregados).
+
+    `/internal/nudge` recusa rito fora da janela, e a janela é medida contra o relógio
+    de verdade — então um teste de copy passava de manhã e falhava à noite. Aqui a
+    guarda sai do caminho, explicitamente, em vez de fingir um relógio.
+
+    De propósito NÃO é autouse: um teste novo que poste um nudge vai falhar com
+    `skipped: atrasado` e descobrir a guarda, que é como se aprende que ela existe.
+    Quem testa a guarda em si usa `ritos.atrasado` direto (test_nudge_atrasado.py).
+    """
+    monkeypatch.setattr(ritos, "atrasado", lambda *_args, **_kwargs: False)
+
+
 @pytest.fixture(autouse=True)
 def _sem_rede_de_verdade(request, monkeypatch):
     # Escape hatch simétrico ao `hermes_oneshot`. Hoje ninguém usa: se você está

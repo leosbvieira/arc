@@ -3016,6 +3016,12 @@ async def internal_nudge(
     x_internal_token: str = Header(""),
 ):
     _check_internal(x_internal_token)
+    # Antes do dedupe: um rito atrasado não pode consumir o slot do dia. Era isso
+    # que acontecia — o catch-up de boot entregava os seis de uma vez, o
+    # `notif_sent_today` marcava todos como enviados, e o aviso da hora certa
+    # ficava suprimido pelo próprio atraso.
+    if ritos.atrasado(body.kind, tz.agora_local()):
+        return {"skipped": "atrasado"}
     if store.notif_sent_today(f"nudge_{body.kind}"):
         return {"skipped": True}
     text = NUDGE_COPY[body.kind]

@@ -48,7 +48,19 @@ if ($DryRun) {
 }
 
 $ps = "powershell.exe"
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries `
+# SEM -StartWhenAvailable, de proposito. Com ele, o Windows executa TODO gatilho
+# perdido no proximo boot -- e como sao seis ritos diarios, o PC ligado as 22h44
+# disparava os seis no mesmo segundo, incluindo o toque das 5h30. Isso aconteceu
+# em sete dias diferentes (notif_log tem a rajada de 0 segundo), e e o que ensina
+# a ignorar o canal.
+#
+# A "Aeternum BFF" (install-cron.ps1) MANTEM a flag: ali o comportamento e o
+# desejado -- se o logon foi perdido, subir o servidor assim que der esta certo.
+# Um servidor atrasado ainda serve; um aviso atrasado, nao.
+#
+# A guarda de verdade e do lado do servidor (`ritos.atrasado`), porque o
+# systemd do VPS tem `Persistent=true`, que se comporta igual a esta flag.
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
 
 # Fail-OPEN daqui pra baixo: erro do Agendador (permissão, política) não pode

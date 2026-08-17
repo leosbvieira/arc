@@ -221,7 +221,7 @@ def client(tmp_path, monkeypatch):
     "kind,trecho",
     [("toque", "yoga ou dia corrida"), ("checkin", "check-in"), ("shutdown", "Shutdown")],
 )
-def test_nudges_novos_existem_e_saem_pelo_notificar(client, canais, kind, trecho):
+def test_nudges_novos_existem_e_saem_pelo_notificar(client, canais, nudge_no_horario, kind, trecho):
     r = client.post(
         "/internal/nudge",
         json={"kind": kind},
@@ -238,7 +238,7 @@ def test_nudges_novos_existem_e_saem_pelo_notificar(client, canais, kind, trecho
     assert (row["evento"], row["canal"]) == (f"nudge_{kind}", "telegram")
 
 
-def test_nudge_novo_dedupe_no_mesmo_dia(client, canais):
+def test_nudge_novo_dedupe_no_mesmo_dia(client, canais, nudge_no_horario):
     hdr = {"X-Internal-Token": "itok"}
     assert client.post("/internal/nudge", json={"kind": "toque"}, headers=hdr).json()["ok"]
     r2 = client.post("/internal/nudge", json={"kind": "toque"}, headers=hdr)

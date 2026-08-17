@@ -11,11 +11,19 @@ Acoplar o instalador do cron ao venv quebraria no dia de reconstruir o ambiente.
 """
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 _ARQUIVO = Path(__file__).resolve().parent.parent / "ritos.json"
 
 DIAS = {"segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"}
+_DIA_SEMANA = {"segunda": 0, "terça": 1, "quarta": 2, "quinta": 3,
+               "sexta": 4, "sábado": 5, "domingo": 6}
+
+# Quanto um rito pode atrasar e ainda valer. Cobre com folga o retry do
+# `nudge.ps1` esperando o BFF subir; NÃO cobre catch-up de boot, que é o que
+# fazia os seis nudges do dia chegarem no mesmo segundo às 22:44.
+TOLERANCIA_ATRASO_MIN = 90
 SCRIPTS = {"nudge", "digest"}
 _HORA = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -85,3 +93,33 @@ def hora_curta(slug: str) -> str:
 
 def slugs_por_script(script: str) -> list[str]:
     return [r["slug"] for r in RITOS if r["script"] == script]
+
+
+def atraso_minutos(slug: str, agora: datetime) -> int | None:
+    """Minutos entre a hora nominal do rito e `agora`. Negativo = ainda não deu a hora.
+
+    `None` quando o rito nem é de hoje: um rito semanal disparado em outro dia da
+    semana não está atrasado, está no dia errado — e comparar só o horário deixaria
+    o review de domingo 20h passar numa segunda 20h30.
+    """
+    r = _POR_SLUG[slug]
+    dia = r.get("dia")
+    if dia is not None and agora.weekday() != _DIA_SEMANA[dia]:
+        return None
+    return (agora.hour * 60 + agora.minute) - minutos(r["hora"])
+
+
+def atrasado(slug: str, agora: datetime, tolerancia: int = TOLERANCIA_ATRASO_MIN) -> bool:
+    """O rito perdeu a janela e não deve mais ser entregue.
+
+    O Agendador do Windows registra as tarefas com -StartWhenAvailable removido, mas
+    isso só resolve o lado de cá: o `systemd` do VPS tem `Persistent=true` com o mesmo
+    comportamento, e um serviço que volta do zero continua podendo disparar tudo junto.
+    Por isso a guarda mora no servidor, onde vale pros dois.
+
+    O silêncio é a resposta certa: entregar o toque das 5h30 às 22h44 não é melhor que
+    não entregar, é pior — o dedupe do dia ainda marcaria o rito como enviado, e o
+    aviso da hora certa sumiria junto.
+    """
+    atraso = atraso_minutos(slug, agora)
+    return atraso is None or atraso > tolerancia

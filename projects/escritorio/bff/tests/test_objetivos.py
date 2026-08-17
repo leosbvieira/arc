@@ -261,6 +261,7 @@ def test_monthly_review_pack_limita_tudo_ao_mes_anterior(
 def test_nudge_funde_bloco_mensal_so_no_primeiro_domingo(
     client,
     monkeypatch,
+    nudge_no_horario,
 ):
     enviados: list[str] = []
 

@@ -16,7 +16,7 @@ def client(tmp_path, monkeypatch):
     return TestClient(app)
 
 
-def test_nudge_closing(client, monkeypatch):
+def test_nudge_closing(client, monkeypatch, nudge_no_horario):
     sent = []
 
     async def fake_send(text):
@@ -32,7 +32,7 @@ def test_nudge_closing(client, monkeypatch):
     assert r.status_code == 200 and sent and "fechar o dia" in sent[0]
 
 
-def test_nudge_jornal_usa_kind_dedicado_e_texto_factual(client, monkeypatch):
+def test_nudge_jornal_usa_kind_dedicado_e_texto_factual(client, monkeypatch, nudge_no_horario):
     sent = []
 
     async def fake_send(text):
