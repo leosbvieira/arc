@@ -66,7 +66,7 @@ import {
   formatReadingElapsed,
   normalizeReadingActiveSeconds,
 } from "../readingSessionState";
-import { colors, fonts, radius, spacing } from "../theme";
+import { colors, fonts, POINTS, radius, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
 import { useReadingSpeech } from "../useReadingSpeech";
 
@@ -1646,7 +1646,7 @@ export default function Capture({
               <Feather
                 name={itemMode === "captura" ? "inbox" : "book-open"}
                 size={15}
-                color={active ? colors.primaryText : colors.textMuted}
+                color={active ? colors.text : colors.textMuted}
               />
               <Text style={[styles.modeTxt, active && styles.modeTxtOn]}>
                 {itemMode === "captura" ? "Captura rápida" : "Leitura"}
@@ -1662,13 +1662,7 @@ export default function Capture({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.captureHeading}>
-            <Text style={styles.eyebrow}>TIRE DA CABEÇA</Text>
-            <Text style={styles.captureTitle}>Uma caixa de entrada, zero atrito.</Text>
-            <Text style={styles.captureSubtitle}>
-              Escreva naturalmente. O Escritório separa ação, prazo e contexto depois.
-            </Text>
-          </View>
+          <Text style={styles.crumb}>captura universal</Text>
 
           <Card style={styles.captureCard}>
             <Field
@@ -1690,12 +1684,28 @@ export default function Capture({
               >
                 <Feather
                   name={speech.recognizing ? "pause" : "mic"}
-                  size={19}
-                  color={speech.recognizing ? colors.primaryText : colors.primary}
+                  size={15}
+                  color={speech.recognizing ? colors.primaryText : colors.textMuted}
                 />
                 <Text style={[styles.micText, speech.recognizing && styles.micTextOn]}>
                   {speech.starting ? "preparando" : speech.recognizing ? "pausar" : "ditar"}
                 </Text>
+              </Pressable>
+              {/* O cadeado da C: o toggle de sensível sai da fileira própria e
+                  vira ghost dentro do cartão. */}
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: sensitive }}
+                accessibilityLabel="Conteúdo sensível"
+                onPress={() => setSensitive((value) => !value)}
+                hitSlop={6}
+                style={[styles.lockButton, sensitive && styles.lockButtonOn]}
+              >
+                <Feather
+                  name="lock"
+                  size={14}
+                  color={sensitive ? colors.primary : colors.textMuted}
+                />
               </Pressable>
               <View style={{ flex: 1 }} />
               <Pressable
@@ -1706,27 +1716,9 @@ export default function Capture({
                 style={[styles.sendButton, (busy || !text.trim()) && styles.sendButtonDisabled]}
               >
                 <Text style={styles.sendText}>{busy ? "enviando" : "Enviar"}</Text>
-                <Feather name="arrow-up-right" size={18} color={colors.primaryText} />
               </Pressable>
             </View>
           </Card>
-
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: sensitive }}
-            onPress={() => setSensitive((value) => !value)}
-            style={[styles.sensitiveToggle, sensitive && styles.sensitiveToggleOn]}
-          >
-            <Feather
-              name={sensitive ? "shield" : "shield-off"}
-              size={14}
-              color={sensitive ? colors.primary : colors.textMuted}
-            />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.sensitiveText, sensitive && { color: colors.primary }]}>Conteúdo sensível</Text>
-              <Text style={styles.sensitiveHint}>O preview das notificações fica neutro.</Text>
-            </View>
-          </Pressable>
 
           {pending > 0 ? (
             <View style={styles.queueRow}>
@@ -1735,49 +1727,27 @@ export default function Capture({
             </View>
           ) : null}
           {status ? <Text style={styles.status}>{status}</Text> : null}
+          {/* Toast sálvia da C. Sem "desfazer": o /capture é fire-and-forget e o
+              BFF não expõe undo — botão sem ação atrás é mentira. */}
           {reply ? (
-            <Card style={styles.reply}>
-              <View style={styles.replyIcon}>
-                <Feather name="check" size={16} color={colors.success} />
+            <View style={styles.toast}>
+              <View style={styles.toastIcon}>
+                <Feather name="check" size={14} color={colors.success} />
               </View>
-              <Text style={styles.replyText}>{reply}</Text>
-            </Card>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toastTitle}>Caiu na triagem. Organiza depois.</Text>
+                <Text style={styles.toastMeta}>agora · +{POINTS.captura}</Text>
+              </View>
+            </View>
           ) : null}
 
-          <View style={styles.captureExamples}>
-            <Text style={styles.examplesTitle}>FUNCIONA BEM PARA</Text>
-            <View style={styles.exampleGrid}>
-              {[
-                ["check-square", "tarefas e prazos"],
-                ["zap", "ideias soltas"],
-                ["users", "cobranças"],
-                ["bookmark", "algo para guardar"],
-              ].map(([icon, label]) => (
-                <View key={label} style={styles.exampleItem}>
-                  <Feather name={icon as any} size={14} color={colors.textMuted} />
-                  <Text style={styles.exampleText}>{label}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Os prefixos existiam desde o P2 item 10 e nunca apareceram em tela
-              nenhuma. Atalho que o Leo não vê é atalho que ele não usa — e o de
-              melhoria é o único caminho pra fila que não cobra prazo. */}
-          <View style={styles.captureExamples}>
-            <Text style={styles.examplesTitle}>COMEÇANDO COM</Text>
-            {[
-              ["melhoria:", "vai pra fila de melhorias, sem virar tarefa"],
-              ["melhoria app:", "idem, já marcada como coisa do Aeternum"],
-              ["hack:", "vira aprendizado na Edificação"],
-              ["sensivel:", "o mesmo que o botão aqui de cima"],
-            ].map(([prefixo, o_que_faz]) => (
-              <View key={prefixo} style={styles.prefixRow}>
-                <Text style={styles.prefixCode}>{prefixo}</Text>
-                <Text style={styles.prefixText}>{o_que_faz}</Text>
-              </View>
-            ))}
-          </View>
+          {/* Os prefixos existiam desde o P2 item 10; a C os condensa numa linha
+              mono só. Atalho que o Leo não vê é atalho que ele não usa. */}
+          <Text style={styles.atalhos}>
+            atalhos: <Text style={styles.atalhoCode}>melhoria:</Text> → melhorias
+            {"  ·  "}<Text style={styles.atalhoCode}>hack:</Text> → edificação
+            {"  ·  "}<Text style={styles.atalhoCode}>sensivel:</Text> = o cadeado
+          </Text>
         </ScrollView>
       ) : sessionStart === null ? (
         <ScrollView
@@ -2216,42 +2186,33 @@ const styles = StyleSheet.create({
     gap: 7,
     borderRadius: radius.sm,
   },
-  modeOn: { backgroundColor: colors.primary },
+  modeOn: { backgroundColor: colors.card, borderWidth: 1, borderColor: "rgba(235,222,202,0.20)" },
   modeTxt: { fontFamily: fonts.uiSemi, fontSize: 12.5, color: colors.textMuted },
-  modeTxtOn: { color: colors.primaryText },
+  modeTxtOn: { color: colors.text },
   captureContent: { paddingTop: spacing.xl, paddingBottom: spacing.xxxl, gap: spacing.md },
-  captureHeading: { gap: 7, paddingHorizontal: spacing.xs, marginBottom: spacing.sm },
+  crumb: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 1.5, textTransform: "uppercase", paddingHorizontal: spacing.xs },
   eyebrow: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.primary, letterSpacing: 1.7 },
-  captureTitle: { fontFamily: fonts.display, fontSize: 29, lineHeight: 34, color: colors.text, letterSpacing: -0.35 },
-  captureSubtitle: { fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 20, color: colors.textMuted, maxWidth: 330 },
-  captureCard: { padding: 0, overflow: "hidden" },
-  input: { minHeight: 126, textAlignVertical: "top", borderWidth: 0, backgroundColor: "transparent", padding: spacing.lg },
-  captureActions: { minHeight: 58, flexDirection: "row", alignItems: "center", padding: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
-  micButton: { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: spacing.md, height: 38, borderRadius: radius.pill, backgroundColor: colors.primarySoft },
-  micButtonOn: { backgroundColor: colors.primary },
-  micText: { fontFamily: fonts.uiSemi, fontSize: 12, color: colors.primary },
+  captureCard: { padding: 0, overflow: "hidden", borderColor: "rgba(235,222,202,0.20)" },
+  input: { minHeight: 150, textAlignVertical: "top", borderWidth: 0, backgroundColor: "transparent", padding: spacing.lg },
+  captureActions: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  micButton: { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: spacing.md, height: 38, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border },
+  micButtonOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  micText: { fontFamily: fonts.uiSemi, fontSize: 12, color: colors.textMuted },
   micTextOn: { color: colors.primaryText },
-  sendButton: { flexDirection: "row", alignItems: "center", gap: 5, height: 40, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: colors.primary },
+  lockButton: { width: 38, height: 38, borderRadius: 11, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+  lockButtonOn: { borderColor: "rgba(222,184,120,0.45)", backgroundColor: colors.primarySoft },
+  sendButton: { flexDirection: "row", alignItems: "center", gap: 5, height: 40, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.primary, borderBottomWidth: 2, borderBottomColor: "#B6935C" },
   sendButtonDisabled: { opacity: 0.4 },
   sendText: { fontFamily: fonts.uiSemi, fontSize: 13, color: colors.primaryText },
-  sensitiveToggle: { flexDirection: "row", alignItems: "center", gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
-  sensitiveToggleOn: { borderColor: "rgba(222,184,120,0.45)", backgroundColor: colors.primarySoft },
-  sensitiveText: { fontFamily: fonts.uiSemi, fontSize: 12.5, color: colors.text },
-  sensitiveHint: { fontFamily: fonts.ui, fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  reply: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
-  replyIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(111,181,140,0.12)" },
-  replyText: { flex: 1, fontFamily: fonts.ui, color: colors.text, fontSize: 14, lineHeight: 20 },
+  toast: { flexDirection: "row", gap: 10, alignItems: "center", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: 11, paddingHorizontal: 13 },
+  toastIcon: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,180,154,0.12)", borderWidth: 1, borderColor: "rgba(113,180,154,0.35)" },
+  toastTitle: { fontFamily: fonts.uiMedium, fontSize: 13, color: colors.text },
+  toastMeta: { fontFamily: fonts.mono, fontSize: 8.5, color: colors.success, letterSpacing: 0.6, marginTop: 2 },
   queueRow: { flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: spacing.xs },
   queueText: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.info },
   status: { fontFamily: fonts.ui, fontSize: 12, lineHeight: 17, color: colors.textMuted, paddingHorizontal: spacing.xs },
-  captureExamples: { marginTop: spacing.md, gap: spacing.sm },
-  examplesTitle: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 1.3 },
-  exampleGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  exampleItem: { width: "48%", flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
-  exampleText: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted },
-  prefixRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, marginTop: 6 },
-  prefixCode: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.primary, minWidth: 96 },
-  prefixText: { fontFamily: fonts.ui, fontSize: 12, color: colors.textMuted, flex: 1 },
+  atalhos: { fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 0.3, color: colors.faint, lineHeight: 17, marginTop: spacing.sm, paddingHorizontal: spacing.xs },
+  atalhoCode: { color: colors.textMuted },
   readingSetup: { paddingTop: spacing.md, paddingBottom: spacing.xxxl, gap: spacing.md },
   readingHero: { borderRadius: radius.xl, borderWidth: 1, borderColor: "rgba(222,184,120,0.18)", padding: spacing.xl, gap: 9, overflow: "hidden" },
   heroIcon: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft, marginBottom: spacing.sm },

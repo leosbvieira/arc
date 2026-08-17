@@ -1,6 +1,6 @@
 import Feather from "@expo/vector-icons/Feather";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, BackHandler, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
   Bloco,
   ClosingRotina,
@@ -255,6 +255,8 @@ export default function Fechar() {
   if (done) {
     // O único momento de dopamina do dia era uma linha de texto. Se o design declara
     // "check visível" como lei, o fim do rito tem que devolver o que ele produziu.
+    // A C também corrige a saída: "Boa noite" encerra o app; o ghost devolve ao
+    // rito para rever o que ficou sem marcar (o registro já está gravado).
     const feitas = routines.filter((r) => checks[r.slug]).length;
     return (
       <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}>
@@ -263,6 +265,8 @@ export default function Fechar() {
           placar={placar}
           ritmosFeitos={feitas}
           ritmosTotal={routines.length}
+          onBoaNoite={() => BackHandler.exitApp()}
+          onVerSemMarcar={() => setDone(false)}
         />
       </ScrollView>
     );
@@ -290,8 +294,16 @@ export default function Fechar() {
           </View>
         </>
       ) : (
-        <Text style={{ color: colors.textMuted, fontFamily: fonts.mono, fontSize: 11 }}>
-          dia {template}
+        <Text
+          style={{
+            color: colors.textMuted,
+            fontFamily: fonts.mono,
+            fontSize: 9,
+            letterSpacing: 1.5,
+            textTransform: "uppercase",
+          }}
+        >
+          rito da noite · dia {template}
         </Text>
       )}
 
@@ -315,10 +327,11 @@ export default function Fechar() {
           const feitas = doBloco.filter((r) => checks[r.slug]).length;
           return (
             <View key={b.key} style={{ marginTop: spacing.md }}>
+              {/* Régua de bloco aprovada na C: eyebrow mono, filete, contagem. */}
               <View
                 style={{
                   flexDirection: "row",
-                  justifyContent: "space-between",
+                  alignItems: "center",
                   marginHorizontal: 2,
                   marginBottom: spacing.sm,
                 }}
@@ -334,6 +347,14 @@ export default function Fechar() {
                 >
                   {b.label}
                 </Text>
+                <View
+                  style={{
+                    flex: 1,
+                    height: 1,
+                    backgroundColor: colors.border,
+                    marginHorizontal: 10,
+                  }}
+                />
                 <Text style={{ fontFamily: fonts.mono, fontSize: 9, color: colors.faint }}>
                   {feitas}/{doBloco.length}
                   {feitas > 0 ? ` · +${feitas * POINTS.rotina}` : ""}
@@ -372,25 +393,24 @@ export default function Fechar() {
 
       {draft === null ? (
         <>
-          <Text style={{ color: colors.textMuted, marginTop: 16 }}>
-            como foi o dia?{" "}
-            <Text style={{ color: colors.faint }}>— opcional, vale bônus</Text>
-          </Text>
+          {/* Despejo da decisão 11=B: a pergunta vira o placeholder do próprio
+              campo — sem label duplicado em cima da caixa. */}
           <TextInput
             multiline
             value={dump}
             onChangeText={setDump}
-            placeholder="despeja aqui — 1 linha já vale"
+            placeholder="como foi o dia? — opcional, vale bônus"
             placeholderTextColor={colors.textMuted}
             style={{
-              minHeight: 120,
+              minHeight: 64,
               color: colors.text,
               backgroundColor: colors.card,
               borderWidth: 1,
               borderColor: colors.border,
               borderRadius: 12,
               padding: 12,
-              marginTop: 8,
+              marginTop: 16,
+              textAlignVertical: "top",
             }}
           />
           <View style={{ marginTop: 10 }}>

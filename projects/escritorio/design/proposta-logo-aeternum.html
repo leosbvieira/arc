@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aeternum — nome &amp; marca</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Syne:wght@600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080A0D;
+    --bg-raised: #0C0F13;
+    --surface: #0E1116;
+    --card: #15191F;
+    --card2: #11151A;
+    --border: rgba(235,222,202,0.11);
+    --text: #F4EFE7;
+    --muted: #9A9BA3;
+    --faint: #5F626B;
+    --bronze: #DEB878;
+    --bronze-soft: rgba(222,184,120,0.13);
+    --bronze-text: #181108;
+    --success: #71B49A;
+    --danger: #D77969;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 72px 32px 96px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--bronze);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: "Syne", serif;
+    font-weight: 800;
+    font-size: 44px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin-bottom: 18px;
+  }
+  h2 {
+    font-family: "Syne", serif;
+    font-weight: 700;
+    font-size: 26px;
+    margin: 0 0 14px;
+  }
+  h3 {
+    font-family: "Syne", serif;
+    font-weight: 700;
+    font-size: 17px;
+    margin-bottom: 8px;
+  }
+  p { color: var(--muted); max-width: 66ch; }
+  p + p { margin-top: 10px; }
+  strong { color: var(--text); font-weight: 600; }
+  section { margin-top: 72px; }
+  .lede { font-size: 17px; color: var(--text); max-width: 62ch; }
+
+  .rule { height: 1px; background: var(--border); margin: 56px 0 0; }
+
+  /* cartões */
+  .card {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  /* palavra-marca — Michroma, a fonte própria da marca */
+  .wordmark {
+    font-family: "Michroma", sans-serif;
+    font-weight: 400;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .wordmark .ae { color: var(--bronze); }
+  .tagline {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .name-block {
+    display: flex; flex-direction: column; align-items: center; gap: 22px;
+    padding: 64px 24px; text-align: center;
+  }
+  .name-block .wordmark { font-size: 46px; }
+  @media (max-width: 640px) { .name-block .wordmark { font-size: 30px; } }
+
+  /* conceitos */
+  .concept { display: flex; flex-direction: column; gap: 0; overflow: hidden; padding: 0; }
+  .concept .stage {
+    background: var(--bg-raised);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    padding: 44px 24px;
+    min-height: 220px;
+  }
+  .concept .body { padding: 24px 24px 28px; }
+  .concept .body p { font-size: 14px; }
+  .concept.discarded .stage svg { opacity: 0.45; }
+  .badge-rec {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--bronze-text);
+    background: var(--bronze);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-bottom: 12px;
+  }
+  .badge-alt {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-bottom: 12px;
+  }
+  .badge-out {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--danger);
+    border: 1px solid rgba(215,121,105,0.35);
+    border-radius: 999px;
+    padding: 4px 12px;
+    margin-bottom: 12px;
+  }
+
+  /* tabela comparativa */
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  th, td {
+    text-align: left; padding: 12px 14px; font-size: 14px;
+    border-bottom: 1px solid var(--border); vertical-align: top;
+  }
+  th {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint);
+  }
+  td { color: var(--muted); }
+  td:first-child { color: var(--text); font-weight: 500; }
+
+  /* tamanhos */
+  .sizes {
+    display: flex; align-items: flex-end; gap: 28px;
+    padding: 36px 28px; flex-wrap: wrap;
+  }
+  .size-item { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .size-item span {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--faint);
+    letter-spacing: 0.1em;
+  }
+  .size-item img { border-radius: 22%; display: block; }
+
+  /* variações cromáticas */
+  .swatch {
+    border-radius: 14px; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    aspect-ratio: 1 / 1;
+  }
+  .swatch-label {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+    text-align: center; margin-top: 10px;
+  }
+
+  /* launcher mock */
+  .launcher {
+    background: linear-gradient(180deg, #0B0E12 0%, #080A0D 100%);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 40px 32px;
+    display: flex; justify-content: center;
+  }
+  .launcher-grid { display: flex; gap: 36px; align-items: flex-start; }
+  .app-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 76px; }
+  .app-tile img, .app-tile .tile-placeholder { width: 62px; height: 62px; border-radius: 16px; }
+  .app-tile .tile-placeholder { background: var(--card); border: 1px solid var(--border); }
+  .app-tile span { font-size: 11px; color: var(--muted); }
+  .app-tile.hero span { color: var(--text); }
+
+  /* splash mock */
+  .splash {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    aspect-ratio: 9 / 16;
+    max-height: 560px;
+    margin: 0 auto;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 26px;
+    padding: 40px;
+  }
+  .splash .wordmark { font-size: 22px; }
+
+  /* lockup horizontal */
+  .lockup {
+    display: flex; align-items: center; gap: 22px;
+    padding: 36px 40px; justify-content: center; flex-wrap: wrap;
+  }
+  .lockup .wordmark { font-size: 24px; }
+  .lockup .tagline { font-size: 10px; }
+
+  /* usos indevidos */
+  .misuse { display: flex; flex-direction: column; gap: 8px; }
+  .misuse li {
+    list-style: none; font-size: 14px; color: var(--muted);
+    padding-left: 26px; position: relative;
+  }
+  .misuse li::before {
+    content: "✕"; position: absolute; left: 0; color: var(--danger);
+    font-size: 12px; top: 3px;
+  }
+  .dolist li::before { content: "✓"; color: var(--success); }
+
+  ul.tight { padding-left: 20px; color: var(--muted); font-size: 14px; }
+  ul.tight li + li { margin-top: 6px; }
+  ul.tight strong { color: var(--text); }
+
+  code {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    background: var(--bronze-soft); color: var(--bronze);
+    padding: 2px 7px; border-radius: 6px;
+  }
+  .files { display: flex; flex-direction: column; gap: 0; }
+  .file-row {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 12px 4px; border-bottom: 1px solid var(--border); font-size: 14px;
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-row .fname { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--text); }
+  .file-row .fdesc { color: var(--faint); text-align: right; }
+
+  .note {
+    border-left: 2px solid var(--bronze);
+    background: var(--bronze-soft);
+    border-radius: 0 12px 12px 0;
+    padding: 16px 20px;
+    margin-top: 22px;
+    font-size: 14px;
+  }
+  .note p { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- Glifo canônico da marca: a ligadura Æ do Michroma, extraída da TTF. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="ae-glyph">
+      <path d="M0 0 1408 1536H2944V1376H1664V864H2880V704H1664V160H2944V0H1472V352H582L256 0ZM704 512H1472V1376Z"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Identidade · 2026-08-09 · rev 4</div>
+    <h1>Nome &amp; marca do Aeternum</h1>
+    <p class="lede">O nome é <strong>Aeternum</strong>; a marca é o <strong>Æ</strong> —
+    a ligadura do Michroma, a fonte da palavra-marca. O monograma canônico é branco
+    sobre midnight; <strong>o ícone do app é a inversa</strong> (Æ midnight sobre
+    branco). O ícone é literalmente o começo de "ÆTERNUM": mesmo glifo, mesma fonte.
+    <em>(Rev 4: aprovada a referência do Leo — palavra-marca em Michroma com Æ
+    bronze + TTERNUM branco; monograma Æ branco; ícone na inversa.)</em></p>
+  </header>
+
+  <!-- ───────────────────────── 1. NOME ───────────────────────── -->
+  <section id="nome">
+    <div class="eyebrow">01 — Nome</div>
+    <h2>O nome é Aeternum. A marca é o Æ.</h2>
+    <p><strong>Aeternum</strong> já era o nome travado do sistema (spec v1, design inputs —
+    o mesmo nome do vault). O que estava aberto não era <em>qual</em> nome, e sim
+    <em>como ele aparece</em>: o <code>app.json</code> ainda exibe o nome de trabalho
+    "escritório", e não existia forma gráfica do nome nem símbolo.</p>
+    <p>Três decisões fecham a questão:</p>
+    <table>
+      <tr><th style="width:220px">Decisão</th><th>Forma</th><th>Por quê</th></tr>
+      <tr>
+        <td>Nome de exibição do app</td>
+        <td><strong>Aeternum</strong></td>
+        <td>Um sistema, uma só memória de vida — o app é a superfície primária do
+        Aeternum, não um produto separado. "escritório" aposenta.</td>
+      </tr>
+      <tr>
+        <td>Palavra-marca (forma gráfica)</td>
+        <td><strong>ÆTERNUM</strong> — Michroma, <strong>Æ</strong> em bronze + TTERNUM em branco</td>
+        <td>Michroma é a fonte própria da marca (larga, geométrica, noturna — combina
+        com o midnight desk). A ligadura <strong>Æ</strong> é a abertura da palavra e
+        vira o monograma: ícone e palavra-marca são o mesmo glifo. No texto corrido e
+        na UI do app continua "Aeternum"; o Æ e o Michroma são a forma desenhada —
+        as fontes de interface (Syne/Bricolage) não mudam.</td>
+      </tr>
+      <tr>
+        <td>Tagline (opcional, raro uso)</td>
+        <td><strong>Nada se perde.</strong></td>
+        <td>A promessa do sistema em três palavras — é a lei nº 1 ("vazão antes de
+        captura: nada some sem destino") dita de trás pra frente. Não é marketing; é o
+        contrato. Candidatas descartadas: "O dia que fecha" (só fala do rito),
+        "Tudo reaparece" (passivo demais).</td>
+      </tr>
+    </table>
+
+    <div class="card" style="margin-top:28px">
+      <div class="name-block">
+        <div class="wordmark"><span class="ae">Æ</span>TERNUM</div>
+        <div class="tagline">Nada&nbsp;se&nbsp;perde.</div>
+      </div>
+    </div>
+    <div class="note">
+      <p><strong>Colisão conhecida:</strong> existe a AeternumFintech (ConsigVerse), fora de
+      escopo. Contextos separados, sem confusão prática — e o monograma Æ diferencia
+      esta marca da outra sem trocar o nome.</p>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <!-- ───────────────────────── 2. CONCEITOS ───────────────────────── -->
+  <section id="conceitos">
+    <div class="eyebrow">02 — Conceitos de marca</div>
+    <h2>O caminho até o Æ</h2>
+    <p>Várias direções foram desenhadas dentro do sistema "midnight desk". A revisão de
+    2026-08-09 cravou a referência final: <strong>a ligadura Æ do Michroma</strong> —
+    o começo literal da palavra-marca — com o monograma em <strong>branco</strong>.</p>
+
+    <div class="grid3" style="margin-top:28px">
+      <!-- A -->
+      <div class="card concept">
+        <div class="stage">
+          <svg width="240" viewBox="0 0 2944 1536" fill="none" aria-label="Monograma Æ">
+            <g transform="translate(0 1536) scale(1 -1)" fill="#F4EFE7"><use href="#ae-glyph"/></g>
+          </svg>
+        </div>
+        <div class="body">
+          <span class="badge-rec">Escolhido</span>
+          <h3>A — O Æ da palavra-marca</h3>
+          <p>A ligadura <strong>Æ</strong> do Michroma — o glifo real, extraído da TTF,
+          não um desenho inspirado nele. O A perde a perna direita para a haste
+          vertical do E; o travessão do A encontra a barra do meio do E. Em
+          <strong>branco</strong> sobre midnight: máximo contraste, lê a qualquer
+          tamanho, e o bronze fica reservado ao Æ da palavra-marca e à ação primária.</p>
+        </div>
+      </div>
+      <!-- B -->
+      <div class="card concept">
+        <div class="stage">
+          <svg width="180" height="180" viewBox="0 0 512 512" fill="none">
+            <path d="M341 108.8 A170 170 0 1 0 415.7 197.9" stroke="#DEB878" stroke-width="30" stroke-linecap="round"/>
+            <circle cx="415.7" cy="197.9" r="21" fill="#DEB878"/>
+          </svg>
+        </div>
+        <div class="body">
+          <span class="badge-alt">Reserva</span>
+          <h3>B — O anel do loop</h3>
+          <p>O círculo quase fechado com o ponto marcando o fechamento: o loop
+          capturar → triar → executar → refletir, o dia que fecha às 21h. Honesto e
+          legível, mas genérico como ícone. Fica como <strong>marca cerimonial</strong>
+          (telas de fechamento de ciclo, review anual) — nunca como ícone do app.</p>
+        </div>
+      </div>
+      <!-- C -->
+      <div class="card concept discarded">
+        <div class="stage">
+          <svg width="220" viewBox="0 0 512 512" fill="none">
+            <g stroke="#5F626B" stroke-width="30" stroke-linejoin="miter">
+              <path d="M68 428 L158 84 L248 428"/>
+              <path d="M113 256 H203"/>
+              <path d="M300 84 V428"/>
+              <path d="M300 84 H446"/>
+              <path d="M300 256 H426"/>
+              <path d="M300 428 H446"/>
+            </g>
+          </svg>
+        </div>
+        <div class="body">
+          <span class="badge-out">Descartado</span>
+          <h3>C — Revs 1–3: ligadura desenhada à mão, AE geométrico, AE de Syne</h3>
+          <p>Três tentativas anteriores falharam pelo mesmo motivo: eram
+          <em>desenhos de</em> AE, não <em>o</em> AE da palavra-marca. A rev 4 fecha
+          isso extraindo o glifo da própria fonte da marca. Registradas só para
+          memória de projeto; não usar.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin-bottom:12px">Por que o Æ</h3>
+      <ul class="tight">
+        <li><strong>É o começo literal do nome.</strong> O ícone e a palavra-marca são
+        o mesmo glifo da mesma fonte — a marca não é uma metáfora solta, é a abertura
+        de "ÆTERNUM", e onde o nome aparece ela já está contida.</li>
+        <li><strong>Branco = contraste máximo.</strong> Sobre o midnight, o Æ branco lê
+        a 24px na tabbar e no ícone de notificação; o bronze fica com papel de destaque
+        (ação primária, Æ da palavra-marca).</li>
+        <li><strong>Custo zero de coerência.</strong> Sendo o glifo da própria fonte da
+        marca, não há "parecido mas diferente" — o problema das revs 1–3. Não há o que
+        manter em sincronia: mudou a fonte, reroda o <code>gerar-marca.py</code>.</li>
+        <li><strong>Significado de brinde.</strong> <em>Æternum</em> é a grafia clássica
+        latina de <em>aeternum</em> — a ligadura carrega a etimologia, não só a
+        fonética.</li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <!-- ───────────────────────── 3. MARCA ───────────────────────── -->
+  <section id="marca">
+    <div class="eyebrow">03 — A marca, em sistema</div>
+    <h2>Construção, cores e tamanhos</h2>
+
+    <div class="grid2" style="margin-top:24px">
+      <div class="card">
+        <h3 style="margin-bottom:12px">Construção</h3>
+        <p style="font-size:14px">A marca é extraída, não desenhada: o contorno do
+        <strong>Æ</strong> sai da própria TTF (<code>Michroma-Regular.ttf</code>,
+        licença OFL — arquivo e licença em <code>design/</code>). Caixa de tinta
+        2944×1536 unidades de fonte. O <code>gerar-marca.py</code> regenera SVGs e
+        PNGs a partir da fonte: se um dia a fonte da marca mudar, a marca muda junto,
+        rerodando o script. Área de proteção: a altura do travessão do A em volta do
+        glifo.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:12px">Cores</h3>
+        <p style="font-size:14px">Canônica: <strong>branco <code>#F4EFE7</code></strong>
+        sobre midnight <code>#0C0F13</code> — o "texto" do tema. Na palavra-marca, o
+        Æ é bronze <code>#DEB878</code> e o TTERNUM branco; fora dela, o monograma é
+        sempre branco. <strong>O ícone do app é a inversa</strong>: Æ midnight
+        <code>#181108</code> sobre branco <code>#F4EFE7</code> — escolha do Leo na
+        revisão. Nunca usar cor de área de vida no monograma.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin-bottom:4px">Variações</h3>
+      <div class="grid3" style="margin-top:18px">
+        <div>
+          <div class="swatch" style="background:#0C0F13">
+            <svg width="72%" viewBox="0 0 2944 1536" fill="none">
+              <g transform="translate(0 1536) scale(1 -1)" fill="#F4EFE7"><use href="#ae-glyph"/></g>
+            </svg>
+          </div>
+          <div class="swatch-label">Canônica — branco / midnight</div>
+        </div>
+        <div>
+          <div class="swatch" style="background:#0C0F13">
+            <svg width="72%" viewBox="0 0 2944 1536" fill="none">
+              <g transform="translate(0 1536) scale(1 -1)" fill="#DEB878"><use href="#ae-glyph"/></g>
+            </svg>
+          </div>
+          <div class="swatch-label">Bronze / midnight — só na palavra-marca</div>
+        </div>
+        <div>
+          <div class="swatch" style="background:#F4EFE7">
+            <svg width="72%" viewBox="0 0 2944 1536" fill="none">
+              <g transform="translate(0 1536) scale(1 -1)" fill="#181108"><use href="#ae-glyph"/></g>
+            </svg>
+          </div>
+          <div class="swatch-label">Inversa — midnight / branco · ícone do app</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3>Prova de tamanho real</h3>
+      <p style="font-size:14px; margin-top:6px">O ícone do app renderizado nos tamanhos
+      em que ele aparece no aparelho — da gaveta ao ícone de notificação.</p>
+      <div class="sizes">
+        <div class="size-item"><img src="aeternum-icon-1024.png" width="96" height="96" alt="ícone 96px"><span>96 · gaveta</span></div>
+        <div class="size-item"><img src="aeternum-icon-1024.png" width="64" height="64" alt="ícone 64px"><span>64</span></div>
+        <div class="size-item"><img src="aeternum-icon-1024.png" width="48" height="48" alt="ícone 48px"><span>48 · launcher</span></div>
+        <div class="size-item"><img src="aeternum-icon-1024.png" width="32" height="32" alt="ícone 32px"><span>32</span></div>
+        <div class="size-item"><img src="aeternum-icon-1024.png" width="24" height="24" alt="ícone 24px"><span>24 · status bar</span></div>
+      </div>
+      <p style="font-size:13px; color:var(--faint); padding:0 28px 8px">No ícone de
+      notificação do Android (monocromático por exigência do sistema) a silhueta do Æ
+      já é a forma certa: traços largos e abertos, leitura limpa a 24px.</p>
+    </div>
+
+    <div class="grid2" style="margin-top:20px">
+      <div class="card">
+        <h3 style="margin-bottom:12px">Usar assim</h3>
+        <ul class="misuse dolist">
+          <li>Um símbolo por superfície — o Æ sozinho carrega a marca.</li>
+          <li>Monograma sempre branco; bronze só no Æ da palavra-marca e na ação primária.</li>
+          <li>Sempre o glifo extraído da TTF — o Æ é o Michroma, não um desenho dele.</li>
+          <li>Anel do loop só em telas de fechamento de ciclo (versão cerimonial).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:12px">Não usar</h3>
+        <ul class="misuse">
+          <li>Não redesenhar o Æ à mão, separar as letras nem trocar a fonte da marca.</li>
+          <li>Não colorir o monograma com cor de área de vida (área é conteúdo, não marca).</li>
+          <li>Não aplicar gradiente, sombra projetada ou contorno no glifo.</li>
+          <li>Não escrever "Æ" em texto corrido — no texto e na UI, "Aeternum".</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <!-- ───────────────────────── 4. APLICAÇÃO ───────────────────────── -->
+  <section id="aplicacao">
+    <div class="eyebrow">04 — Aplicação</div>
+    <h2>Onde a marca vive</h2>
+
+    <div class="grid2" style="margin-top:24px; align-items:start">
+      <div>
+        <h3 style="margin-bottom:12px">Launcher</h3>
+        <div class="launcher">
+          <div class="launcher-grid">
+            <div class="app-tile"><div class="tile-placeholder"></div><span>Files</span></div>
+            <div class="app-tile hero">
+              <img src="aeternum-icon-1024.png" alt="ícone Aeternum">
+              <span>Aeternum</span>
+            </div>
+            <div class="app-tile"><div class="tile-placeholder"></div><span>Obsidian</span></div>
+          </div>
+        </div>
+        <p style="font-size:13px; color:var(--faint); margin-top:12px">Na gaveta, a
+        inversa faz o contrário dos vizinhos escuros: o tile claro com o Æ midnight
+        chama o olho sem gritar — e o nome embaixo é finalmente o nome de verdade.</p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:12px">Splash / abertura</h3>
+        <div class="splash">
+          <svg width="120" viewBox="0 0 2944 1536" fill="none" aria-label="Monograma Æ">
+            <g transform="translate(0 1536) scale(1 -1)" fill="#F4EFE7"><use href="#ae-glyph"/></g>
+          </svg>
+          <div class="wordmark"><span class="ae">Æ</span>TERNUM</div>
+          <div class="tagline" style="font-size:10px">Nada se perde.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin-bottom:4px">Lockup horizontal</h3>
+      <p style="font-size:13px; color:var(--faint)">Para cabeçalhos fora do app: dashboard
+      publicável, documentos, o README do vault. (Asset: <code>aeternum-wordmark.svg</code> /
+      <code>.png</code>.)</p>
+      <div class="lockup">
+        <img src="aeternum-wordmark.png" alt="ÆTERNUM" style="height:34px; width:auto">
+      </div>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <!-- ───────────────────────── 5. ARQUIVOS & PRÓXIMOS PASSOS ───────────────────────── -->
+  <section id="arquivos">
+    <div class="eyebrow">05 — Arquivos entregues &amp; próximos passos</div>
+    <h2>O que existe agora, o que falta ligar</h2>
+
+    <div class="card" style="margin-top:24px">
+      <div class="files">
+        <div class="file-row"><span class="fname">design/aeternum-mark.svg</span><span class="fdesc">monograma Æ (glifo do Michroma) — fonte canônica</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-icon.svg</span><span class="fdesc">ícone do app — inversa: Æ midnight sobre branco, raio 114</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-wordmark.svg</span><span class="fdesc">palavra-marca — Æ bronze + TTERNUM branco</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-loop.svg</span><span class="fdesc">anel do loop — reserva / uso cerimonial</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-icon-1024.png</span><span class="fdesc">ícone 1024×1024 p/ Expo (inversa: midnight sobre branco)</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-mark-1024.png</span><span class="fdesc">monograma 1024 branco, transparente, p/ splash e docs</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-adaptive-fg-1024.png</span><span class="fdesc">foreground do adaptive icon (Æ midnight; background #F4EFE7)</span></div>
+        <div class="file-row"><span class="fname">design/aeternum-wordmark.png</span><span class="fdesc">palavra-marca em faixa (512px de altura) p/ docs</span></div>
+        <div class="file-row"><span class="fname">design/Michroma-Regular.ttf + OFL-Michroma.txt</span><span class="fdesc">fonte da marca + licença (SIL OFL 1.1)</span></div>
+        <div class="file-row"><span class="fname">design/gerar-marca.py</span><span class="fdesc">gerador — extrai o glifo da TTF e regenera tudo</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="margin-bottom:12px">Próximos passos (após aprovação)</h3>
+      <ul class="tight">
+        <li><strong>Renomear o app:</strong> <code>app.json</code> →
+        <code>"name": "Aeternum"</code> (hoje "escritório"). Slug e package ficam —
+        são identificadores técnicos, não marca.</li>
+        <li><strong>Ligar os assets:</strong> criar <code>app/assets/</code> com
+        <code>icon.png</code>, <code>adaptive-icon.png</code> (foreground Æ midnight
+        + background <code>#F4EFE7</code>) e <code>splash-icon.png</code> (Æ branco,
+        fundo <code>#080A0D</code>), referenciados no <code>app.json</code>.</li>
+        <li><strong>Splash:</strong> fundo <code>#080A0D</code>, monograma Æ branco
+        centrado — sem texto (a tagline mora na proposta, não no boot do app).</li>
+        <li><strong>Opcional:</strong> embutir <code>Michroma-Regular.ttf</code> no app
+        via expo-font se a palavra-marca aparecer como texto dentro da UI (ex.: tela
+        de Ajustes); caso contrário, usar os assets.</li>
+        <li><strong>Opcional:</strong> o Æ como favicon do dashboard publicável no
+        GitHub, quando o C12 sair da lane batch.</li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

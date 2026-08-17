@@ -150,8 +150,10 @@ export default function Mesa({ onOpenTab }: { onOpenTab?: (tab: string) => void 
           </>
         ) : grupos.map((grupo) => (
           <View key={grupo.titulo} style={styles.group}>
+            {/* Régua de grupo aprovada na C: eyebrow mono, filete, contador. */}
             <View style={styles.groupHeader}>
               <Text style={styles.groupTitle}>{grupo.titulo}</Text>
+              <View style={styles.groupRule} />
               <Text style={styles.groupCount}>{grupo.itens.length}</Text>
             </View>
             {grupo.itens.map((item) => {
@@ -186,7 +188,8 @@ const styles = StyleSheet.create({
   partial: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
   partialText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
   group: { marginBottom: spacing.xl },
-  groupHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
-  groupTitle: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1.4, textTransform: "uppercase" },
-  groupCount: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1.4 },
+  groupHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm, marginHorizontal: 2 },
+  groupTitle: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 1.8, textTransform: "uppercase" },
+  groupRule: { flex: 1, height: 1, backgroundColor: colors.border, marginHorizontal: 10 },
+  groupCount: { fontFamily: fonts.mono, fontSize: 9, color: colors.faint, letterSpacing: 0.8 },
 });

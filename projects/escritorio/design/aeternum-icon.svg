@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Ícone do app — inversa: Æ (Michroma) midnight sobre branco. -->
+  <rect width="512" height="512" rx="114" fill="#F4EFE7"/>
+  <rect x="1" y="1" width="510" height="510" rx="113" fill="none" stroke="rgba(24,17,8,0.10)" stroke-width="2"/>
+  <g transform="translate(87.0 167.8) scale(0.11478)">
+    <g transform="translate(0 1536) scale(1 -1)" fill="#181108">
+      <path d="M0 0 1408 1536H2944V1376H1664V864H2880V704H1664V160H2944V0H1472V352H582L256 0ZM704 512H1472V1376Z"/>
+    </g>
+  </g>
+</svg>

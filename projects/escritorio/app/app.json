@@ -1,21 +1,35 @@
 {
   "expo": {
-    "name": "escritório",
+    "name": "Aeternum",
     "slug": "escritorio-app",
     "owner": "suwkz",
     "version": "0.2.3",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "android": {
       "package": "com.leo.escritorio",
       "versionCode": 6,
       "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F4EFE7"
+      },
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       "./plugins/withCleartextTraffic",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#080A0D"
+        }
+      ],
       "expo-notifications",
       "expo-secure-store",
       [

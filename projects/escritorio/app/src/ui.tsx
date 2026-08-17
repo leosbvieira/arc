@@ -134,6 +134,9 @@ export function PointTag({ pontos, aceso = false }: { pontos: number; aceso?: bo
   );
 }
 
+// Chip de fila (decisão 07=C): moldura neutra, mono miúdo, ponto de 4px na cor
+// da fila. O número vem ANTES do rótulo e na cor do texto — a única cor é o
+// ponto. Nunca borda ou número coloridos (foi o badge colorido que afundou a D).
 export function Badge({
   label,
   value,
@@ -144,10 +147,10 @@ export function Badge({
   color?: string;
 }) {
   return (
-    <View style={[styles.badge, { borderColor: `${color}55` }]}>
+    <View style={styles.badge}>
       <View style={[styles.badgeDot, { backgroundColor: color }]} />
+      {value !== undefined ? <Text style={styles.badgeValue}>{value}</Text> : null}
       <Text style={styles.badgeLabel}>{label}</Text>
-      {value !== undefined ? <Text style={[styles.badgeValue, { color }]}>{value}</Text> : null}
     </View>
   );
 }
@@ -351,14 +354,18 @@ export function QuestRow({
 }
 
 // Barra segmentada: bronze para ciclo, sálvia para "feito". Sem glow.
+// outlineNext (decisão 09=C): o segmento seguinte aos cheios fica vazado com
+// filete na cor do tom — o "vem agora" se lê sem encher barra que não encheu.
 export function SegmentBar({
   value,
   segments = 10,
   tone = "bronze",
+  outlineNext = false,
 }: {
   value: number; // 0..1
   segments?: number;
   tone?: "bronze" | "sage";
+  outlineNext?: boolean;
 }) {
   const filled = Math.round(Math.max(0, Math.min(1, value)) * segments);
   const on = tone === "sage" ? colors.success : colors.primary;
@@ -367,7 +374,16 @@ export function SegmentBar({
       {Array.from({ length: segments }, (_, i) => (
         <View
           key={i}
-          style={[styles.segItem, { backgroundColor: i < filled ? on : SEG_OFF }]}
+          style={[
+            styles.segItem,
+            { backgroundColor: i < filled ? on : SEG_OFF },
+            outlineNext &&
+              i === filled && {
+                backgroundColor: "transparent",
+                borderWidth: 1,
+                borderColor: `${on}8C`,
+              },
+          ]}
         />
       ))}
     </View>
@@ -423,20 +439,27 @@ export function PendRow({
 
 // O fim do rito devolve o que ele produziu. Usa só o que getPontos() já traz
 // (saldo, nível, ciclo) — SEM linha de streak: o BFF não expõe sequência
-// corrida, e nenhum número se inventa. `pontosHoje` vem da tabela POINTS
-// (provisória, display-only): é o número que o botão prometeu. Tipografia da
-// onda 2 entregue: herói em display/Syne Bold, metadados em mono.
+// corrida, e nenhum número se inventa. Pelo mesmo motivo o SALDO mostra só o
+// valor atual: o "antes → depois" da decisão 10=C pede o saldo anterior, que o
+// BFF não devolve. `pontosHoje` vem da tabela POINTS (provisória, display-only):
+// é o número que o botão prometeu. Tipografia da onda 2 entregue: herói em
+// display/Syne Bold, metadados em mono. O bronze do herói ficou só no "+" —
+// os dígitos são cor do texto (decisão 10=C).
 // Entra em fade + subida, 320ms.
 export function RewardSheet({
   pontosHoje,
   placar,
   ritmosFeitos,
   ritmosTotal,
+  onBoaNoite,
+  onVerSemMarcar,
 }: {
   pontosHoje: number;
   placar: Pontos | null;
   ritmosFeitos: number;
   ritmosTotal: number;
+  onBoaNoite?: () => void;
+  onVerSemMarcar?: () => void;
 }) {
   const enter = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -451,7 +474,10 @@ export function RewardSheet({
   return (
     <Animated.View style={[styles.reward, animatedStyle]}>
       <Text style={styles.rewardCrumb}>dia fechado · registro gravado</Text>
-      <Text style={styles.rewardHero}>+{pontosHoje}</Text>
+      <Text style={styles.rewardHero}>
+        <Text style={{ color: colors.primary }}>+</Text>
+        {pontosHoje}
+      </Text>
       <Text style={styles.rewardHeroLabel}>PONTOS DE HOJE</Text>
 
       {placar ? (
@@ -506,6 +532,25 @@ export function RewardSheet({
             />
           </View>
         </View>
+      ) : null}
+
+      {/* Saída de um toque (decisão 10=C): antes o dia fechado não devolvia
+          caminho — só tabbar ou gesto. O bronze do BigAction é a exceção
+          declarada de "um bronze por tela", já citada no cabeçalho dele. */}
+      {onBoaNoite ? (
+        <View style={{ marginTop: 24 }}>
+          <BigAction title="Boa noite" onPress={onBoaNoite} />
+        </View>
+      ) : null}
+      {onVerSemMarcar ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="ver o que ficou sem marcar"
+          onPress={onVerSemMarcar}
+          style={({ pressed }) => [styles.rewardGhost, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.rewardGhostText}>ver o que ficou sem marcar</Text>
+        </Pressable>
       ) : null}
     </Animated.View>
   );
@@ -571,13 +616,13 @@ const styles = StyleSheet.create({
     gap: 7,
     minHeight: 32,
     borderWidth: 1,
-    backgroundColor: "rgba(255,255,255,0.025)",
+    borderColor: colors.border,
     borderRadius: radius.pill,
-    paddingHorizontal: 11,
+    paddingHorizontal: 12,
   },
-  badgeDot: { width: 5, height: 5, borderRadius: 3 },
-  badgeLabel: { fontFamily: fonts.ui, fontSize: 11.5, color: colors.textMuted },
-  badgeValue: { fontFamily: fonts.mono, fontSize: 11 },
+  badgeDot: { width: 4, height: 4, borderRadius: 2 },
+  badgeLabel: { fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, letterSpacing: 0.3 },
+  badgeValue: { fontFamily: fonts.mono, fontSize: 10, color: colors.text },
   progressTrack: {
     height: 5,
     borderRadius: radius.pill,
@@ -734,7 +779,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.displayBold,
     fontSize: 56,
     letterSpacing: -0.5,
-    color: colors.primary,
+    color: colors.text,
     textAlign: "center",
     marginTop: 10,
   },
@@ -786,4 +831,19 @@ const styles = StyleSheet.create({
   },
   rewardCycleLeft: { fontFamily: fonts.mono, fontSize: 9, color: colors.faint },
   rewardCycleRight: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted },
+  rewardGhost: {
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+  },
+  rewardGhostText: {
+    fontFamily: fonts.mono,
+    fontSize: 10.5,
+    letterSpacing: 0.4,
+    color: colors.textMuted,
+  },
 });

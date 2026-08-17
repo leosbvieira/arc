@@ -921,7 +921,7 @@ const styles = StyleSheet.create({
   reviewHead: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: spacing.md },
   reviewEyebrow: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted, letterSpacing: 1 },
   reviewTitle: { fontFamily: fonts.uiSemi, fontSize: 18, color: colors.text, marginTop: 3 },
-  reviewPct: { fontFamily: fonts.display, fontSize: 30, color: colors.primary },
+  reviewPct: { fontFamily: fonts.display, fontSize: 30, color: colors.text },
   monthPct: { fontFamily: fonts.display, fontSize: 26, color: colors.text },
   metricas: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   metrica: { minWidth: "21%", flexGrow: 1, backgroundColor: colors.card2, borderRadius: radius.md, padding: spacing.sm },

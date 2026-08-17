@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aeternum — App × HTML × Proposta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080A0D; --bg-raised:#0C0F13; --surface:#0E1116; --card:#15191F; --card2:#11151A;
+  --line:rgba(235,222,202,0.11); --line-strong:rgba(235,222,202,0.20);
+  --text:#F4EFE7; --muted:#9A9BA3; --faint:#5F626B;
+  --bronze:#DEB878; --bronze-press:#B6935C; --bronze-text:#1B1409; --bronze-soft:rgba(222,184,120,0.12);
+  --sage:#71B49A; --sage-soft:rgba(113,180,154,0.12);
+  --danger:#D77969; --info:#7D9FD0; --lilac:#A99ACB;
+  --font-display:"Syne","Bricolage Grotesque",system-ui,sans-serif;
+  --font-ui:"Bricolage Grotesque",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:#05070A}
+body{background:#05070A;color:var(--text);font-family:var(--font-ui);font-size:15px;line-height:1.55}
+.wrap{max-width:1400px;margin:0 auto;padding:52px 36px 90px}
+
+/* ===== cabeçalho do documento ===== */
+.doc-head{border-bottom:1px solid var(--line);padding-bottom:30px}
+.doc-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:2.2px;color:var(--bronze);text-transform:uppercase}
+.doc-title{font-family:var(--font-display);font-size:38px;font-weight:700;letter-spacing:-.5px;line-height:1.1;margin-top:12px}
+.doc-title em{font-style:normal;color:var(--bronze)}
+.doc-meta{margin-top:14px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted);letter-spacing:.4px;line-height:1.7}
+.direction{margin-top:20px;padding:15px 19px;border:1px solid var(--line-strong);border-radius:14px;background:var(--card2);font-size:13.5px;color:var(--muted);line-height:1.6}
+.direction b{color:var(--text);font-weight:600}
+
+.legend{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px}
+.lgc{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card2)}
+.lgc .l-n{font-family:var(--font-mono);font-size:9px;letter-spacing:1.8px;text-transform:uppercase}
+.lgc.la .l-n{color:var(--muted)} .lgc.lb .l-n{color:var(--bronze)} .lgc.lc .l-n{color:var(--sage)}
+.lgc p{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.55}
+
+.idx{margin-top:20px;display:flex;flex-wrap:wrap;gap:8px}
+.idx a{font-family:var(--font-mono);font-size:9.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:5px 11px;text-decoration:none;letter-spacing:.3px}
+.idx a:hover{color:var(--text);border-color:var(--line-strong)}
+
+/* ===== linha de comparação ===== */
+.cmp{margin-top:60px;border-top:1px solid var(--line);padding-top:20px}
+.cmp-head{display:flex;align-items:baseline;gap:13px;flex-wrap:wrap}
+.cmp-n{font-family:var(--font-mono);font-size:11px;color:var(--bronze);letter-spacing:1px}
+.cmp-head h3{font-family:var(--font-display);font-size:19px;font-weight:600;letter-spacing:-.2px}
+.cmp-tag{font-family:var(--font-mono);font-size:8px;letter-spacing:1.3px;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2.5px 8px}
+.cmp-rec{margin-left:auto;font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.2px;text-transform:uppercase;border-radius:999px;padding:4px 11px;border:1px solid}
+.rec-b{color:var(--bronze);border-color:rgba(222,184,120,.4)}
+.rec-c{color:var(--sage);border-color:rgba(113,180,154,.45)}
+.cmp-sub{font-size:12.5px;color:var(--muted);margin-top:8px;max-width:960px}
+.cmp-sub b{color:var(--text);font-weight:600}
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:16px}
+.col-h{font-family:var(--font-mono);font-size:9px;letter-spacing:1.8px;text-transform:uppercase;margin-bottom:8px}
+.col-h.a{color:var(--muted)} .col-h.b{color:var(--bronze)} .col-h.c{color:var(--sage)}
+.mock{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:16px;position:relative;overflow:hidden;min-height:120px}
+.mock.pick{border-color:rgba(113,180,154,.45)}
+.mock.pickb{border-color:rgba(222,184,120,.4)}
+.col-note{font-size:11.5px;color:var(--muted);margin-top:9px;line-height:1.55}
+.col-note b{color:var(--text);font-weight:600}
+.col-note code{font-family:var(--font-mono);font-size:10px;color:var(--faint)}
+
+/* ===== fragmentos reutilizáveis ===== */
+.crumb{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+.qg{font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.7px;color:var(--muted);text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+.qg .qc{color:var(--faint)}
+.qg .rule{flex:1;height:1px;background:var(--line);margin:0 10px}
+.tr{display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(235,222,202,.07)}
+.tr:last-child{border-bottom:none}
+.tn{flex:1;font-size:13px;font-weight:500;line-height:1.25;min-width:0}
+.tdue{font-family:var(--font-mono);font-size:8px;color:var(--faint)}
+.tpts{font-family:var(--font-mono);font-size:10px;color:var(--faint);min-width:26px;text-align:right}
+.sgb{display:flex;gap:3px}
+.sgb i{flex:1;height:5px;border-radius:2px;background:rgba(235,222,202,.09)}
+.sgb i.on{background:var(--sage)}
+.sgb.bronze i.on{background:var(--bronze)}
+.sgb i.next{background:transparent;box-shadow:inset 0 0 0 1px rgba(113,180,154,.55)}
+.fc{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-family:var(--font-mono);font-size:9.5px;color:var(--muted);letter-spacing:.3px}
+.fc b{font-weight:500;color:var(--text)}
+.stat2{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;flex:1;min-width:0}
+.ba{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:var(--bronze);color:var(--bronze-text);border-radius:13px;border-bottom:2px solid var(--bronze-press);min-height:54px;font-weight:600;font-size:14px}
+.ba .sub{font-family:var(--font-mono);font-size:9px;opacity:.72;font-weight:500}
+.gh{display:flex;align-items:center;justify-content:center;min-height:38px;border:1px solid var(--line);border-radius:11px;color:var(--muted);font-family:var(--font-mono);font-size:9.5px;letter-spacing:.4px}
+.hq2{border-radius:15px;padding:15px;background:linear-gradient(135deg,#1B1712 0%,#12151A 60%,#0E1116 100%);border:1px solid var(--line-strong)}
+.cta{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:11.5px;color:var(--bronze-text);background:var(--bronze);border-bottom:2px solid var(--bronze-press);border-radius:9px;padding:8px 13px}
+.stk{display:flex;flex-direction:column;gap:6px}
+.stk .bl{border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.1px;color:var(--muted);text-transform:uppercase;background:var(--card2)}
+.stk .bl.hi{color:var(--text);border-color:var(--line-strong)}
+.stk .bl.off{opacity:.45}
+
+.footer{margin-top:70px;padding-top:22px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10px;color:var(--muted);letter-spacing:.5px;line-height:1.8}
+.open{margin-top:56px;border:1px solid var(--line-strong);border-radius:16px;background:var(--card2);padding:20px 22px}
+.open h3{font-family:var(--font-display);font-size:17px;font-weight:600;letter-spacing:-.2px}
+.open ul{list-style:none;margin-top:12px}
+.open li{position:relative;padding:8px 0 8px 20px;font-size:12.5px;color:var(--muted);line-height:1.6;border-bottom:1px solid var(--line)}
+.open li:last-child{border-bottom:none}
+.open li::before{content:"—";position:absolute;left:0;color:var(--bronze);font-family:var(--font-mono);font-size:11px;top:9px}
+.open li b{color:var(--text);font-weight:600}
+.open li code{font-family:var(--font-mono);font-size:10.5px;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc-head">
+  <div class="doc-eyebrow">aeternum · escritório · auditoria visual</div>
+  <h1 class="doc-title">App × HTML × <em>Proposta</em></h1>
+  <div class="doc-meta">
+    10 ago 2026 · fontes: <span style="color:var(--text)">app/src/screens/*</span> (código de hoje) × <span style="color:var(--text)">design/proposta-c2-sobria.html</span> (aprovada) · 14 divergências
+  </div>
+  <div class="direction">
+    Cada linha abaixo mostra a mesma peça em três versões: <b>A — como está no app hoje</b>, <b>B — como o HTML aprovado desenhou</b> e <b>C — uma terceira proposta minha</b>. A coluna A reflete o código atual: o checkbox que você viu como círculo no aparelho <b>já virou quadrado no código</b> (entra no próximo reload) — o que ainda diverge nele é o núcleo tingido. Nada desta página está aplicado: ela decide o que entra na próxima onda.
+  </div>
+  <div class="legend">
+    <div class="lgc la"><div class="l-n">A · app hoje</div><p>O que o código faz agora. Nem tudo é erro: várias peças nasceram antes da C2 e nunca foram revisitadas.</p></div>
+    <div class="lgc lb"><div class="l-n">B · HTML aprovado (C2 sóbria)</div><p>A baseline que você aprovou. Bronze raro, sálvia de confirmação, mono para número vivo.</p></div>
+    <div class="lgc lc"><div class="l-n">C · nova proposta</div><p>Minha terceira via: quase sempre B com um ajuste de tacto — nunca um terceiro sistema visual.</p></div>
+  </div>
+  <nav class="idx">
+    <a href="#d1">01 checkbox</a><a href="#d2">02 saudação</a><a href="#d3">03 selo de nível</a><a href="#d4">04 brilho</a><a href="#d5">05 herói</a><a href="#d6">06 cabeçalho de seção</a><a href="#d7">07 filas</a><a href="#d8">08 agenda</a><a href="#d9">09 ritmos</a><a href="#d10">10 recompensa</a><a href="#d11">11 despejo</a><a href="#d12">12 cabeçalho tarefas</a><a href="#d13">13 ordem da home</a><a href="#d14">14 agrupamento</a>
+  </nav>
+</header>
+
+<!-- ============ 01 · CHECKBOX DE TAREFA ============ -->
+<section class="cmp" id="d1">
+  <div class="cmp-head">
+    <span class="cmp-n">01</span><h3>Checkbox de tarefa</h3>
+    <span class="cmp-tag">visual · tarefas</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O círculo que você viu no aparelho já morreu no código. O que resta de divergência: o app <b>tinge o núcleo</b> com a cor da área (<code>${cor}20</code>); o HTML manda <b>quadrado vazio, borda na cor da área</b>.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div class="tr">
+          <div style="width:34px;height:34px;flex:none;border-radius:10px;border:1.5px solid rgba(201,169,126,.67);display:flex;align-items:center;justify-content:center"><div style="width:11px;height:11px;border-radius:3.5px;background:rgba(201,169,126,.13)"></div></div>
+          <div class="tn"><span style="font-family:var(--font-mono);font-size:8px;letter-spacing:1px;color:#C9A97E">TRABALHO</span><br>Revisar contrato do escritório</div>
+          <span class="tpts">+10</span>
+        </div>
+        <div class="tr">
+          <div style="width:34px;height:34px;flex:none;border-radius:10px;border:1.5px solid rgba(201,188,126,.67);display:flex;align-items:center;justify-content:center"><div style="width:11px;height:11px;border-radius:3.5px;background:rgba(201,188,126,.13)"></div></div>
+          <div class="tn"><span style="font-family:var(--font-mono);font-size:8px;letter-spacing:1px;color:#C9BC7E">ESTUDO</span><br>Ler 20 páginas do Shannon</div>
+          <span class="tpts">+10</span>
+        </div>
+      </div>
+      <p class="col-note">Quadrado arredondado de 40px com <b>núcleo pré-tingido</b> — parece seleção antes da hora. Antes do fix de hoje era círculo (o que você viu no build).</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="tr">
+          <div style="width:24px;height:24px;flex:none;border-radius:7px;border:1.5px solid #C9A97E"></div>
+          <div class="tn">Revisar contrato do escritório</div>
+          <span class="tdue">hoje</span><span class="tpts">+10</span>
+        </div>
+        <div class="tr">
+          <div style="width:24px;height:24px;flex:none;border-radius:7px;border:1.5px solid #71B49A;background:#71B49A;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0B100D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <div class="tn" style="color:var(--faint)">Enviar a NF de julho</div>
+          <span class="tdue">hoje</span><span class="tpts" style="color:var(--sage)">+10</span>
+        </div>
+        <div class="tr">
+          <div style="width:24px;height:24px;flex:none;border-radius:7px;border:1.5px solid #C9BC7E"></div>
+          <div class="tn">Ler 20 páginas do Shannon</div>
+          <span class="tdue"></span><span class="tpts">+10</span>
+        </div>
+      </div>
+      <p class="col-note">Quadrado de 24px, borda na cor da área, <b>sem núcleo</b>. Feito = sálvia cheia + check midnight. O problema: 24px é alvo de toque pequeno demais.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="tr">
+          <div style="width:40px;height:40px;flex:none;border:1px dashed rgba(235,222,202,.14);border-radius:12px;display:flex;align-items:center;justify-content:center"><div style="width:24px;height:24px;border-radius:7px;border:1.5px solid #C9A97E"></div></div>
+          <div class="tn">Revisar contrato do escritório</div>
+          <span class="tdue">hoje</span><span class="tpts">+10</span>
+        </div>
+        <div class="tr">
+          <div style="width:40px;height:40px;flex:none;border:1px dashed rgba(235,222,202,.14);border-radius:12px;display:flex;align-items:center;justify-content:center"><div style="width:24px;height:24px;border-radius:7px;border:1.5px solid #71B49A;background:#71B49A;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0B100D" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div></div>
+          <div class="tn" style="color:var(--faint)">Enviar a NF de julho</div>
+          <span class="tdue">hoje</span><span class="tpts" style="color:var(--sage)">+10</span>
+        </div>
+      </div>
+      <p class="col-note"><b>O desenho de B com o alvo de toque de A:</b> visual de 24px dentro de uma zona de toque de 40px (tracejado só para ilustrar — invisível no app).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 · SAUDAÇÃO ============ -->
+<section class="cmp" id="d2">
+  <div class="cmp-head">
+    <span class="cmp-n">02</span><h3>Saudação — o "Leo." em bronze</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">A C2 é explícita: <b>"o 'Leo.' em bronze da Home atual morre — bronze é raro agora"</b>. O app ainda pinta o nome.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div class="crumb">quinta-feira, 07 de agosto</div>
+        <div style="font-family:var(--font-display);font-size:26px;font-weight:600;letter-spacing:-.3px;margin-top:4px">boa noite, <span style="color:var(--bronze)">Leo.</span></div>
+      </div>
+      <p class="col-note">Nome em bronze (Syne 30 no app). Bronze em texto corrido — exatamente o que a lei nova proíbe.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="crumb">quinta-feira, 07 de agosto</div>
+        <div style="font-family:var(--font-display);font-size:26px;font-weight:600;letter-spacing:-.3px;margin-top:4px">Boa noite, Leo.</div>
+      </div>
+      <p class="col-note">Tudo na cor do texto. A saudação é o momento Syne da tela — e só.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="crumb">quinta-feira, 07 de agosto</div>
+        <div style="font-family:var(--font-display);font-size:26px;font-weight:600;letter-spacing:-.3px;margin-top:4px">Boa noite, Leo<span style="color:var(--bronze)">.</span></div>
+      </div>
+      <p class="col-note">B com <b>um glifo</b> de marca: só o ponto final em bronze — o mesmo pingo de bronze do "Æ" no wordmark. Um pixel de identidade, zero gritaria.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 03 · SELO DE NÍVEL ============ -->
+<section class="cmp" id="d3">
+  <div class="cmp-head">
+    <span class="cmp-n">03</span><h3>Selo de nível</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app transformou o nível num <b>medalhão bronze de 50px</b>; a C2 manda <b>moldura fina neutra</b>. Um bronze a menos no topo.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock" style="display:flex;justify-content:center">
+        <div style="width:50px;height:50px;border-radius:50%;border:1px solid rgba(222,184,120,.35);background:var(--bronze-soft);display:flex;flex-direction:column;align-items:center;justify-content:center">
+          <span style="font-family:var(--font-mono);font-size:7px;letter-spacing:1px;color:var(--bronze)">NÍVEL</span>
+          <span style="font-family:var(--font-display);font-size:18px;font-weight:600;line-height:1.2">4</span>
+        </div>
+      </div>
+      <p class="col-note">Círculo bronze com fundo <code>primarySoft</code> — compete com o CTA do herói logo abaixo.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock" style="display:flex;justify-content:center">
+        <div style="text-align:center;border:1px solid var(--line-strong);border-radius:13px;padding:8px 13px">
+          <div style="font-family:var(--font-mono);font-size:7px;letter-spacing:1.4px;color:var(--muted)">NÍVEL</div>
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;line-height:1.2">4</div>
+        </div>
+      </div>
+      <p class="col-note">Moldura neutra de cantos retos. O número fala, a moldura cala.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick" style="display:flex;justify-content:center">
+        <div style="text-align:center;border:1px dashed rgba(235,222,202,.14);border-radius:10px;padding:8px 13px">
+          <div style="font-family:var(--font-mono);font-size:7px;letter-spacing:1.4px;color:var(--muted)">NÍVEL</div>
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;line-height:1.2">4</div>
+        </div>
+      </div>
+      <p class="col-note"><b>Sem moldura nenhuma</b> — tipografia pura (o tracejado é só a zona de toque, invisível no app). Abre a Revisão igual; zero chrome.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 04 · BRILHO NO TOPO ============ -->
+<section class="cmp" id="d4">
+  <div class="cmp-head">
+    <span class="cmp-n">04</span><h3>Brilho ambiente no topo</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app acende uma <b>mancha radial bronze</b> atrás da saudação (<code>glowTop</code>). A C2 não tem glow nenhum — luz ambiente não é da linguagem.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock" style="background:radial-gradient(150px 120px at 88% -10%, rgba(222,184,120,.16), transparent 70%), var(--bg)">
+        <div class="crumb">quinta-feira, 07 de agosto</div>
+        <div style="font-family:var(--font-display);font-size:24px;font-weight:600;letter-spacing:-.3px;margin-top:4px">boa noite, <span style="color:var(--bronze)">Leo.</span></div>
+        <div style="height:14px"></div>
+      </div>
+      <p class="col-note">Glow de 270px, <code>rgba(222,184,120,0.055)</code> — aqui exagerado para enxergar. É a única luz "acesa" do app.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="crumb">quinta-feira, 07 de agosto</div>
+        <div style="font-family:var(--font-display);font-size:24px;font-weight:600;letter-spacing:-.3px;margin-top:4px">Boa noite, Leo.</div>
+        <div style="height:14px"></div>
+      </div>
+      <p class="col-note">Fundo plano. A tela é papel, não palco.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="crumb">quinta-feira, 07 de agosto</div>
+        <div style="font-family:var(--font-display);font-size:24px;font-weight:600;letter-spacing:-.3px;margin-top:4px">Boa noite, Leo.</div>
+        <div style="height:1px;background:linear-gradient(90deg, rgba(222,184,120,.5), transparent 70%);margin-top:12px"></div>
+      </div>
+      <p class="col-note">Troca a luz por <b>traço</b>: filete de 1px bronze→transparente sob a saudação. Marca o topo da página como uma régua — luz desenhada, não acesa.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 · HERÓI ============ -->
+<section class="cmp" id="d5">
+  <div class="cmp-head">
+    <span class="cmp-n">05</span><h3>Herói — a próxima ação</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app cercou o herói de bronze: <b>borda, chip de ícone, link e seta</b>. A C2 deixa <b>um bronze só: o botão "Abrir agora"</b>.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div style="border-radius:16px;padding:15px;position:relative;background:linear-gradient(135deg,#27231D,#171B1D 55%,#12161B);border:1px solid rgba(222,184,120,.19)">
+          <div style="position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:50%;background:rgba(222,184,120,.1);border:1px solid rgba(222,184,120,.18);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#DEB878" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+          <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.6px;color:var(--bronze);text-transform:uppercase">próxima ação · 19h00</div>
+          <div style="font-family:var(--font-display);font-size:20px;font-weight:600;letter-spacing:-.2px;line-height:1.2;margin-top:8px;max-width:80%">Shutdown: fecha o trabalho</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;max-width:88%;line-height:1.45">2 tarefas abertas · 1 follow-up · staging com 3 itens.</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+            <span style="font-weight:600;font-size:11.5px;color:var(--bronze)">abrir agora <span style="font-family:var(--font-mono);font-size:9px;color:var(--faint);font-weight:400">vale +30</span></span>
+            <span style="width:30px;height:30px;border-radius:50%;background:var(--bronze);display:inline-flex;align-items:center;justify-content:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#181108" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">Quatro bronzes: borda, chip, link, seta. Gradiente mais quente que o da C2 (<code>#27231D</code> no topo).</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="hq2">
+          <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.7px;color:var(--bronze);text-transform:uppercase">próxima ação · 19h00</div>
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;letter-spacing:-.2px;line-height:1.2;margin-top:8px">Shutdown: fecha o trabalho</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45">2 tarefas abertas · 1 follow-up · staging com 3 itens. Saia sabendo o que vem amanhã.</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+            <span class="cta">Abrir agora</span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--faint)">vale +30</span>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">Sem chip, borda neutra, gradiente <code>#1B1712→#0E1116</code>. Um bronze: o CTA cheio.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="hq2">
+          <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.7px;color:var(--bronze);text-transform:uppercase">próxima ação · 19h00</div>
+          <div style="font-family:var(--font-display);font-size:18px;font-weight:600;letter-spacing:-.2px;line-height:1.2;margin-top:8px">Shutdown: fecha o trabalho</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45">2 tarefas abertas · 1 follow-up · staging com 3 itens. Saia sabendo o que vem amanhã.</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+            <span class="cta">Abrir agora <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1B1409" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg></span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--faint)">vale +30</span>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">B, com a <b>seta dentro do botão</b> — herda o gesto que o app já ensinou (↗ = abrir), sem criar cor nova. O alvo de toque inteiro vira o CTA.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 06 · CABEÇALHO DE SEÇÃO ============ -->
+<section class="cmp" id="d6">
+  <div class="cmp-head">
+    <span class="cmp-n">06</span><h3>Cabeçalho de seção</h3>
+    <span class="cmp-tag">visual · home + tarefas</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app usa <b>eyebrow bronze + título 21px</b> ("FILAS / Em espera"). A C2 usa <b>uma linha mono quieta</b> ("EM ESPERA") — seção é régua, não manchete.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.5px;color:var(--bronze);text-transform:uppercase">filas</div>
+        <div style="font-family:var(--font-ui);font-weight:600;font-size:20px;letter-spacing:-.3px;margin-top:3px">Em espera</div>
+        <div style="height:10px"></div>
+        <div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:1.5px;color:var(--bronze);text-transform:uppercase">central de execução</div>
+        <div style="font-family:var(--font-ui);font-weight:600;font-size:20px;letter-spacing:-.3px;margin-top:3px">Tarefas</div>
+      </div>
+      <p class="col-note">Mesma peça na Home e nas Tarefas (<code>SectionHeader</code>): eyebrow bronze + título grande. Bronze em texto de apoio, de novo.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="qg"><span>EM ESPERA</span></div>
+        <div style="height:14px"></div>
+        <div class="qg"><span>AGORA</span><span class="qc">+120 na mesa</span></div>
+        <div style="height:14px"></div>
+        <div class="qg"><span>AGENDA CURTA</span></div>
+      </div>
+      <p class="col-note">Mono 9px muted, caixa alta, com metadado à direita quando há ("+120 na mesa"). Sem título display.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="qg"><span>EM ESPERA</span><span class="rule"></span><span class="qc">3</span></div>
+        <div style="height:14px"></div>
+        <div class="qg"><span>AGORA</span><span class="rule"></span><span class="qc">+120 na mesa</span></div>
+        <div style="height:14px"></div>
+        <div class="qg"><span>AGENDA CURTA</span><span class="rule"></span><span class="qc">2</span></div>
+      </div>
+      <p class="col-note">B com a <b>régua desenhada</b>: filete de 1px estica até a margem e ancora a contagem à direita. Doze linhas seguidas viram uma grade, não uma serrilha.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 07 · CHIPS EM ESPERA ============ -->
+<section class="cmp" id="d7">
+  <div class="cmp-head">
+    <span class="cmp-n">07</span><h3>Chips "Em espera"</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app colore <b>dot e número por fila</b> (azul triagem, lilás anki, bronze leituras). A C2: <b>chip neutro, número na cor do texto</b> — "a informação é o número, não a cor".</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="fc" style="border-color:rgba(125,159,208,.33)"><i style="width:5px;height:5px;border-radius:3px;background:#7D9FD0"></i>triagem <b style="color:#7D9FD0">3</b></span>
+          <span class="fc" style="border-color:rgba(169,154,203,.33)"><i style="width:5px;height:5px;border-radius:3px;background:#A99ACB"></i>Anki <b style="color:#A99ACB">5</b></span>
+          <span class="fc" style="border-color:rgba(222,184,120,.33)"><i style="width:5px;height:5px;border-radius:3px;background:#DEB878"></i>leituras <b style="color:#DEB878">2</b></span>
+        </div>
+      </div>
+      <p class="col-note">Três cores semânticas numa bandeja só — e uma delas é bronze, colidindo com o CTA do herói.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="fc"><b>3</b> triagem</span>
+          <span class="fc"><b>5</b> anki</span>
+          <span class="fc"><b>2</b> leituras</span>
+        </div>
+      </div>
+      <p class="col-note">Neutro total: número em texto, rótulo em muted. Lê-se na ordem certa: quanto → o quê.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="fc"><i style="width:4px;height:4px;border-radius:2px;background:#7D9FD0"></i><b>3</b> triagem</span>
+          <span class="fc"><i style="width:4px;height:4px;border-radius:2px;background:#A99ACB"></i><b>5</b> anki</span>
+          <span class="fc"><i style="width:4px;height:4px;border-radius:2px;background:#DEB878"></i><b>2</b> leituras</span>
+        </div>
+      </div>
+      <p class="col-note">B com um <b>ponto de 4px</b> na cor da fila: cor como <i>dado</i> (qual fila), não como tinta (quanto importa). Ajuda o scan sem acender a tela.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 08 · AGENDA ============ -->
+<section class="cmp" id="d8">
+  <div class="cmp-head">
+    <span class="cmp-n">08</span><h3>Hora na agenda curta</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app pinta <b>toda hora de bronze</b>. A C2 põe a hora em muted. Bronze é para o que exige ação, não para metadado.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div style="background:var(--card2);border:1px solid var(--line);border-radius:13px;padding:3px 13px">
+          <div style="display:flex;gap:11px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--bronze);width:36px">19:00</span>
+            <span style="font-size:13px;font-weight:600;flex:1">Shutdown do trabalho</span>
+            <span style="font-family:var(--font-mono);font-size:8px;color:var(--muted)">RITO</span>
+          </div>
+          <div style="display:flex;gap:11px;align-items:center;padding:9px 0">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--bronze);width:36px">21:00</span>
+            <span style="font-size:13px;font-weight:600;flex:1">Fechar o dia</span>
+            <span style="font-family:var(--font-mono);font-size:8px;color:var(--muted)">RITO</span>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">As duas horas em bronze (<code>agendaTime</code>) — o olho vai para o número errado.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:13px;padding:3px 13px">
+          <div style="display:flex;gap:11px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--muted);width:36px">19:00</span>
+            <span style="font-size:13px;font-weight:500;flex:1">Shutdown do trabalho</span>
+            <span style="font-family:var(--font-mono);font-size:8px;color:var(--faint)">RITO</span>
+          </div>
+          <div style="display:flex;gap:11px;align-items:center;padding:9px 0">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--muted);width:36px">21:00</span>
+            <span style="font-size:13px;font-weight:500;flex:1">Fechar o dia</span>
+            <span style="font-family:var(--font-mono);font-size:8px;color:var(--faint)">RITO</span>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">Hora em muted, evento em texto. Nada grita — mas nada diz <i>qual é a próxima</i>.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:13px;padding:3px 13px">
+          <div style="display:flex;gap:11px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text);width:36px"><i style="display:inline-block;width:4px;height:4px;border-radius:2px;background:var(--bronze);margin-right:5px;vertical-align:2px"></i>19:00</span>
+            <span style="font-size:13px;font-weight:600;flex:1">Shutdown do trabalho</span>
+            <span style="font-family:var(--font-mono);font-size:8px;color:var(--faint)">RITO</span>
+          </div>
+          <div style="display:flex;gap:11px;align-items:center;padding:9px 0">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--muted);width:36px"><i style="display:inline-block;width:4px;height:4px;margin-right:5px"></i>21:00</span>
+            <span style="font-size:13px;font-weight:500;flex:1">Fechar o dia</span>
+            <span style="font-family:var(--font-mono);font-size:8px;color:var(--faint)">RITO</span>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">Horas quietas, e <b>um ponto bronze de 4px marca só a próxima</b> — a mesma linguagem do "agora" que proponho para os chips. Um marcador, não uma coluna pintada.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 09 · BARRA DE RITMOS ============ -->
+<section class="cmp" id="d9">
+  <div class="cmp-head">
+    <span class="cmp-n">09</span><h3>Barra de ritmos</h3>
+    <span class="cmp-tag">visual · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">Os dois lados concordam na cor (sálvia = feito). Divergem na geometria: o app usa <b>barra contínua</b>, a C2 usa <b>segmentos</b> — um degrau por ritmo.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div class="stat2">
+          <div style="font-family:var(--font-mono);font-size:8px;letter-spacing:1.3px;color:var(--muted)">RITMOS</div>
+          <div style="font-family:var(--font-display);font-size:20px;font-weight:600;margin:6px 0 9px">5<span style="font-size:12px;color:var(--muted)">/8</span></div>
+          <div style="height:5px;border-radius:3px;background:rgba(235,222,202,.09)"><div style="width:62%;height:5px;border-radius:3px;background:var(--sage)"></div></div>
+        </div>
+      </div>
+      <p class="col-note"><code>ProgressBar</code> contínua. "62%" é abstrato — não dá para contar o que falta.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="stat2">
+          <div style="font-family:var(--font-mono);font-size:8px;letter-spacing:1.3px;color:var(--muted)">RITMOS</div>
+          <div style="font-family:var(--font-display);font-size:20px;font-weight:600;margin:6px 0 9px">5<span style="font-size:12px;color:var(--muted)">/8</span></div>
+          <div class="sgb"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+      <p class="col-note">Um segmento por ritmo: conta-se no olho ("faltam 3"). É a peça que o Placar já usa.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="stat2">
+          <div style="font-family:var(--font-mono);font-size:8px;letter-spacing:1.3px;color:var(--muted)">RITMOS</div>
+          <div style="font-family:var(--font-display);font-size:20px;font-weight:600;margin:6px 0 9px">5<span style="font-size:12px;color:var(--muted)">/8</span></div>
+          <div class="sgb"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="next"></i><i></i><i></i></div>
+        </div>
+      </div>
+      <p class="col-note">B com o <b>próximo degrau contornado</b>: a barra diz onde você está ("o sexto é o de agora"), não só quanto falta. No app, esse segmento respira uma vez ao entrar a tela.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 · FECHAR — RECOMPENSA ============ -->
+<section class="cmp" id="d10">
+  <div class="cmp-head">
+    <span class="cmp-n">10</span><h3>Fechar — recompensa sem saída</h3>
+    <span class="cmp-tag">funcional · fechar</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">A divergência mais grave: <b>o app termina o rito na RewardSheet e não dá saída</b> — sem "Boa noite", sem o ghost de revisão. A C2 desenha a tela inteira com <b>saída de um toque</b>.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock" style="text-align:center">
+        <div class="crumb" style="margin-bottom:8px">dia fechado · registro gravado</div>
+        <div style="font-family:var(--font-display);font-size:46px;font-weight:700;letter-spacing:-1px;line-height:1;color:var(--bronze)">+140</div>
+        <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.8px;color:var(--muted);margin-top:7px">PONTOS DE HOJE</div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:14px;text-align:left">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:1.3px;color:var(--muted)">SALDO</span>
+            <span style="font-family:var(--font-mono);font-size:14px">1.380</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:11px">
+            <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:1.3px;color:var(--muted)">NÍVEL 4</span>
+            <span style="display:flex;gap:4px">
+              <i style="width:8px;height:8px;background:var(--bronze);transform:rotate(45deg);border-radius:2px"></i><i style="width:8px;height:8px;background:var(--bronze);transform:rotate(45deg);border-radius:2px"></i><i style="width:8px;height:8px;background:var(--bronze);transform:rotate(45deg);border-radius:2px"></i><i style="width:8px;height:8px;background:var(--bronze);transform:rotate(45deg);border-radius:2px"></i><i style="width:8px;height:8px;border:1px solid var(--line-strong);transform:rotate(45deg);border-radius:2px"></i>
+            </span>
+          </div>
+        </div>
+        <div style="margin-top:14px;border:1px dashed rgba(215,121,105,.5);border-radius:10px;padding:8px;font-family:var(--font-mono);font-size:8.5px;color:var(--danger);letter-spacing:.5px">SEM SAÍDA — só tabbar ou gesto</div>
+      </div>
+      <p class="col-note">RewardSheet sozinha (<code>Fechar.tsx:255-269</code>). O dia fecha e o usuário fica preso na tela de troféu.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock" style="text-align:center">
+        <div class="crumb" style="margin-bottom:8px">dia fechado · registro gravado</div>
+        <div style="font-family:var(--font-display);font-size:46px;font-weight:700;letter-spacing:-1px;line-height:1;color:var(--bronze)">+140</div>
+        <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.8px;color:var(--muted);margin-top:7px">PONTOS DE HOJE</div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:14px;text-align:left">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:1.3px;color:var(--muted)">SALDO</span>
+            <span style="font-family:var(--font-mono);font-size:13px">1.240 → <b style="color:var(--text)">1.380</b></span>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;margin-top:8px">
+          <div class="stat2"><div style="font-family:var(--font-mono);font-size:7.5px;letter-spacing:1.2px;color:var(--muted)">SEQUÊNCIA</div><div style="font-family:var(--font-display);font-size:17px;font-weight:600;margin-top:4px">6 <span style="font-size:10px;color:var(--muted)">dias</span></div></div>
+          <div class="stat2"><div style="font-family:var(--font-mono);font-size:7.5px;letter-spacing:1.2px;color:var(--muted)">RITMOS</div><div class="sgb" style="margin-top:9px"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="ba" style="margin-top:14px"><span>Boa noite</span><span class="sub">amanhã abre às 5h30</span></div>
+        <div class="gh" style="margin-top:8px">ver o que ficou sem marcar</div>
+      </div>
+      <p class="col-note">Exceção declarada: <b>dois bronzes</b> ("+140" e o botão) — a tela inteira é a recompensa. Saldo antes→depois em mono tabular.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick" style="text-align:center">
+        <div class="crumb" style="margin-bottom:8px">dia fechado · registro gravado</div>
+        <div style="font-family:var(--font-display);font-size:46px;font-weight:700;letter-spacing:-1px;line-height:1"><span style="color:var(--bronze)">+</span>140</div>
+        <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.8px;color:var(--muted);margin-top:7px">PONTOS DE HOJE</div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:14px;text-align:left">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:1.3px;color:var(--muted)">SALDO</span>
+            <span style="font-family:var(--font-mono);font-size:13px">1.240 → <b style="color:var(--text)">1.380</b></span>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;margin-top:8px">
+          <div class="stat2"><div style="font-family:var(--font-mono);font-size:7.5px;letter-spacing:1.2px;color:var(--muted)">SEQUÊNCIA</div><div style="font-family:var(--font-display);font-size:17px;font-weight:600;margin-top:4px">6 <span style="font-size:10px;color:var(--muted)">dias</span></div></div>
+          <div class="stat2"><div style="font-family:var(--font-mono);font-size:7.5px;letter-spacing:1.2px;color:var(--muted)">RITMOS</div><div class="sgb" style="margin-top:9px"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="ba" style="margin-top:14px"><span>Boa noite</span><span class="sub">amanhã abre às 5h30</span></div>
+        <div class="gh" style="margin-top:8px">ver o que ficou sem marcar</div>
+      </div>
+      <p class="col-note">B inteira — a saída é inegociável — mas a exceção de dois bronzes vira um: <b>o "+" fica bronze e os dígitos na cor do texto</b>. Caveat de dados: "antes→depois" depende do BFF devolver o saldo anterior; sem isso, mostrar só 1.380.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 11 · FECHAR — DESPEJO ============ -->
+<section class="cmp" id="d11">
+  <div class="cmp-head">
+    <span class="cmp-n">11</span><h3>Fechar — campo de despejo</h3>
+    <span class="cmp-tag">visual · fechar</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app diz a mesma coisa duas vezes — <b>label "como foi o dia? — opcional, vale bônus" e placeholder "despeja aqui — 1 linha já vale"</b> — numa caixa de 120px que parece obrigação.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div style="font-size:12px;color:var(--muted)">como foi o dia? <span style="color:var(--faint)">— opcional, vale bônus</span></div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:8px;min-height:96px;font-size:12.5px;color:var(--muted)">despeja aqui — 1 linha já vale</div>
+        <div class="gh" style="margin-top:10px">estruturar com o Hermes · +40 bônus</div>
+      </div>
+      <p class="col-note">Duas frases para o mesmo campo, caixa alta demais para "1 linha". Parece formulário — e dia ruim não preenche formulário.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div class="crumb">rito da noite · dia corrida</div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;min-height:52px;font-size:12.5px;color:var(--muted)">como foi o dia? — opcional</div>
+        <div class="gh" style="margin-top:10px">estruturar com o Hermes · +40 bônus</div>
+      </div>
+      <p class="col-note">Uma frase só, caixa baixa (56px). O crumb acima já dá o contexto do rito — o campo não precisa se explicar.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div class="crumb">rito da noite · dia corrida</div>
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12.5px;color:var(--muted)">uma linha sobre o dia…</span>
+          <span style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint)">+40</span>
+        </div>
+        <div style="font-family:var(--font-mono);font-size:8.5px;color:var(--faint);margin-top:7px">cresce ao tocar · nunca é portão</div>
+        <div class="gh" style="margin-top:10px">estruturar com o Hermes</div>
+      </div>
+      <p class="col-note"><b>Colapsado em uma linha</b> que expande no foco, com o bônus como metadado (+40), não como promessa. O despejo é bônus — a peça tem que ter tamanho de bônus.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 12 · TAREFAS — CABEÇALHO ============ -->
+<section class="cmp" id="d12">
+  <div class="cmp-head">
+    <span class="cmp-n">12</span><h3>Tarefas — cabeçalho</h3>
+    <span class="cmp-tag">visual + texto · tarefas</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">Kicker em bronze, e um erro de português ao vivo: <b>"1 atrasadas"</b>. A C2 põe o resumo à direita em mono e o título em Syne.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-family:var(--font-mono);font-size:8.5px;letter-spacing:1.4px;color:var(--bronze)">CENTRAL DE EXECUÇÃO</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">12 abertas · <span style="text-decoration:underline wavy var(--danger);text-underline-offset:3px">1 atrasadas</span></div>
+          </div>
+          <div style="width:40px;height:40px;border-radius:14px;background:var(--bronze);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#181108" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+        </div>
+      </div>
+      <p class="col-note">Kicker bronze + plural errado ("1 atrasadas" → "1 atrasada"). O botão "+" em si está certo — ação primária.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end">
+          <div>
+            <div class="crumb">central de execução</div>
+            <div style="font-family:var(--font-display);font-size:21px;font-weight:600;letter-spacing:-.2px;margin-top:3px">Tarefas</div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);padding-bottom:3px">12 abertas · 1 atrasada</div>
+        </div>
+      </div>
+      <p class="col-note">Crumb muted, título Syne, resumo em mono à direita. Texto correto.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end">
+          <div>
+            <div class="crumb">central de execução</div>
+            <div style="font-family:var(--font-display);font-size:21px;font-weight:600;letter-spacing:-.2px;margin-top:3px">Tarefas</div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:9px;color:var(--muted);padding-bottom:3px">12 abertas · <span style="color:var(--danger)">1 atrasada</span></div>
+        </div>
+      </div>
+      <p class="col-note">B, com o atraso em <b>danger só quando existe</b> ("0 atrasadas" fica muted — ausência não merece cor). É o único lugar da tela onde vermelho trabalha.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 13 · ORDEM DA HOME (estrutural) ============ -->
+<section class="cmp" id="d13">
+  <div class="cmp-head">
+    <span class="cmp-n">13</span><h3>Ordem das seções da Home</h3>
+    <span class="cmp-tag">estrutural · home</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app desce: stats → <b>lista de foco → agenda → em espera</b>. A C2: stats → <b>em espera → agenda</b>, sem lista de foco (o foco virou o terceiro stat). Mudar ordem é mudança de produto — por isso está separada das cosméticas.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock"><div class="stk">
+        <div class="bl">saudação + selo</div>
+        <div class="bl">saldo / ciclo</div>
+        <div class="bl hi">herói · próxima ação</div>
+        <div class="bl">stats (ritmos · foco)</div>
+        <div class="bl hi">foco de hoje · lista</div>
+        <div class="bl">agenda</div>
+        <div class="bl">em espera</div>
+        <div class="bl off">dock de captura</div>
+      </div></div>
+      <p class="col-note">Oito blocos. A lista de foco repete o que o stat FOCO já anuncia, e "em espera" fecha a tela abaixo da agenda.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock"><div class="stk">
+        <div class="bl">saudação + selo</div>
+        <div class="bl">saldo / ciclo</div>
+        <div class="bl hi">herói · próxima ação</div>
+        <div class="bl">stats (ritmos · cobranças · foco)</div>
+        <div class="bl">em espera</div>
+        <div class="bl">agenda curta</div>
+        <div class="bl off">dock de captura</div>
+      </div></div>
+      <p class="col-note">Sete blocos: foco vive no stat; a Home termina na agenda curta. "A grade de ferramentas saiu da Home" (vive na Mesa).</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick"><div class="stk">
+        <div class="bl">saudação + selo</div>
+        <div class="bl">saldo / ciclo</div>
+        <div class="bl hi">herói · próxima ação</div>
+        <div class="bl">stats (ritmos · cobranças · foco)</div>
+        <div class="bl hi">agenda curta</div>
+        <div class="bl">em espera</div>
+        <div class="bl off">dock de captura</div>
+      </div></div>
+      <p class="col-note">B com <b>agenda acima de em espera</b>: agenda é "o que vem agora" — continua a conversa do herói. Filas são pressão de backlog; fechar a tela nelas deixa o gancho "limpa isso quando puder".</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 14 · TAREFAS — AGRUPAMENTO (estrutural) ============ -->
+<section class="cmp" id="d14">
+  <div class="cmp-head">
+    <span class="cmp-n">14</span><h3>Tarefas — o que fica visível</h3>
+    <span class="cmp-tag">estrutural · tarefas</span>
+    <span class="cmp-rec rec-c">recomendo C</span>
+  </div>
+  <p class="cmp-sub">O app embaralha grupos e um card de "programadas". A C2 é radical: <b>uma lista única "AGORA" com 12 linhas</b> e todo o resto recolhido numa linha de mono.</p>
+  <div class="cols">
+    <div>
+      <div class="col-h a">A · app hoje</div>
+      <div class="mock"><div class="stk">
+        <div class="bl">agora · 5 tarefas</div>
+        <div class="bl hi">card "programadas" · ver tudo</div>
+        <div class="bl">grupos por área / filtros em pills</div>
+        <div class="bl off">backlog misturado na rolagem</div>
+      </div></div>
+      <p class="col-note">Filtros, grupos e o card de programadas disputam a mesma rolagem — a mesa nunca parece limpa.</p>
+    </div>
+    <div>
+      <div class="col-h b">B · HTML aprovado</div>
+      <div class="mock"><div class="stk">
+        <div class="bl hi">agora · 12 linhas, sem grupos</div>
+        <div class="bl">PRÓXIMOS 30 DIAS · 4 &nbsp;·&nbsp; BACKLOG · 9 — recolhidos</div>
+      </div></div>
+      <p class="col-note">O teste dos 12 itens: se doze linhas seguidas leem bem, nenhum agrupamento é necessário. O resto existe, mas fora da vista.</p>
+    </div>
+    <div>
+      <div class="col-h c">C · nova proposta</div>
+      <div class="mock pick"><div class="stk">
+        <div class="bl hi">agora · 12 linhas, sem grupos</div>
+        <div class="bl">PRÓXIMOS 30 DIAS · 4 ▸ &nbsp; BACKLOG · 9 ▸</div>
+        <div class="bl off">expande inline (acordeão) — sem sair da tela</div>
+      </div></div>
+      <p class="col-note">B com <b>acordeão</b>: a linha de recolhidos vira alvo de toque que abre ali mesmo, empurrando a lista para baixo. Nada de tela nova nem card separado.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EM ABERTO ============ -->
+<div class="open">
+  <h3>Fora desta página — decididos ou adiados</h3>
+  <ul>
+    <li><b>Quick fixes sem mock</b> (entram em qualquer onda): verde hardcoded do <code>TaskDetailModal</code> → token sálvia; <code>taskDue</code> muted → faint; plural "1 atrasada".</li>
+    <li><b>Tabbar:</b> rótulos mono caixa alta (HTML) × ui 10px (app). Não travei — decidir com o aparelho na mão.</li>
+    <li><b>Wordmark ÆTERNUM no topo das telas:</b> sugiro que não. A marca vive na splash, no ícone e na Abertura; dentro do expediente, ela vira ruído.</li>
+    <li><b>Saldo "antes → depois"</b> (linha 10): depende de o BFF devolver o saldo anterior (ONDA4 §9.1). Fallback honesto: só o saldo atual.</li>
+    <li><b>Captura, Edificação, Abertura e Shutdown:</b> sem frames desenhados na C2 — polish adiado para a onda 5 (ONDA4 §9.2). Não são divergências; são trabalho não agendado.</li>
+  </ul>
+</div>
+
+<div class="footer">
+  aeternum · comparação app × html × proposta · 10 ago 2026<br>
+  fontes: app/src/screens/{Home,Tasks,Fechar}.tsx · app/src/ui.tsx · app/src/theme.ts · design/proposta-c2-sobria.html<br>
+  nada desta página está aplicado ao código — a aprovação define a próxima onda.
+</div>
+
+</div>
+</body>
+</html>

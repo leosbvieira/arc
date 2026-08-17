@@ -26,13 +26,13 @@ import { actionForAt, HomeSignals, nextAgendaAt } from "../homeAction";
 import { milhar } from "../format";
 import { valorDaAcao } from "../mesaView";
 import { areaColor, colors, fonts, POINTS, radius, spacing } from "../theme";
-import { Badge, ProgressBar, SectionHeader, SegmentBar, Skeleton } from "../ui";
+import { Badge, SectionHeader, SegmentBar, Skeleton } from "../ui";
 
 function greeting(): string {
   const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return "Bom dia";
-  if (hour >= 12 && hour < 18) return "Boa tarde";
-  return "Boa noite";
+  if (hour >= 5 && hour < 12) return "bom dia";
+  if (hour >= 12 && hour < 18) return "boa tarde";
+  return "boa noite";
 }
 
 function dateLabel(): string {
@@ -130,7 +130,6 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
 
   return (
     <View style={styles.root}>
-      <View pointerEvents="none" style={styles.glowTop} />
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={styles.content}
@@ -147,6 +146,14 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
             <Text style={styles.levelNumber}>{loaded.has("points") ? points?.nivel ?? 0 : "—"}</Text>
           </Pressable>
         </View>
+        {/* Decisão 04=C: sai o glow de bronze do topo, entra o filete que
+            assenta a saudação. */}
+        <LinearGradient
+          colors={["rgba(222,184,120,0.5)", "rgba(222,184,120,0)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.hairline}
+        />
 
         {partial ? (
           <Pressable onPress={() => load(true)} style={styles.partial}>
@@ -184,17 +191,19 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
         ) : (
           <>
             <Pressable onPress={() => onOpenTab?.(action.target)} style={({ pressed }) => pressed && { opacity: 0.92 }}>
-              <LinearGradient colors={["#27231D", "#171B1D", "#12161B"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
-                <View style={styles.heroIcon}><Feather name={action.icon as keyof typeof Feather.glyphMap} size={20} color={colors.primary} /></View>
+              <LinearGradient colors={["#1B1712", "#12151A", "#0E1116"]} locations={[0, 0.6, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+                {/* O relógio do A voltou ao canto (05=C): o herói é de um bronze
+                    só — o CTA — então o chip não troca de ícone por ação. */}
+                <View style={styles.heroIcon}><Feather name="clock" size={16} color={colors.primary} /></View>
                 <Text style={styles.heroEyebrow}>{action.eyebrow}</Text>
                 <Text style={styles.heroTitle}>{action.title}</Text>
                 <Text style={styles.heroSubtitle}>{action.subtitle}</Text>
                 <View style={styles.heroFoot}>
-                  <View style={styles.heroActionWrap}>
-                    <Text style={styles.heroAction}>abrir agora</Text>
-                    {valorHero !== null ? <Text style={styles.heroValue}>vale +{valorHero}</Text> : null}
+                  <View style={styles.heroCta}>
+                    <Text style={styles.heroCtaText}>Abrir agora</Text>
+                    <Feather name="arrow-up-right" size={12} color={colors.primaryText} />
                   </View>
-                  <View style={styles.arrow}><Feather name="arrow-up-right" size={18} color={colors.primaryText} /></View>
+                  {valorHero !== null ? <Text style={styles.heroValue}>vale +{valorHero}</Text> : null}
                 </View>
               </LinearGradient>
             </Pressable>
@@ -203,7 +212,13 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
               <Pressable onPress={() => onOpenTab?.("rotinas")} style={styles.metric}>
                 <Text style={styles.metricLabel}>RITMOS</Text>
                 <Text style={styles.metricValue}>{loaded.has("abertura") ? routineDone : "—"}<Text style={styles.metricMuted}>/{loaded.has("abertura") ? routineTotal : "—"}</Text></Text>
-                <ProgressBar value={routineTotal ? routineDone / routineTotal : 0} color={colors.success} />
+                {/* 09=C: barra segmentada sálvia com o próximo segmento vazado. */}
+                <SegmentBar
+                  value={routineTotal ? routineDone / routineTotal : 0}
+                  segments={routineTotal > 0 ? routineTotal : 8}
+                  tone="sage"
+                  outlineNext
+                />
               </Pressable>
               <Pressable
                 onPress={() =>
@@ -233,56 +248,30 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
               </Pressable>
             </View>
 
-            <View style={styles.section}>
-              <SectionHeader eyebrow="direção" title="Foco de hoje" action="ver tarefas" onAction={() => onOpenTab?.("tarefas")} />
-              {focus.length ? focus.map((task, index) => (
-                <Pressable key={task.id} onPress={() => onOpenTab?.(`tarefa:${task.id}`)} style={styles.focusRow}>
-                  <Text style={styles.focusIndex}>0{index + 1}</Text>
-                  <View style={[styles.focusEdge, { backgroundColor: areaColor(task.area) }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.focusTitle} numberOfLines={2}>{task.name}</Text>
-                    <Text style={styles.focusMeta}>{task.area} · {task.due ?? task.status}</Text>
-                  </View>
-                  <Feather name="chevron-right" size={17} color={colors.textMuted} />
-                </Pressable>
-              )) : loaded.has("digest") ? (
-                <Pressable onPress={() => onOpenTab?.("capturar")} style={styles.clearState}>
-                  <View style={styles.clearIcon}><Feather name="wind" size={19} color={colors.success} /></View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.clearTitle}>Sem urgência artificial.</Text>
-                    <Text style={styles.clearText}>Capture a próxima ação quando ela existir.</Text>
-                  </View>
-                </Pressable>
-              ) : (
-                <View style={styles.unavailableState}>
-                  <Feather name={failures.has("digest") ? "cloud-off" : "loader"} size={17} color={colors.textMuted} />
-                  <Text style={styles.agendaEmpty}>{failures.has("digest") ? "tarefas indisponíveis agora" : "carregando prioridades…"}</Text>
-                </View>
-              )}
-            </View>
-
+            {/* Sem seção "Foco de hoje": na C a fila de execução sai da Home e o
+                foco vira o stat FOCO acima (ordem aprovada: saudação → saldo →
+                herói → stats → agenda → em espera → dock). */}
             <View style={styles.section}>
               <SectionHeader eyebrow="tempo" title="Agenda curta" action="abrir agenda" onAction={() => onOpenTab?.("abertura")} />
               <View style={styles.agendaCard}>
                 {nextAgenda.length ? nextAgenda.map((item, index) => (
                   <View key={`${item.time}-${item.title}-${index}`} style={[styles.agendaRow, index > 0 && styles.agendaBorder]}>
+                    {/* 08=C: bolinha sálvia na mesma linha, só na próxima. */}
+                    <View style={[styles.agendaDot, index === 0 && { backgroundColor: colors.success }]} />
                     <Text style={styles.agendaTime}>{item.time}</Text>
-                    <View style={styles.agendaLine} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.agendaTitle} numberOfLines={1}>{item.title}</Text>
-                      <Text style={styles.agendaSource}>{item.source}</Text>
-                    </View>
+                    <Text style={[styles.agendaTitle, index > 0 && styles.agendaTitleLater]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.agendaSource}>{item.source}</Text>
                   </View>
                 )) : loaded.has("abertura") ? (
                   <View style={styles.agendaRow}>
+                    <View style={styles.agendaDot} />
                     <Text style={styles.agendaTime}>—</Text>
-                    <View style={styles.agendaLine} />
                     <Text style={styles.agendaEmpty}>nenhum horário confirmado</Text>
                   </View>
                 ) : (
                   <View style={styles.agendaRow}>
+                    <View style={styles.agendaDot} />
                     <Text style={styles.agendaTime}>—</Text>
-                    <View style={styles.agendaLine} />
                     <Text style={styles.agendaEmpty}>{failures.has("abertura") ? "agenda indisponível agora" : "carregando agenda…"}</Text>
                   </View>
                 )}
@@ -294,7 +283,7 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
                 <SectionHeader eyebrow="filas" title="Em espera" />
                 <View style={styles.badges}>
                   {(signals.staging ?? 0) > 0 ? <Pressable onPress={() => onOpenTab?.("triagem")}><Badge label="triagem" value={signals.staging ?? undefined} color={colors.info} /></Pressable> : null}
-                  {(signals.anki ?? 0) > 0 ? <Pressable onPress={() => onOpenTab?.("revisao")}><Badge label="Anki" value={signals.anki ?? undefined} color={colors.lilac} /></Pressable> : null}
+                  {(signals.anki ?? 0) > 0 ? <Pressable onPress={() => onOpenTab?.("revisao")}><Badge label="anki" value={signals.anki ?? undefined} color={colors.lilac} /></Pressable> : null}
                   {(signals.reading ?? 0) > 0 ? <Pressable onPress={() => onOpenTab?.("leitura")}><Badge label="leituras" value={signals.reading ?? undefined} color={colors.primary} /></Pressable> : null}
                 </View>
               </View>
@@ -317,27 +306,28 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  glowTop: { position: "absolute", top: -120, right: -90, width: 270, height: 270, borderRadius: 160, backgroundColor: "rgba(222,184,120,0.055)" },
   content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 128 },
-  topline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg },
+  topline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.md },
+  hairline: { height: 1, marginHorizontal: 2, marginBottom: spacing.lg },
   date: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1.2 },
   greeting: { fontFamily: fonts.display, fontSize: 30, color: colors.text, letterSpacing: -0.35, marginTop: 4 },
   name: { color: colors.primary },
-  levelSeal: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: "rgba(222,184,120,0.35)", backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
-  levelSmall: { fontFamily: fonts.mono, fontSize: 7, color: colors.primary, letterSpacing: 1 },
+  // Selo neutro (03=B): moldura line-strong, sem preenchimento nem bronze.
+  levelSeal: { borderRadius: 13, borderWidth: 1, borderColor: "rgba(235,222,202,0.20)", paddingVertical: 7, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" },
+  levelSmall: { fontFamily: fonts.mono, fontSize: 7, color: colors.textMuted, letterSpacing: 1.4 },
   levelNumber: { fontFamily: fonts.display, fontSize: 18, color: colors.text, lineHeight: 20 },
   partial: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: spacing.md },
   partialText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
-  hero: { minHeight: 188, borderRadius: radius.xl, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(222,184,120,0.19)", overflow: "hidden" },
-  heroIcon: { position: "absolute", top: 16, right: 16, width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(222,184,120,0.1)", borderWidth: 1, borderColor: "rgba(222,184,120,0.18)" },
+  hero: { minHeight: 188, borderRadius: radius.xl, padding: spacing.lg, borderWidth: 1, borderColor: "rgba(235,222,202,0.20)", overflow: "hidden" },
+  heroIcon: { position: "absolute", top: 14, right: 14, width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(222,184,120,0.1)", borderWidth: 1, borderColor: "rgba(222,184,120,0.18)" },
   heroEyebrow: { fontFamily: fonts.mono, fontSize: 10, color: colors.primary, letterSpacing: 1.6, textTransform: "uppercase" },
   heroTitle: { fontFamily: fonts.display, fontSize: 27, lineHeight: 31, color: colors.text, letterSpacing: -0.3, marginTop: spacing.lg, maxWidth: "82%" },
   heroSubtitle: { fontFamily: fonts.ui, fontSize: 13.5, lineHeight: 19, color: colors.textMuted, marginTop: 6, maxWidth: "88%" },
   heroFoot: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: "auto" },
-  heroActionWrap: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, flexShrink: 1 },
-  heroAction: { fontFamily: fonts.uiSemi, fontSize: 12.5, color: colors.primary },
+  // O único bronze cheio da Home (05=C): pill bronze com fio de 2px na base.
+  heroCta: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.primary, borderBottomWidth: 2, borderBottomColor: "#B6935C", borderRadius: 9, paddingVertical: 9, paddingHorizontal: 14 },
+  heroCtaText: { fontFamily: fonts.uiSemi, fontSize: 12, color: colors.primaryText },
   heroValue: { fontFamily: fonts.mono, fontSize: 10, color: colors.faint },
-  arrow: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
   metricsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
   metric: { flex: 1, minHeight: 92, borderRadius: radius.lg, padding: spacing.md, backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border },
   metricLabel: { fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 1.1, color: colors.textMuted },
@@ -350,30 +340,21 @@ const styles = StyleSheet.create({
   metricFocus: { fontFamily: fonts.uiSemi, fontSize: 13, lineHeight: 17, color: colors.text, marginTop: 8, marginBottom: 8 },
   metricFocusMeta: { fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 1, textTransform: "uppercase" },
   section: { marginTop: spacing.xl },
-  focusRow: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 10, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: spacing.sm },
-  focusIndex: { width: 22, fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted },
-  focusEdge: { width: 3, height: 38, borderRadius: 3 },
-  focusTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 14.5, lineHeight: 18 },
-  focusMeta: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5, marginTop: 4 },
-  clearState: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, backgroundColor: colors.card2, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  clearIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,180,154,0.11)" },
-  clearTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 14 },
-  clearText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5, marginTop: 3 },
-  unavailableState: { minHeight: 68, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.card2 },
-  agendaCard: { backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.md },
-  agendaRow: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: spacing.md },
+  agendaCard: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.md },
+  agendaRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
   agendaBorder: { borderTopWidth: 1, borderTopColor: colors.border },
+  agendaDot: { width: 5, height: 5, borderRadius: 3 },
   agendaTime: { width: 38, fontFamily: fonts.mono, fontSize: 11, color: colors.primary },
-  agendaLine: { width: 1, height: 30, backgroundColor: colors.border },
-  agendaTitle: { fontFamily: fonts.uiSemi, fontSize: 13.5, color: colors.text },
-  agendaSource: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, marginTop: 3, textTransform: "uppercase" },
+  agendaTitle: { flex: 1, fontFamily: fonts.uiSemi, fontSize: 13.5, color: colors.text },
+  agendaTitleLater: { fontFamily: fonts.uiMedium },
+  agendaSource: { fontFamily: fonts.mono, fontSize: 8.5, color: colors.faint, textTransform: "uppercase" },
   agendaEmpty: { fontFamily: fonts.ui, fontSize: 12.5, color: colors.textMuted },
   badges: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   saldoCard: {
     marginBottom: spacing.md,
     padding: spacing.md,
     paddingHorizontal: spacing.lg,
-    backgroundColor: colors.card2,
+    backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,

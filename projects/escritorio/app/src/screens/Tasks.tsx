@@ -91,8 +91,10 @@ function TaskRow({
   }
   return (
     <View style={styles.taskRow}>
-      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={5} style={[styles.check, { borderColor: aceso ? colors.success : `${color}AA` }]}>
-        <View style={[styles.checkCore, { backgroundColor: aceso ? colors.success : `${color}20` }]} />
+      {/* Checkbox da decisão 01=B/12=C: quadrado de 24px, canto 7, borda na cor
+          da área (ou danger, se atrasada). Feito = sálvia cheia com tique escuro. */}
+      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={5} style={[styles.check, { borderColor: aceso ? colors.success : color }, aceso && styles.checkDone]}>
+        {aceso ? <Feather name="check" size={13} color={colors.bg} /> : null}
       </Pressable>
       <Pressable style={styles.taskBody} onPress={onOpen}>
         <View style={styles.taskTopline}>
@@ -125,6 +127,7 @@ export default function Tasks({
   const [area, setArea] = useState("Staging");
   const [areaFilter, setAreaFilter] = useState("Todas");
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [due, setDue] = useState<DueChoice>(null);
@@ -234,7 +237,13 @@ export default function Tasks({
     grouped[key].sort((a, b) => (b.days_overdue ?? -100000) - (a.days_overdue ?? -100000));
   });
   const overdue = allTasks.filter((task) => (task.days_overdue ?? -1) >= 0).length;
-  const nextSeven = allTasks.filter((task) => (task.days_overdue ?? -99) < 0 && (task.days_overdue ?? -99) >= -7).length;
+  // Acordeões da C: tudo que tem prazo futuro (30 dias ou além) recolhe sob
+  // "PRÓXIMOS 30 DIAS"; o sem-prazo recolhe sob "BACKLOG". Filtrando (área ou
+  // busca), os dois expandem sozinhos — esconder resultado de busca é trapaça.
+  const future = [...grouped.proximas, ...grouped.programadas];
+  const filtering = areaFilter !== "Todas" || !!normalizedQuery;
+  const showFuture = scheduledOpen || filtering;
+  const showBacklog = backlogOpen || filtering;
 
   function renderRows(tasks: Task[]) {
     return tasks.map((task) => (
@@ -277,11 +286,27 @@ export default function Tasks({
 
       <View style={styles.toolbar}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.kicker}>CENTRAL DE EXECUÇÃO</Text>
-          <Text style={styles.summary}>{allTasks.length} abertas · {overdue} atrasadas</Text>
+          <Text style={styles.kicker}>central de execução</Text>
+          <Text style={styles.title}>Tarefas</Text>
         </View>
-        <Pressable onPress={() => setCreateOpen((value) => !value)} style={[styles.addButton, createOpen && styles.addButtonOpen]}>
-          <Feather name={createOpen ? "x" : "plus"} size={20} color={createOpen ? colors.text : colors.primaryText} />
+        <Text style={styles.summary}>
+          {allTasks.length} abertas ·{" "}
+          <Text style={overdue > 0 ? styles.summaryDanger : undefined}>
+            {overdue} {overdue === 1 ? "atrasada" : "atrasadas"}
+          </Text>
+        </Text>
+        {/* A lupa abre a busca inline (decisão 14=C); fechada, a lista sobe. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={searchOpen ? "Fechar busca" : "Buscar tarefas"}
+          onPress={() => setSearchOpen((value) => !value)}
+          hitSlop={6}
+          style={styles.ghostButton}
+        >
+          <Feather name="search" size={15} color={colors.textMuted} />
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={createOpen ? "Fechar nova ação" : "Nova ação"} onPress={() => setCreateOpen((value) => !value)} style={[styles.addButton, createOpen && styles.addButtonOpen]}>
+          <Feather name={createOpen ? "x" : "plus"} size={18} color={createOpen ? colors.text : colors.primaryText} />
         </Pressable>
       </View>
 
@@ -342,7 +367,32 @@ export default function Tasks({
         </View>
       ) : null}
 
-      <Field style={styles.search} value={query} onChangeText={setQuery} placeholder="Buscar tarefas" />
+      {searchOpen ? (
+        <View style={styles.searchRow}>
+          <Feather name="search" size={14} color={colors.textMuted} />
+          <Field
+            style={styles.searchField}
+            autoFocus
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Buscar tarefas"
+            returnKeyType="search"
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Limpar e fechar busca"
+            onPress={() => {
+              setQuery("");
+              setSearchOpen(false);
+            }}
+            hitSlop={8}
+          >
+            <Feather name="x" size={13} color={colors.faint} />
+          </Pressable>
+        </View>
+      ) : null}
+      {/* Trilho quieto (decisão C): pills em mono miúdo, ativa com moldura
+          neutra — nunca preenchimento bronze. */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
         {["Todas", ...AREAS].map((item) => {
           const active = item === areaFilter;
@@ -361,48 +411,32 @@ export default function Tasks({
         <ErrorState message="Não consegui carregar as tarefas." hint="Verifique o servidor e tente novamente." onRetry={() => load()} />
       ) : (
         <View>
-          <View style={styles.signalRow}>
-            <View style={styles.signal}><Text style={styles.signalNumber}>{overdue}</Text><Text style={styles.signalLabel}>atrasadas</Text></View>
-            <View style={styles.signal}><Text style={styles.signalNumber}>{nextSeven}</Text><Text style={styles.signalLabel}>em 7 dias</Text></View>
-            <View style={styles.signal}><Text style={styles.signalNumber}>{grouped.programadas.length}</Text><Text style={styles.signalLabel}>programadas</Text></View>
-          </View>
-
           {grouped.agora.length ? (
             <View style={styles.group}>
               <SectionHeader eyebrow="execução" title="Agora" meta={`+${grouped.agora.length * POINTS.tarefa} na mesa`} />
               {renderRows(grouped.agora)}
             </View>
           ) : null}
-          {grouped.proximas.length ? (
-            <View style={styles.group}>
-              <SectionHeader eyebrow="radar" title="Próximos 30 dias" />
-              {renderRows(grouped.proximas)}
+          {future.length || grouped.backlog.length ? (
+            <View style={styles.accLine}>
+              {future.length ? (
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: showFuture }} onPress={() => setScheduledOpen((value) => !value)} hitSlop={6}>
+                  <Text style={styles.accLabel}>
+                    PRÓXIMOS 30 DIAS · {future.length} <Text style={styles.accChevron}>{showFuture ? "▾" : "▸"}</Text>
+                  </Text>
+                </Pressable>
+              ) : null}
+              {grouped.backlog.length ? (
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: showBacklog }} onPress={() => setBacklogOpen((value) => !value)} hitSlop={6}>
+                  <Text style={styles.accLabel}>
+                    BACKLOG · {grouped.backlog.length} <Text style={styles.accChevron}>{showBacklog ? "▾" : "▸"}</Text>
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
-          {grouped.programadas.length ? (
-            <View style={styles.group}>
-              <Pressable onPress={() => setScheduledOpen((value) => !value)} style={styles.scheduledHead}>
-                <View>
-                  <Text style={styles.scheduledKicker}>DEPOIS</Text>
-                  <Text style={styles.scheduledTitle}>{grouped.programadas.length} programadas</Text>
-                </View>
-                <Feather name={scheduledOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.textMuted} />
-              </Pressable>
-              {scheduledOpen || areaFilter !== "Todas" || normalizedQuery ? renderRows(grouped.programadas) : null}
-            </View>
-          ) : null}
-          {grouped.backlog.length ? (
-            <View style={styles.group}>
-              <Pressable onPress={() => setBacklogOpen((value) => !value)} style={styles.scheduledHead}>
-                <View>
-                  <Text style={styles.scheduledKicker}>SEM PRAZO</Text>
-                  <Text style={styles.scheduledTitle}>{grouped.backlog.length} no backlog</Text>
-                </View>
-                <Feather name={backlogOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.textMuted} />
-              </Pressable>
-              {backlogOpen || areaFilter !== "Todas" || normalizedQuery ? renderRows(grouped.backlog) : null}
-            </View>
-          ) : null}
+          {showFuture ? <View style={styles.group}>{renderRows(future)}</View> : null}
+          {showBacklog ? <View style={styles.group}>{renderRows(grouped.backlog)}</View> : null}
           {!filtered.length ? (
             <View style={styles.empty}><Feather name="check-circle" size={25} color={colors.success} /><Text style={styles.emptyTitle}>Nada nesta vista.</Text><Text style={styles.emptyText}>Troque o filtro ou capture uma nova ação.</Text></View>
           ) : null}
@@ -417,10 +451,13 @@ export default function Tasks({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  toolbar: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.md },
-  kicker: { fontFamily: fonts.mono, color: colors.primary, fontSize: 9, letterSpacing: 1.4 },
-  summary: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12.5, marginTop: 4 },
-  addButton: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
+  toolbar: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, marginBottom: spacing.md },
+  kicker: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 9, letterSpacing: 1.4, textTransform: "uppercase" },
+  title: { fontFamily: fonts.display, fontSize: 28, color: colors.text, letterSpacing: -0.3, marginTop: 4 },
+  summary: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 9.5, paddingBottom: 4, flexShrink: 1, textAlign: "right" },
+  summaryDanger: { color: colors.danger },
+  ghostButton: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+  addButton: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
   addButtonOpen: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
   createPanel: { gap: spacing.md, backgroundColor: colors.card2, borderWidth: 1, borderColor: "rgba(222,184,120,0.23)", borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.md },
   createTitle: { fontFamily: fonts.uiSemi, fontSize: 20, color: colors.text },
@@ -442,20 +479,20 @@ const styles = StyleSheet.create({
   areaPill: { minHeight: 34, flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 11 },
   areaDot: { width: 6, height: 6, borderRadius: 3 },
   areaPillText: { fontFamily: fonts.ui, fontSize: 11.5, color: colors.textMuted },
-  search: { height: 44, backgroundColor: colors.card2 },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: colors.card2, borderWidth: 1, borderColor: "rgba(235,222,202,0.20)", borderRadius: 11, paddingHorizontal: 13, marginBottom: spacing.xs },
+  searchField: { flex: 1, height: 42, borderWidth: 0, backgroundColor: "transparent", paddingHorizontal: 0, fontSize: 13 },
   filters: { gap: 7, paddingVertical: spacing.md, paddingRight: spacing.lg },
-  filter: { minHeight: 32, justifyContent: "center", borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12 },
-  filterActive: { backgroundColor: colors.primarySoft, borderColor: "rgba(222,184,120,0.35)" },
-  filterText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 11.5 },
-  filterTextActive: { color: colors.primary, fontFamily: fonts.uiSemi },
+  filter: { justifyContent: "center", borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 6 },
+  filterActive: { borderColor: "rgba(235,222,202,0.20)" },
+  filterText: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 9, letterSpacing: 0.6, textTransform: "uppercase" },
+  filterTextActive: { color: colors.text },
   listContent: { paddingBottom: spacing.xxl },
   completionDo: { height: 34, justifyContent: "center", paddingHorizontal: 10, borderRadius: radius.sm, backgroundColor: colors.success },
   completionDoText: { fontFamily: fonts.uiSemi, fontSize: 10.5, color: colors.primaryText },
-  signalRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
-  signal: { flex: 1, backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md },
-  signalNumber: { fontFamily: fonts.display, color: colors.text, fontSize: 20 },
-  signalLabel: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 9.5, marginTop: 2 },
   group: { marginBottom: spacing.xl },
+  accLine: { flexDirection: "row", gap: 18, paddingHorizontal: 2, marginBottom: spacing.lg },
+  accLabel: { fontFamily: fonts.mono, fontSize: 9, color: colors.faint, letterSpacing: 0.8 },
+  accChevron: { color: colors.textMuted },
   filaAviso: {
     flexDirection: "row",
     alignItems: "center",
@@ -480,17 +517,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.success,
   },
   taskRow: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 10 },
-  check: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
-  checkCore: { width: 12, height: 12, borderRadius: 4 },
+  check: { width: 24, height: 24, borderRadius: 7, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
+  checkDone: { backgroundColor: colors.success },
   taskBody: { flex: 1 },
   taskTopline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   taskArea: { fontFamily: fonts.mono, fontSize: 9, letterSpacing: 1, textTransform: "uppercase" },
   taskDue: { fontFamily: fonts.mono, fontSize: 9.5, color: colors.textMuted },
   taskName: { fontFamily: fonts.uiSemi, fontSize: 14.5, lineHeight: 18.5, color: colors.text, marginTop: 4 },
   assignee: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 10.5, marginTop: 3 },
-  scheduledHead: { minHeight: 70, flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.card2, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, paddingHorizontal: spacing.lg },
-  scheduledKicker: { fontFamily: fonts.mono, color: colors.textMuted, fontSize: 8.5, letterSpacing: 1.3 },
-  scheduledTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 13.5, marginTop: 3 },
   empty: { alignItems: "center", paddingVertical: spacing.xxl, gap: spacing.sm },
   emptyTitle: { fontFamily: fonts.uiSemi, color: colors.text, fontSize: 18 },
   emptyText: { fontFamily: fonts.ui, color: colors.textMuted, fontSize: 12 },

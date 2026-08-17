@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Conceito B — o anel do loop: o dia que fecha. Brecha de 40° no alto à direita,
+       ponto de bronze marcando o fechamento. -->
+  <path d="M341 108.8 A170 170 0 1 0 415.7 197.9" stroke="#DEB878" stroke-width="30" stroke-linecap="round"/>
+  <circle cx="415.7" cy="197.9" r="21" fill="#DEB878"/>
+</svg>
