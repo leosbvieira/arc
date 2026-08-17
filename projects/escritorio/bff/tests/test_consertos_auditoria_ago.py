@@ -390,3 +390,21 @@ def test_o_limite_de_prioridades_segue_a_constante(client, monkeypatch):
     assert client.post("/shutdown", json=quatro, headers=hdr).status_code == 200
     cinco = {"prioridades": ["a", "b", "c", "d", "e"]}
     assert client.post("/shutdown", json=cinco, headers=hdr).status_code == 422
+
+
+def test_o_app_consegue_ver_e_reprocessar_as_capturas_paradas(client):
+    """O digest mandava "abrir o app" e abrir o app nao adiantava nada.
+
+    `POST /captures/retry-failed` existia e NENHUMA tela sabia -- grep por
+    retry-failed em app/src devolvia zero. O conteudo em questao e coisa que o Leo
+    ditou e acredita estar arquivada, porque o /capture responde na hora.
+    """
+    hdr = token(client)
+    cid = store.enqueue_capture("captura que travou", None, "ck-1")
+    with store._connect() as con:
+        con.execute("UPDATE capture_queue SET status = 'failed' WHERE id = ?", (cid,))
+        con.commit()
+
+    assert client.get("/captures/failed", headers=hdr).json()["n"] == 1
+    assert client.post("/captures/retry-failed", headers=hdr).json()["requeued"] == 1
+    assert client.get("/captures/failed", headers=hdr).json()["n"] == 0

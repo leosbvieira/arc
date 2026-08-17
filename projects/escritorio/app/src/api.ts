@@ -112,6 +112,16 @@ export async function logSession(body: {
 // devolve a resposta. Rota separada do /capture (que virou fila fire-and-forget).
 export type ChatTurno = { role: "user" | "ai"; text: string };
 
+// Teto do lado do cliente. O servidor tem HERMES_TIMEOUT=150s e o slot do Hermes é
+// UM só, compartilhado por chat, captura, triagem, leitura, anki, diário e review —
+// então uma captura em fundo pode segurar a fala do Mentor por mais de dois minutos.
+// Sem AbortController isso não tinha teto NENHUM: `sending` ficava true, o campo e o
+// botão travados, e como o App mantém o Chat montado, trocar de aba não resolvia.
+// Matar o app resolvia — e levava a conversa junto, que só vive em `useState`.
+// O valor dá folga sobre os 150s do servidor: abortar antes dele seria transformar
+// resposta lenta em erro, e o `readingApi.ts` já usa a mesma folga (165s).
+const TIMEOUT_CHAT_MS = 175_000;
+
 export async function chatSend(
   text: string,
   mode: string,
@@ -119,7 +129,34 @@ export async function chatSend(
 ): Promise<string> {
   const base = await getBffUrl();
   const token = await getToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_CHAT_MS);
+  try {
+    return await chatRequest(base, token, text, mode, historico, controller.signal);
+  } catch (erro) {
+    // AbortError vira frase, não código: este texto vai DIRETO pra bolha de IA na
+    // conversa (o catch do Chat.tsx põe `e.message` na tela).
+    if (erro instanceof Error && erro.name === "AbortError") {
+      throw new Error(
+        "demorei demais pra responder — sua mensagem continua aqui, tente de novo",
+      );
+    }
+    throw erro;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function chatRequest(
+  base: string,
+  token: string | null,
+  text: string,
+  mode: string,
+  historico: ChatTurno[],
+  signal: AbortSignal,
+): Promise<string> {
   const r = await fetch(`${base}/chat`, {
+    signal,
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1149,4 +1186,27 @@ export async function exportAnki(): Promise<{ n: number; path: string | null; ts
   });
   if (!r.ok) throw new Error(`anki: ${r.status}`);
   return (await r.json()) as { n: number; path: string | null; tsv: string };
+}
+
+
+// --- capturas que pararam de vez ------------------------------------------
+// O digest diário manda "abrir o app" quando há capturas não processadas, e até aqui
+// abrir o app não adiantava: nenhuma tela conhecia estas duas rotas. O conteúdo é
+// coisa que o Leo ditou e acredita estar arquivada — o /capture responde na hora.
+
+export async function contarCapturasFalhadas(): Promise<number> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/captures/failed`, { headers: await authHeaders() });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+  return ((await r.json()) as { n: number }).n;
+}
+
+export async function reprocessarCapturasFalhadas(): Promise<number> {
+  const base = await getBffUrl();
+  const r = await fetch(`${base}/captures/retry-failed`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!r.ok) throw new Error(`erro ${r.status}`);
+  return ((await r.json()) as { requeued: number }).requeued;
 }

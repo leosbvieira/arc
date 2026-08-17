@@ -1123,6 +1123,24 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     return CaptureOut(reply="✅ anotado", queued=True)
 
 
+@app.get("/captures/failed")
+async def contar_capturas_falhadas(_: str = Depends(require_auth)):
+    """Quantas capturas pararam de vez, pro app poder DIZER e oferecer o reenvio.
+
+    O digest diário já emite "⚠ N capturas não processadas — abrir o app", e abrir o
+    app não adiantava nada: nenhuma tela sabia que `POST /captures/retry-failed`
+    existia. Ou seja, o sistema mandava fazer algo que não era possível fazer — e o
+    conteúdo em questão é coisa que o Leo DITOU e acha que está arquivada, porque o
+    `/capture` responde "✅ anotado" na hora.
+
+    O caminho automático não cobre tudo: `hermes_client` documenta que falha de
+    credencial "exige ação manual: nenhum retry resolve", então essa classe nunca sai
+    sozinha da fila e volta a nagar todo dia.
+    """
+    falhadas = store.failed_captures()
+    return {"n": len(falhadas)}
+
+
 @app.post("/captures/retry-failed")
 async def retry_failed_captures(_: str = Depends(require_auth)):
     return {"requeued": store.retry_failed_captures()}

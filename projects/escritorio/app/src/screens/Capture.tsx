@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 
-import { capture } from "../api";
+import { capture, contarCapturasFalhadas, reprocessarCapturasFalhadas } from "../api";
 import {
   createCaptureClientKey,
   enqueue,
@@ -202,6 +202,8 @@ export default function Capture({
   // veio. Não voltam sozinhas — é ele quem manda perguntar como ficou.
   const [presas, setPresas] = useState<Book[]>([]);
   const [presaErro, setPresaErro] = useState("");
+  // Capturas que o SERVIDOR desistiu de processar (fila do BFF, não a do aparelho).
+  const [falhadasNoServidor, setFalhadasNoServidor] = useState(0);
 
   const loadShelf = useCallback(async () => {
     try {
@@ -459,6 +461,14 @@ export default function Capture({
       if (!alive) return;
       setPending(count);
       setRejected(recusados);
+      // Best-effort: sem rede isto simplesmente não atualiza, e a fila local acima
+      // continua sendo a informação que importa.
+      try {
+        const n = await contarCapturasFalhadas();
+        if (alive) setFalhadasNoServidor(n);
+      } catch {
+        /* sem servidor não há o que dizer sobre a fila dele */
+      }
     };
     refreshPending();
     const sub = AppState.addEventListener("change", (s) => {
@@ -1821,6 +1831,36 @@ export default function Capture({
               <Feather name="cloud-off" size={13} color={colors.info} />
               <Text style={styles.queueText}>{pending} captura(s) seguras no aparelho</Text>
             </View>
+          ) : null}
+          {/* A fila do SERVIDOR. O digest manda "abrir o app" quando há capturas
+              paradas, e até aqui abrir o app não oferecia nada — a rota de reenvio
+              existia e nenhuma tela a conhecia. Falha de credencial do Hermes nunca
+              sai sozinha da fila, então sem este botão ela nagava todo dia. */}
+          {falhadasNoServidor > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Reprocessar ${falhadasNoServidor} capturas paradas`}
+              hitSlop={8}
+              style={styles.queueRow}
+              onPress={async () => {
+                try {
+                  const n = await reprocessarCapturasFalhadas();
+                  setStatus(
+                    n > 0
+                      ? `${n} captura(s) voltaram para a fila do servidor`
+                      : "nada para reprocessar",
+                  );
+                  setFalhadasNoServidor(await contarCapturasFalhadas());
+                } catch {
+                  setStatus("não deu para falar com o servidor agora");
+                }
+              }}
+            >
+              <Feather name="rotate-ccw" size={13} color={colors.amber} />
+              <Text style={[styles.queueText, { color: colors.amber }]}>
+                {falhadasNoServidor} paradas no servidor · reprocessar
+              </Text>
+            </Pressable>
           ) : null}
           {/* Recusados: saíram da fila pra não travá-la, mas NÃO foram apagados.
               Nenhum reenvio automático resolve — é o único estado da fila que
