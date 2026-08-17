@@ -1,6 +1,11 @@
 """Consertos da auditoria de 16/ago. Um teste por defeito, nomeado pelo defeito.
 
-Cada um destes falha no código de antes — é o que os torna prova, e não decoração.
+Cada conserto tem PELO MENOS UM teste que falha no código de antes — é o que os torna
+prova, e não decoração. Os controles negativos (que passam nas duas versões, e existem
+para provar que o conserto não quebrou o caminho normal) estão marcados com CONTROLE.
+A primeira versão deste arquivo dizia "cada um destes falha antes", o que era falso
+para três deles: uma revisão hostil pegou, e frase que não se sustenta em docstring de
+teste é pior que frase nenhuma.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -16,7 +21,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "app_password", "senha-de-teste")
     monkeypatch.setattr(settings, "internal_token", "itok")
     store.init_db()
-    main._login_erros = []
+    main._login_erros = {}
     return TestClient(app)
 
 
@@ -54,8 +59,11 @@ def test_login_bloqueia_depois_de_cinco_erros(client):
 def test_acerto_limpa_o_contador(client):
     for _ in range(3):
         client.post("/auth/login", json={"password": "chute"})
+    # ESTE assert e o que discrimina: no codigo de antes nada preenchia o contador,
+    # entao checar so que ele esta vazio DEPOIS do acerto passava nas duas versoes.
+    assert sum(len(v) for v in main._login_erros.values()) == 3
     assert client.post("/auth/login", json={"password": "senha-de-teste"}).status_code == 200
-    assert main._login_erros == []
+    assert main._login_erros == {}
 
 
 # --- /closing/approve: o vault vinha antes do local -------------------------
@@ -101,7 +109,8 @@ def test_refechar_o_dia_nao_escreve_um_segundo_bloco(client, monkeypatch):
     async def raw(*_a, **_kw):
         return "1- Inbox/Raw/x.md"
 
-    async def append(path, block, _msg, header_if_new="", dedupe_marker=None):
+    async def append(path, block, _msg, header_if_new="", dedupe_marker=None,
+                     substituir_marcado=False):
         appends.append((path, dedupe_marker))
         return path
 
@@ -208,3 +217,157 @@ def test_o_path_do_raw_usa_o_fuso_do_leo(monkeypatch):
 
     asyncio.run(vault_client.write_raw("texto", "c1", ts=ts))
     assert "2026-08-15" in capturado["path"], capturado["path"]
+
+
+def test_o_raw_pede_o_fuso_explicitamente(monkeypatch):
+    """Na maquina do Leo o teste acima passaria mesmo no codigo antigo.
+
+    `datetime.fromtimestamp(ts)` sem tz usa o fuso do PROCESSO, que la ja e
+    America/Sao_Paulo: a data sairia igual e o teste nao discriminaria nada. O que
+    discrimina e exigir que o fuso seja passado de proposito.
+    """
+    from datetime import datetime as _dt
+
+    from app.tz import TZ
+
+    vistos = []
+
+    class DatetimeEspiao(_dt):
+        @classmethod
+        def fromtimestamp(cls, ts, tz=None):
+            vistos.append(tz)
+            return _dt.fromtimestamp(ts, tz)
+
+    async def get(_path):
+        return {"sha": "x"}
+
+    monkeypatch.setattr(vault_client, "_get", get)
+    monkeypatch.setattr(vault_client, "datetime", DatetimeEspiao)
+    import asyncio
+
+    asyncio.run(vault_client.write_raw("t", "c1", ts=1_755_300_000.0))
+    assert vistos == [TZ], f"fromtimestamp foi chamado com {vistos}"
+
+
+def test_days_from_ms_conta_no_fuso_do_leo(monkeypatch):
+    """A outra metade do defeito 6, que tinha entrado sem teste nenhum."""
+    from datetime import date, datetime as _dt
+
+    from app import clickup_client
+    from app.tz import TZ
+
+    vistos = []
+
+    class DatetimeEspiao(_dt):
+        @classmethod
+        def fromtimestamp(cls, ts, tz=None):
+            vistos.append(tz)
+            return _dt.fromtimestamp(ts, tz)
+
+    monkeypatch.setattr(clickup_client, "datetime", DatetimeEspiao)
+    monkeypatch.setattr(clickup_client, "hoje_local", lambda: date(2026, 8, 16))
+
+    ms = int(_dt(2026, 8, 16, 22, 30, tzinfo=TZ).timestamp() * 1000)
+    assert clickup_client.days_from_ms(ms) == 0
+    assert vistos == [TZ]
+
+
+# --- regressoes que a revisao hostil pegou NOS PROPRIOS CONSERTOS ------------
+
+
+def test_senha_com_acento_nao_derruba_o_login(client, monkeypatch):
+    """`secrets.compare_digest` recusa str nao-ASCII com TypeError.
+
+    Trocar o `!=` por ele sem codificar transformou a UNICA porta do app num 500 para
+    qualquer senha com acento -- regressao em cima do conserto, e a mais cara possivel
+    porque tira o acesso inteiro.
+    """
+    monkeypatch.setattr(settings, "app_password", "sênha-com-acênto")
+    assert client.post("/auth/login", json={"password": "chute"}).status_code == 401
+    r = client.post("/auth/login", json={"password": "sênha-com-acênto"})
+    assert r.status_code == 200, r.text
+    assert r.json()["token"]
+
+
+def test_o_bloqueio_e_por_origem_e_nao_tranca_o_dono(client):
+    """O castigo global era uma arma: como ele vale tambem pra senha certa, qualquer
+    um na rede trancava o app do Leo com 5 requests a cada 5 minutos."""
+    import time as _t
+
+    main._login_erros["10.0.0.99"] = [_t.monotonic()] * main._LOGIN_MAX_ERROS
+    # O dono, de outra origem, continua entrando.
+    assert client.post("/auth/login", json={"password": "senha-de-teste"}).status_code == 200
+
+
+def test_o_429_diz_quanto_esperar(client):
+    for _ in range(main._LOGIN_MAX_ERROS):
+        client.post("/auth/login", json={"password": "chute"})
+    r = client.post("/auth/login", json={"password": "chute"})
+    assert r.status_code == 429
+    # Sem Retry-After o app nao tem como dizer ao Leo quanto falta, e ele insiste.
+    assert int(r.headers["Retry-After"]) > 0
+
+
+def test_login_nao_conta_como_o_leo_ter_estado_aqui(client):
+    """O Modo Retorno (lei 4) le MAX(ts) da telemetria como "o Leo esteve aqui".
+
+    O conserto do login transformou a unica rota SEM autenticacao num produtor dessa
+    tabela: sem excluir os eventos de auth, o proprio login zerava `dias_ausente`
+    antes de a Home decidir o que mostrar -- e um estranho na rede apagava o sinal.
+    """
+    import time as _t
+
+    with store._connect() as con:
+        con.execute(
+            "INSERT INTO telemetry (ts, evento, ref, meta_json) VALUES (?,?,?,?)",
+            (_t.time() - 20 * 86400, "capture_in", "1", "{}"),
+        )
+        con.commit()
+
+    client.post("/auth/login", json={"password": "chute"})
+    client.post("/auth/login", json={"password": "senha-de-teste"})
+    assert store.dias_desde_ultima_interacao() >= 19
+
+
+def test_refechar_com_texto_corrigido_substitui_o_bloco(client, monkeypatch):
+    """A dedupe por dia consertou o bloco duplicado e criou um descarte silencioso: o
+    segundo approve devolvia sucesso e a correcao nao entrava em lugar nenhum."""
+    hdr = token(client)
+    nota = {"texto": ""}
+
+    async def raw(*_a, **_kw):
+        return "1- Inbox/Raw/x.md"
+
+    async def append(path, block, _msg, header_if_new="", dedupe_marker=None,
+                     substituir_marcado=False):
+        if dedupe_marker and dedupe_marker in nota["texto"]:
+            if substituir_marcado:
+                nota["texto"] = vault_client.substituir_bloco(
+                    nota["texto"], dedupe_marker, block
+                )
+        else:
+            nota["texto"] = (nota["texto"] + "\n\n" + block).strip()
+        return path
+
+    monkeypatch.setattr(vault_client, "write_raw", raw)
+    monkeypatch.setattr(vault_client, "append_file", append)
+
+    base = {"template": "yoga", "raw_text": "despejo", "checks": []}
+    client.post("/closing/approve", json={**base, "draft_md": "primeira versao"}, headers=hdr)
+    client.post("/closing/approve", json={**base, "draft_md": "TEXTO CORRIGIDO"}, headers=hdr)
+
+    assert nota["texto"].count("## Fechamento") == 1, "continua um bloco por dia"
+    assert "TEXTO CORRIGIDO" in nota["texto"], "a correcao entrou"
+    assert "primeira versao" not in nota["texto"]
+
+
+def test_agenda_tambem_sobrevive_ao_clickup_fora_do_ar(client, monkeypatch):
+    """/abertura ganhou a protecao e /agenda -- o outro chamador de due_hoje -- nao."""
+
+    async def caiu():
+        raise RuntimeError("429")
+
+    monkeypatch.setattr(tasks, "due_hoje", caiu)
+    r = client.get("/agenda", headers=token(client))
+    assert r.status_code == 200
+    assert r.json()["tarefas_indisponivel"] is True

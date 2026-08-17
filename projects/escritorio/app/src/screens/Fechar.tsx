@@ -1,5 +1,5 @@
 import Feather from "@expo/vector-icons/Feather";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
   Bloco,
@@ -146,7 +146,12 @@ export default function Fechar() {
   }, []);
 
   // Rascunho do despejo: carrega uma vez, grava a cada digitação.
-  const DUMP_KEY = "fechar_despejo_v1";
+  //
+  // A chave leva o DIA. Sem ele, um dia que ficou sem fechar deixava o texto no
+  // cofre para sempre e o efeito de carga o injetava no campo de qualquer dia
+  // seguinte — o despejo de ontem virava, calado, o diário de hoje.
+  const hojeLocal = new Date().toLocaleDateString("en-CA");
+  const DUMP_KEY = `fechar_despejo_v2:${hojeLocal}`;
 
   useEffect(() => {
     let alive = true;
@@ -164,15 +169,35 @@ export default function Fechar() {
     };
   }, []);
 
+  const gravarDump = (texto: string) => {
+    (texto
+      ? storage.setItemAsync(DUMP_KEY, texto)
+      : storage.deleteItemAsync(DUMP_KEY)
+    ).catch(() => {});
+  };
+
   useEffect(() => {
     // Só depois da carga: gravar antes dela apagaria o salvo com o "" inicial.
     if (!dumpCarregado) return;
-    const id = setTimeout(() => {
-      (dump ? storage.setItemAsync(DUMP_KEY, dump) : storage.deleteItemAsync(DUMP_KEY))
-        .catch(() => {});
-    }, 400);
+    const id = setTimeout(() => gravarDump(dump), 400);
     return () => clearTimeout(id);
-  }, [dump, dumpCarregado]);
+  }, [dump, dumpCarregado, DUMP_KEY]);
+
+  // O cleanup acima roda TAMBÉM no desmonte, e ali ele cancelava a gravação pendente:
+  // tudo digitado desde o último disparo do timer morria exatamente na transição
+  // (troca de aba, botão físico de voltar) que motivou persistir. O ref segura o
+  // valor corrente e este efeito grava sem debounce na saída.
+  const dumpRef = useRef(dump);
+  dumpRef.current = dump;
+  const dumpCarregadoRef = useRef(dumpCarregado);
+  dumpCarregadoRef.current = dumpCarregado;
+  useEffect(
+    () => () => {
+      if (dumpCarregadoRef.current) gravarDump(dumpRef.current);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -508,7 +533,10 @@ export default function Fechar() {
               title="Aprovar e gravar"
               sub={closingLabel(marcadas, routines.length, temTexto, tarifas)}
               onPress={() => aprovar(draft)}
-              disabled={busy}
+              // `fecharDisabled`, não `busy`: este é o MESMO fechamento do outro
+              // ramo, e travar só o de lá deixava o dia refechável por aqui sem nem
+              // trocar de tela. Ele também passa a respeitar routinesUnavailable.
+              disabled={fecharDisabled}
               loading={busy}
             />
           </View>

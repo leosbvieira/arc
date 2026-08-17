@@ -37,7 +37,7 @@ def client(tmp_path, monkeypatch):
 @pytest.fixture
 def vault(monkeypatch):
     """Fechamento sem tocar o vault real."""
-    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None):
+    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None, **_kw):
         return path
 
     async def fake_raw(text, capture_id, ts=None):
@@ -358,7 +358,7 @@ def test_fechamento_grava_no_dia_local_do_leo_nao_no_do_servidor(client, monkeyp
 
     paths: list[str] = []
 
-    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None):
+    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None, **_kw):
         paths.append(path)
         return path
 

@@ -36,7 +36,7 @@ import {
 
 import Abertura from "./src/screens/Abertura";
 import Agenda from "./src/screens/Agenda";
-import { clearToken, getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
+import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
 import { sessaoValida } from "./src/sessao";
 import { flush } from "./src/captureQueue";
 import { registerForPushToken } from "./src/notifications";
@@ -134,7 +134,7 @@ async function syncPushDevice() {
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontsError] = useFonts({
     BricolageGrotesque_400Regular,
     BricolageGrotesque_500Medium,
     BricolageGrotesque_600SemiBold,
@@ -201,9 +201,10 @@ export default function App() {
         const autenticado = sessaoValida(t, Date.now());
         setAuthed(autenticado);
         if (autenticado) startPushSync();
-        // Token vencido sai do cofre agora: deixá-lo lá faria a próxima abertura
-        // repetir a mesma dança, e o login já grava um novo por cima.
-        else if (t) clearToken().catch(() => {});
+        // NÃO apaga o token vencido. `setAuthed(false)` já leva à tela de login e o
+        // `login()` grava por cima, então apagar não comprava nada — e comprava um
+        // risco: a decisão sai do relógio LOCAL, então um aparelho com a hora
+        // adiantada destruía uma credencial boa, de forma irreversível.
       })
       .catch((e) => {
         console.log("sessão:", e);
@@ -220,6 +221,14 @@ export default function App() {
     if (!authed) return;
 
     const sync = () => {
+      // A validade também se reconfere aqui. A checagem do boot só roda uma vez, e o
+      // app fica aberto por dias: o token vencia com ele em pé e o defeito voltava
+      // inteiro — tabbar em "erro 401" e nenhum caminho de volta ao login.
+      getToken()
+        .then((t) => {
+          if (!sessaoValida(t, Date.now())) setAuthed(false);
+        })
+        .catch(() => {});
       flush().catch((e) => console.log("capture queue:", e));
     };
 
@@ -289,7 +298,11 @@ export default function App() {
     }
   }
 
-  if (!ready || !fontsLoaded) {
+  // `fontsError` entra na condição: o gate era `!ready || !fontsLoaded` e só `ready`
+  // ganhou tratamento de falha. Com a fonte falhando (rede no primeiro boot), o app
+  // ficava no mesmo splash permanente pela outra metade da condição. Melhor abrir com
+  // a fonte do sistema do que não abrir.
+  if (!ready || (!fontsLoaded && !fontsError)) {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={[styles.screen, styles.center]}>

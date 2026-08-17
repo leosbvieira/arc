@@ -444,13 +444,13 @@ export default function Tasks({
           ) : null}
           {/* Cada grupo expandido leva o próprio cabeçalho: com os dois abertos,
               antes eram dois <View> nus em sequência e nada dizia onde um acabava. */}
-          {showFuture ? (
+          {showFuture && future.length ? (
             <View style={styles.group}>
               <SectionHeader eyebrow="agendado" title="Com prazo" meta={`${future.length}`} />
               {renderRows(future)}
             </View>
           ) : null}
-          {showBacklog ? (
+          {showBacklog && grouped.backlog.length ? (
             <View style={styles.group}>
               <SectionHeader eyebrow="sem prazo" title="Backlog" meta={`${grouped.backlog.length}`} />
               {renderRows(grouped.backlog)}

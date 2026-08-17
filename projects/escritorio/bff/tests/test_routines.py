@@ -280,7 +280,7 @@ def test_fechamento_ordena_manha_antes_de_noite(client):
 
 
 def test_approve_grava_pelo_slug_e_o_scorecard_conta(client, monkeypatch):
-    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None):
+    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None, **_kw):
         return path
 
     async def fake_raw(text, capture_id, ts=None):
@@ -308,7 +308,7 @@ def test_approve_grava_pelo_slug_e_o_scorecard_conta(client, monkeypatch):
 
 
 def test_passos_nao_viram_checks(client, monkeypatch):
-    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None):
+    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None, **_kw):
         return path
 
     async def fake_raw(text, capture_id, ts=None):

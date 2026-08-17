@@ -18,13 +18,19 @@
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-/** base64url -> texto. Sem `atob`, sem `Buffer`: os dois faltam em algum dos dois
- * runtimes onde este código roda (Hermes no aparelho, node no teste). */
-function decodeBase64Url(entrada: string): string | null {
+/** base64url -> texto UTF-8. Sem `atob`, sem `Buffer`, sem `TextDecoder`: os três
+ * faltam em algum dos dois runtimes onde este código roda (Hermes no aparelho, node
+ * no teste).
+ *
+ * O UTF-8 é decodificado de verdade, e não só os bytes. A primeira versão devolvia
+ * latin1 — `exp` é número e sobrevivia, então nada quebrava HOJE, mas qualquer campo
+ * de texto lido daqui viria como mojibake ("leó" virava "leÃ³"), esperando o primeiro
+ * leitor futuro. Bug latente é dívida com juros. */
+export function decodeBase64Url(entrada: string): string | null {
   const limpa = entrada.replace(/=+$/, "");
+  const bytes: number[] = [];
   let bits = 0;
   let acc = 0;
-  let saida = "";
   for (const ch of limpa) {
     const v = B64.indexOf(ch);
     if (v < 0) return null;
@@ -32,8 +38,38 @@ function decodeBase64Url(entrada: string): string | null {
     bits += 6;
     if (bits >= 8) {
       bits -= 8;
-      saida += String.fromCharCode((acc >> bits) & 0xff);
+      bytes.push((acc >> bits) & 0xff);
     }
+  }
+
+  let saida = "";
+  for (let i = 0; i < bytes.length; ) {
+    const b = bytes[i];
+    let ponto: number;
+    let extras: number;
+    if (b < 0x80) {
+      ponto = b;
+      extras = 0;
+    } else if ((b & 0xe0) === 0xc0) {
+      ponto = b & 0x1f;
+      extras = 1;
+    } else if ((b & 0xf0) === 0xe0) {
+      ponto = b & 0x0f;
+      extras = 2;
+    } else if ((b & 0xf8) === 0xf0) {
+      ponto = b & 0x07;
+      extras = 3;
+    } else {
+      return null;
+    }
+    if (i + extras >= bytes.length) return null; // sequência truncada
+    for (let j = 1; j <= extras; j++) {
+      const seguinte = bytes[i + j];
+      if ((seguinte & 0xc0) !== 0x80) return null;
+      ponto = (ponto << 6) | (seguinte & 0x3f);
+    }
+    saida += String.fromCodePoint(ponto);
+    i += extras + 1;
   }
   return saida;
 }

@@ -658,7 +658,7 @@ export default function Capture({
     // pelo resto da sessão — junto com o literal "agora", que envelhecia mentindo.
     setReply("");
 
-    const guardarNaFila = async () => {
+    const guardarNaFila = async (motivo: "rede" | "login" = "rede") => {
       // A mesma client_key usada no primeiro POST acompanha o retry. Se o BFF
       // recebeu a captura e só a resposta se perdeu, ele devolve o id existente.
       await enqueue({
@@ -669,7 +669,14 @@ export default function Capture({
       setText("");
       setSensitive(false);
       setPending(await pendingCount());
-      setStatus("sem conexão — guardado no aparelho, reenvio automático");
+      // O texto nunca se perde nos dois casos, mas a frase muda: no 401 nenhum
+      // reenvio automático vai acontecer enquanto ele não entrar de novo, e dizer
+      // "sem conexão" ali seria prometer um reenvio que não vem.
+      setStatus(
+        motivo === "login"
+          ? "sessão expirada — guardado no aparelho; entre de novo pra enviar"
+          : "sem conexão — guardado no aparelho, reenvio automático",
+      );
     };
 
     try {
@@ -678,9 +685,15 @@ export default function Capture({
       // não de `restantes > 0` — a fila também pode ter sobra com a rede boa (itens
       // que o servidor recusou), e nesse caso mandar a captura nova pra fila era
       // enterrá-la atrás de um item que nunca sai, mentindo "sem conexão".
-      const { semSaida } = await flush();
-      if (semSaida) {
-        await guardarNaFila();
+      const { parou, rejeitados } = await flush();
+      if (rejeitados > 0) {
+        // O badge vermelho so era recalculado no foco da tela: sem isto, um item
+        // abandonado AGORA sumia do contador de pendentes e nada aparecia no lugar,
+        // e a queda do numero se lia como entrega.
+        setRejected(await rejectedCount());
+      }
+      if (parou) {
+        await guardarNaFila(parou);
         return;
       }
 
@@ -1731,7 +1744,7 @@ export default function Capture({
                   size={14}
                   color={sensitive ? colors.primary : colors.textMuted}
                 />
-                <Text style={[styles.lockText, sensitive && styles.lockTextOn]}>
+                <Text numberOfLines={1} style={[styles.lockText, sensitive && styles.lockTextOn]}>
                   {sensitive ? "sensível" : "normal"}
                 </Text>
               </Pressable>
@@ -1779,7 +1792,9 @@ export default function Capture({
                     edificação e pra fila de melhorias, não pra triagem. A tela não sabe
                     o destino (o /capture é fire-and-forget e responde antes de
                     classificar), então ela para de afirmar um. */}
-                <Text style={styles.toastTitle}>{reply}</Text>
+                {/* Frase própria, não o literal do BFF: ele responde "✅ anotado", e o
+                    emoji desenhava um segundo tique a 8px do Feather do toastIcon. */}
+                <Text style={styles.toastTitle}>Anotado. Organiza depois.</Text>
                 <Text style={styles.toastMeta}>vale +{tarifas.captura} quando materializar</Text>
               </View>
             </View>
@@ -2246,7 +2261,9 @@ const styles = StyleSheet.create({
   // Deixa de ser quadrado fixo: agora carrega o rótulo ao lado do glifo.
   lockButton: { flexDirection: "row", alignItems: "center", gap: 5, height: 38, paddingHorizontal: 10, borderRadius: 11, justifyContent: "center", borderWidth: 1, borderColor: colors.border },
   lockButtonOn: { borderColor: "rgba(222,184,120,0.45)", backgroundColor: colors.primarySoft },
-  lockText: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 0.6 },
+  // flexShrink: a fileira não tem wrap e o cartão tem overflow hidden — sem isto o
+  // rótulo novo empurrava o botão Enviar pra fora em tela estreita.
+  lockText: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 0.6, flexShrink: 1 },
   lockTextOn: { color: colors.primary },
   sendButton: { flexDirection: "row", alignItems: "center", gap: 5, height: 40, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.primary, borderBottomWidth: 2, borderBottomColor: "#B6935C" },
   sendButtonDisabled: { opacity: 0.4 },

@@ -47,6 +47,14 @@ export async function login(password: string): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
+  // "senha incorreta" para QUALQUER status era mentira em dois casos novos: o 429 do
+  // limitador (insistir é exatamente o que não se deve fazer) e um 5xx do servidor.
+  if (r.status === 429) {
+    const s = segundosDoRetryAfter(r.headers.get("Retry-After"));
+    const espera = s ? ` — espere ${Math.ceil(s / 60)} min` : "";
+    throw new Error(`tentativas demais${espera}`);
+  }
+  if (r.status >= 500) throw new Error(`o servidor falhou (erro ${r.status})`);
   if (!r.ok) throw new Error("senha incorreta");
   const data = (await r.json()) as { token: string };
   await setToken(data.token);
@@ -579,6 +587,9 @@ export type Abertura = {
   temas: TemaSemana[];
   hoje: {
     tarefas_due: Task[];
+    /** true = a fonte externa não respondeu. Lista vazia NÃO quer dizer "sem tarefa":
+     *  sem este campo, falha e calma viram a mesma tela. */
+    tarefas_indisponivel?: boolean;
     horarios: Horario[];
     calendario: EventoAgenda[];
     fontes_calendario: Record<string, EstadoFonteCalendario>;

@@ -67,6 +67,7 @@ def test_closing_raw_id_depende_do_conteudo_e_retry_reusa_id(
         *,
         header_if_new=None,
         dedupe_marker=None,
+        **_kw,
     ):
         return path
 

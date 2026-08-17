@@ -401,6 +401,9 @@ export default function Abertura() {
   const temEspera =
     prioridades_de_ontem.length > 0 ||
     hoje.tarefas_due.length > 0 ||
+    // Sem isto, a seção some inteira quando a fonte cai — e o aviso abaixo,
+    // que existe justamente pra dizer que caiu, some junto com ela.
+    hoje.tarefas_indisponivel === true ||
     hoje.horarios.length > 0 ||
     hoje.calendario.length > 0 ||
     Object.keys(hoje.fontes_calendario).length > 0;
@@ -631,6 +634,18 @@ export default function Abertura() {
               ))}
             </Card>
           )}
+
+          {/* Falha da fonte externa dita em voz alta. A /abertura degrada em vez de
+              devolver 500 (o pack é SQLite local), mas sem esta linha a degradação
+              apareceria como um dia sem tarefa nenhuma — calma afirmada sem ter
+              perguntado, o mesmo defeito que o tile FOCO tinha na Home. */}
+          {hoje.tarefas_indisponivel ? (
+            <View style={styles.linha}>
+              <Text style={styles.linhaSub}>
+                não consegui ler suas tarefas agora — o resto do dia está aqui
+              </Text>
+            </View>
+          ) : null}
 
           {hoje.tarefas_due.map((t) => (
             <View

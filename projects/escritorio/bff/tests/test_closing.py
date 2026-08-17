@@ -21,7 +21,7 @@ def test_draft_devolve_estrutura(client, monkeypatch):
 
 def test_approve_grava_exatamente_o_aprovado_com_link_e_marker(client, monkeypatch):
     written = {}
-    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None):
+    async def fake_append(path, block, message, header_if_new="", dedupe_marker=None, **_kw):
         written.update(path=path, block=block, marker=dedupe_marker)
         return path
     async def fake_raw(text, capture_id):

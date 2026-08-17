@@ -112,15 +112,43 @@ async def put_file(path: str, content: str, message: str) -> str:
     raise VaultError(f"PUT {path}: conflito de SHA persistente")
 
 
+def substituir_bloco(current: str, marker: str, block: str) -> str:
+    """Troca o bloco marcado por `marker` pelo `block` novo, no lugar.
+
+    O bloco vai da linha que carrega o marker ate a proxima linha que comeca com
+    "## " (ou o fim do arquivo). Existe para o caso de reaprovar o fechamento com o
+    texto corrigido: sem isto, o dedupe por dia devolvia sucesso e DESCARTAVA a
+    correcao em silencio -- pior que o bug que ele consertou, porque o app ainda
+    apagava o rascunho local achando que tinha gravado.
+    """
+    linhas = current.split("\n")
+    inicio = next((i for i, l in enumerate(linhas) if marker in l), None)
+    if inicio is None:
+        return current.rstrip("\n") + "\n\n" + block
+    fim = len(linhas)
+    for j in range(inicio + 1, len(linhas)):
+        if linhas[j].startswith("## "):
+            fim = j
+            break
+    novas = linhas[:inicio] + block.rstrip("\n").split("\n") + [""] + linhas[fim:]
+    return "\n".join(novas).rstrip("\n") + "\n"
+
+
 async def append_file(path: str, block: str, message: str,
-                      header_if_new: str = "", dedupe_marker: str | None = None) -> str:
+                      header_if_new: str = "", dedupe_marker: str | None = None,
+                      substituir_marcado: bool = False) -> str:
     for _ in range(_SHA_RETRIES):
         existing = await _get(path)
         if existing:
             current = base64.b64decode(existing["content"]).decode("utf-8")
             if dedupe_marker and dedupe_marker in current:
-                return path                                   # ja gravado (retry idempotente)
-            new = current.rstrip("\n") + "\n\n" + block
+                if not substituir_marcado:
+                    return path                               # ja gravado (retry idempotente)
+                new = substituir_bloco(current, dedupe_marker, block)
+                if new == current:
+                    return path                               # nada mudou: nao gasta commit
+            else:
+                new = current.rstrip("\n") + "\n\n" + block
         else:
             new = (header_if_new + "\n\n" if header_if_new else "") + block
         try:

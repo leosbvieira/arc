@@ -16,6 +16,7 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -1040,11 +1041,16 @@ async def health():
 # Quem erra 5 vezes em 5 minutos não é o Leo.
 _LOGIN_MAX_ERROS = 5
 _LOGIN_CASTIGO_S = 300.0
-_login_erros: list[float] = []
+# Por ORIGEM, não global. Um contador único para o serviço inteiro transformava a
+# proteção em arma: como o castigo vale também para a senha certa, qualquer um na
+# rede (o BFF escuta 0.0.0.0:8000) trancava o app do Leo para sempre com 5 requests
+# a cada 5 minutos, e não havia como destrancar de dentro do app. Bloqueando a
+# FONTE, quem tenta adivinhar tranca a si mesmo e o celular do Leo passa.
+_login_erros: dict[str, list[float]] = {}
 
 
 @app.post("/auth/login", response_model=TokenOut)
-async def login(body: LoginIn):
+async def login(body: LoginIn, request: Request):
     """Porta única do app. Um acerto emite token de 30 dias que autoriza escrita no
     vault e create/complete no ClickUp, então ela merece contador e registro.
 
@@ -1055,25 +1061,44 @@ async def login(body: LoginIn):
     rede" é uma suposição sobre a rede, não uma garantia do serviço.
     """
     agora = time.monotonic()
-    global _login_erros
-    _login_erros = [t for t in _login_erros if agora - t < _LOGIN_CASTIGO_S]
+    origem = request.client.host if request.client else "desconhecida"
+    # Poda geral: sem isto o dicionário cresceria com cada IP que já errou uma vez.
+    for chave in [k for k, v in _login_erros.items()
+                  if all(agora - t >= _LOGIN_CASTIGO_S for t in v)]:
+        _login_erros.pop(chave, None)
 
-    if len(_login_erros) >= _LOGIN_MAX_ERROS:
-        store.log_event("login_bloqueado")
-        logger.warning("login bloqueado: %d erros na janela", len(_login_erros))
+    erros = [t for t in _login_erros.get(origem, []) if agora - t < _LOGIN_CASTIGO_S]
+
+    if len(erros) >= _LOGIN_MAX_ERROS:
+        _login_erros[origem] = erros
+        # NÃO registra evento aqui: request bloqueado é ilimitado por construção, e
+        # gravar um por tentativa faria da única rota sem autenticação um gravador de
+        # disco sem teto — síncrono, dentro do event loop. O bloqueio já foi registrado
+        # uma vez, na transição abaixo.
+        espera = int(_LOGIN_CASTIGO_S - (agora - min(erros))) + 1
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             "tentativas demais; espere alguns minutos",
+            headers={"Retry-After": str(max(1, espera))},
         )
 
-    if not secrets.compare_digest(body.password, settings.app_password):
-        # `compare_digest` em vez de `!=`: comparação de senha não vaza tempo.
-        _login_erros.append(agora)
+    # Em BYTES: `compare_digest` recusa `str` com qualquer caractere fora de ASCII
+    # (TypeError), então trocar o `!=` por ele sem codificar transformava a única
+    # porta do app num 500 para toda senha com acento — regressão em cima do conserto.
+    if not secrets.compare_digest(
+        body.password.encode("utf-8"),
+        (settings.app_password or "").encode("utf-8"),
+    ):
+        erros.append(agora)
+        _login_erros[origem] = erros
         store.log_event("login_falhou")
-        logger.warning("login falhou (%d na janela)", len(_login_erros))
+        logger.warning("login falhou (%d na janela, origem %s)", len(erros), origem)
+        if len(erros) == _LOGIN_MAX_ERROS:
+            store.log_event("login_bloqueado")
+            logger.warning("login bloqueado para %s", origem)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "senha incorreta")
 
-    _login_erros = []
+    _login_erros.pop(origem, None)
     store.log_event("login_ok")
     return TokenOut(token=make_token())
 
@@ -2936,9 +2961,17 @@ async def get_agenda(
     """Entrega a agenda e explicita o estado de cada fonte externa."""
     ref = _data_ref(dia)
     resposta = await agenda.do_dia(ref)
-    resposta["tarefas_due"] = (
-        await tasks.due_hoje() if ref == pontos.hoje_local() else []
-    )
+    # Mesmo tratamento da /abertura: a agenda tem partes locais (ICS em cache, hora
+    # marcada) que não podem morrer junto com o ClickUp. Consertar só a /abertura
+    # teria deixado o defeito vivo no outro chamador de `due_hoje`.
+    resposta["tarefas_due"] = []
+    resposta["tarefas_indisponivel"] = False
+    if ref == pontos.hoje_local():
+        try:
+            resposta["tarefas_due"] = await tasks.due_hoje()
+        except Exception:
+            logger.exception("agenda: tarefas indisponíveis, seguindo sem elas")
+            resposta["tarefas_indisponivel"] = True
     return resposta
 
 
@@ -3049,6 +3082,12 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
         [(c.rotina, c.feito) for c in body.checks],
     )
     store.log_event("closing_approved", ref=today)
+    # O bônus do despejo sobe JUNTO. Ele ficou para trás na primeira reordenação, e
+    # com isso uma falha do vault creditava o fechamento e comia os +40 — exatamente
+    # a falha que a reordenação existe para sobreviver. Idempotente por (evento, ref),
+    # igual ao de cima, então adiantar não paga duas vezes.
+    if body.raw_text.strip():
+        store.log_event("despejo_escrito", ref=today)
 
     raw_hash = hashlib.sha1(body.raw_text.encode("utf-8")).hexdigest()[:8]
     raw_path = await vault_client.write_raw(
@@ -3070,13 +3109,11 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
         f"diario: fechamento {today}",
         header_if_new=f"# {today}",
         dedupe_marker=marker,
+        # Reaprovar o dia é retry, e retry com texto corrigido tem que ENTRAR. Sem
+        # isto, a dedupe por dia devolvia sucesso e engolia a correção — e o app
+        # apagava o rascunho local logo em seguida, achando que estava gravado.
+        substituir_marcado=True,
     )
-    # O despejo é bônus SEPARADO do fechamento (o app promete "garante +80 ·
-    # bônus até +140"), e `closing_approved` sozinho não distingue quem escreveu
-    # de quem só marcou as caixinhas. Evento próprio, ref = a data local: um
-    # fechamento por dia, um bônus por dia, e reaprovar não paga duas vezes.
-    if body.raw_text.strip():
-        store.log_event("despejo_escrito", ref=today)
     return {"ok": True, "daily_path": daily_path, "raw_path": raw_path}
 
 

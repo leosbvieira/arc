@@ -3,7 +3,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MARGEM_MS, expiracaoDoToken, sessaoValida } from "../src/sessao.ts";
+import {
+  MARGEM_MS,
+  decodeBase64Url,
+  expiracaoDoToken,
+  sessaoValida,
+} from "../src/sessao.ts";
 
 /** Monta um JWT de mentira: só o payload importa, a assinatura nunca é lida aqui. */
 function tokenCom(payload) {
@@ -66,8 +71,22 @@ test("expiracaoDoToken devolve milissegundos, não segundos", () => {
   assert.equal(expiracaoDoToken("a.b.c"), null);
 });
 
-test("o decoder aguenta payload com acento (base64url, sem atob)", () => {
+test("o decoder devolve UTF-8 de verdade, não os bytes crus", () => {
+  // A primeira versão deste teste usava `sub: "leo"` — 100% ASCII — e por isso
+  // passava mesmo com o decoder devolvendo latin1: "leó" virava "leÃ³" e ninguém
+  // notava. Uma revisão hostil pegou. Agora o assert é sobre o que o nome promete.
   const exp = Math.floor(AGORA / 1000) + 100;
-  const t = tokenCom({ exp, sub: "leo" });
+  const payload = { exp, sub: "João — ação 東 🔥" };
+  const t = tokenCom(payload);
   assert.equal(expiracaoDoToken(t), exp * 1000);
+
+  const cru = decodeBase64Url(t.split(".")[1]);
+  assert.equal(JSON.parse(cru).sub, payload.sub);
+});
+
+test("payload malformado não derruba o boot", () => {
+  assert.equal(decodeBase64Url("!!!"), null);
+  assert.equal(expiracaoDoToken("a.!!!.c"), null);
+  // Continuação UTF-8 solta: bytes inválidos viram null, não exceção.
+  assert.equal(decodeBase64Url("gA"), null);
 });

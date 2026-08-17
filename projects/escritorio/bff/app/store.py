@@ -1766,8 +1766,15 @@ def dias_desde_ultima_interacao() -> int:
     """Dias desde o último evento de telemetria — a assinatura de que o Leo esteve
     aqui. 0 quando nunca houve evento: primeiro uso NÃO é retorno (seria dar
     "bem-vindo de volta" na estreia)."""
+    # Os eventos de /auth/login ficam DE FORA. `login` é a única rota sem autenticação
+    # que escreve nesta tabela: contá-la como interação faria (a) o próprio login zerar
+    # o Modo Retorno antes de a Home decidir o que mostrar, e (b) qualquer estranho na
+    # rede apagar o sinal de ausência do Leo só de bater na porta com senha errada.
     with closing(_connect()) as con:
-        row = con.execute("SELECT MAX(ts) FROM telemetry").fetchone()
+        row = con.execute(
+            "SELECT MAX(ts) FROM telemetry WHERE evento NOT IN (?, ?, ?)",
+            ("login_ok", "login_falhou", "login_bloqueado"),
+        ).fetchone()
     ultimo = row[0] if row else None
     if not ultimo:
         return 0

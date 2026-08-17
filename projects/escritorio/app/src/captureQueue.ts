@@ -1,6 +1,7 @@
 import * as SecureStore from "./storage";
 import { capture, completeTask, logSession } from "./api";
 import { decidirAposFalha, paraAFila } from "./offlineError";
+import { ResultadoDoFlush, drenar } from "./filaDrenagem";
 
 const IDX = "oq_idx_v2"; // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
 // Escaninho dos recusados: item que o servidor rejeitou MAX_TENTATIVAS vezes sai da
@@ -138,79 +139,23 @@ async function sendOne(it: QueuedItem): Promise<void> {
   }
 }
 
-export type ResultadoDoFlush = {
-  /** Itens ainda na fila depois desta drenagem. */
-  restantes: number;
-  /** A drenagem parou porque nada sai do aparelho (ou porque a sessao expirou).
-   *  E ISTO que significa "sem conexao" — nao `restantes > 0`, que tambem fica
-   *  verdadeiro quando o que sobrou foi recusado pelo servidor com a rede boa. */
-  semSaida: boolean;
-  /** Itens que foram pro escaninho de recusados NESTA drenagem. */
-  rejeitados: number;
-};
+export type { ResultadoDoFlush } from "./filaDrenagem";
 
-/** Reenvia em ordem. Para de vez so quando nada sai do aparelho; item que o servidor
- * recusa vai pro FIM da fila em vez de travar quem esta atras. Item envenenado e
- * descartado. Tudo criptografado em repouso. */
+/** Reenvia em ordem. O LAÇO mora em `filaDrenagem.ts`, sem import nenhum, pra poder
+ * ser testado: este arquivo importa expo-secure-store e nunca sobe no `node --test`,
+ * e foi essa impossibilidade que deixou o `catch { break }` viver a vida inteira do
+ * arquivo. Aqui fica só a fiação com o aparelho. */
 async function _flush(): Promise<ResultadoDoFlush> {
-  let idx = await readIdx();
-  // Uma volta so: assim que reencontramos alguem que ja falhou nesta drenagem, a fila
-  // so tem recusados e continuar seria girar pra sempre.
-  const jaFalharamAgora = new Set<string>();
-  let semSaida = false;
-  let rejeitados = 0;
-
-  while (idx.length > 0) {
-    const entry = idx[0];
-    if (jaFalharamAgora.has(entry.id)) break;
-
-    let item: QueuedItem;
-    try {
-      item = await readItem(entry);
-    } catch {
-      // Item envenenado (JSON corrompido / chunks ausentes): o conteudo ja se perdeu.
-      // De-indexa e descarta pra nao travar o resto da fila (fantasma preso = pior pra lei 1).
-      idx = idx.slice(1);
-      await writeIdx(idx); // de-indexa ANTES de apagar (orfao inofensivo > fantasma)
-      await deleteItem(entry);
-      continue;
-    }
-
-    try {
-      await sendOne(item);
-    } catch (erro) {
-      const tentativas = (entry.tentativas ?? 0) + 1;
-      const decisao = decidirAposFalha(erro, tentativas);
-
-      if (paraAFila(decisao)) {
-        // Rede caida ou sessao expirada: nao e culpa deste item e o resto da fila
-        // responderia igual. Nao gasta tentativa.
-        semSaida = true;
-        break;
-      }
-
-      jaFalharamAgora.add(entry.id);
-      idx = idx.slice(1);
-
-      if (decisao === "desistir") {
-        await writeIdx(idx);
-        await arquivarRejeitado({ ...entry, tentativas });
-        rejeitados += 1;
-      } else {
-        // Pro fim da fila, com a tentativa contada: um 404 eterno nao segura mais
-        // a captura que entrou depois dele.
-        idx = [...idx, { ...entry, tentativas }];
-        await writeIdx(idx);
-      }
-      continue;
-    }
-
-    idx = idx.slice(1);
-    await writeIdx(idx); // de-indexa ANTES de apagar os chunks (orfao > fantasma)
-    await deleteItem(entry);
-  }
-
-  return { restantes: idx.length, semSaida, rejeitados };
+  return drenar<QueuedItem>({
+    lerIndice: readIdx,
+    gravarIndice: writeIdx,
+    lerItem: readItem,
+    apagarItem: deleteItem,
+    enviar: sendOne,
+    arquivarRejeitado,
+    decidir: decidirAposFalha,
+    paraAFila,
+  });
 }
 
 async function arquivarRejeitado(entry: IdxEntry): Promise<void> {

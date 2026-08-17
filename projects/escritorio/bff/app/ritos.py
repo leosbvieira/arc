@@ -24,6 +24,11 @@ _DIA_SEMANA = {"segunda": 0, "terça": 1, "quarta": 2, "quinta": 3,
 # `nudge.ps1` esperando o BFF subir; NÃO cobre catch-up de boot, que é o que
 # fazia os seis nudges do dia chegarem no mesmo segundo às 22:44.
 TOLERANCIA_ATRASO_MIN = 90
+
+# E quanto ele pode ADIANTAR. Existe só pra absorver jitter do agendador; o valor é
+# pequeno de propósito, porque é este lado que fecha a madrugada: sem ele, qualquer
+# entrega depois da meia-noite parece "antes da hora" e passa.
+ADIANTAMENTO_MAX_MIN = 5
 SCRIPTS = {"nudge", "digest"}
 _HORA = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
@@ -96,7 +101,7 @@ def slugs_por_script(script: str) -> list[str]:
 
 
 def atraso_minutos(slug: str, agora: datetime) -> int | None:
-    """Minutos entre a hora nominal do rito e `agora`. Negativo = ainda não deu a hora.
+    """Minutos entre a hora nominal do rito HOJE e `agora`. Negativo = antes da hora.
 
     `None` quando o rito nem é de hoje: um rito semanal disparado em outro dia da
     semana não está atrasado, está no dia errado — e comparar só o horário deixaria
@@ -106,11 +111,19 @@ def atraso_minutos(slug: str, agora: datetime) -> int | None:
     dia = r.get("dia")
     if dia is not None and agora.weekday() != _DIA_SEMANA[dia]:
         return None
-    return (agora.hour * 60 + agora.minute) - minutos(r["hora"])
+    h, m = r["hora"].split(":")
+    nominal = agora.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+    return int((agora - nominal).total_seconds() // 60)
 
 
 def atrasado(slug: str, agora: datetime, tolerancia: int = TOLERANCIA_ATRASO_MIN) -> bool:
-    """O rito perdeu a janela e não deve mais ser entregue.
+    """O rito está FORA da janela e não deve ser entregue.
+
+    A janela fecha dos DOIS lados, e o lado de cima é o que a primeira versão errou:
+    medindo minutos-do-dia, uma entrega depois da meia-noite produzia atraso NEGATIVO
+    (00:30 contra 21:00 dava −1230) e passava como "ainda não deu a hora" — justo o
+    caso do catch-up de boot que esta guarda existe para barrar. Só rejeitar
+    `atraso > tolerancia` deixava a madrugada inteira aberta.
 
     O Agendador do Windows registra as tarefas com -StartWhenAvailable removido, mas
     isso só resolve o lado de cá: o `systemd` do VPS tem `Persistent=true` com o mesmo
@@ -122,4 +135,6 @@ def atrasado(slug: str, agora: datetime, tolerancia: int = TOLERANCIA_ATRASO_MIN
     aviso da hora certa sumiria junto.
     """
     atraso = atraso_minutos(slug, agora)
-    return atraso is None or atraso > tolerancia
+    if atraso is None:
+        return True
+    return not (-ADIANTAMENTO_MAX_MIN <= atraso <= tolerancia)
