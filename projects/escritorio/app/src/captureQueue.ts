@@ -1,7 +1,12 @@
 import * as SecureStore from "./storage";
 import { capture, completeTask, logSession } from "./api";
+import { decidirAposFalha, paraAFila } from "./offlineError";
 
 const IDX = "oq_idx_v2"; // indice da fila: [{id, chunks}] — so metadados, nunca conteudo
+// Escaninho dos recusados: item que o servidor rejeitou MAX_TENTATIVAS vezes sai da
+// fila (senao trava todo mundo atras dele) mas NAO e apagado — "nada se perde" vale
+// tambem pro que falhou. Os chunks continuam onde estao; so o indice muda.
+const IDX_REJEITADOS = "oq_rejeitados_v1";
 // Limite do SecureStore e em BYTES (~2048). Fatiamos por CARACTERES no pior caso UTF-8:
 // 600 code units * 3 bytes/unit max = 1800 bytes <= limite, para qualquer emoji/acento.
 // Invariante: CHUNK_CHARS >= 2 — o recuo de 1 char na fronteira de surrogate pair
@@ -16,7 +21,11 @@ export type QueuedItem = {
   ts: number;
 };
 
-type IdxEntry = { id: string; chunks: number };
+// `tentativas` mora no INDICE, nao no item: o indice e metadado pequeno e reescrito
+// a cada passo de qualquer jeito, entao contar aqui evita re-fatiar e regravar os
+// chunks do conteudo a cada recusa — que seria escrita cara e uma chance a mais de
+// corromper justamente o item que ja esta com problema.
+type IdxEntry = { id: string; chunks: number; tentativas?: number };
 
 function idForTimestamp(ts: number): string {
   return `${ts}_${Math.random().toString(36).slice(2, 8)}`;
@@ -129,12 +138,32 @@ async function sendOne(it: QueuedItem): Promise<void> {
   }
 }
 
-/** Reenvia em ordem; para no primeiro erro de REDE. Item envenenado e descartado (nunca
- * trava a fila). Tudo criptografado em repouso. */
-async function _flush(): Promise<number> {
+export type ResultadoDoFlush = {
+  /** Itens ainda na fila depois desta drenagem. */
+  restantes: number;
+  /** A drenagem parou porque nada sai do aparelho (ou porque a sessao expirou).
+   *  E ISTO que significa "sem conexao" — nao `restantes > 0`, que tambem fica
+   *  verdadeiro quando o que sobrou foi recusado pelo servidor com a rede boa. */
+  semSaida: boolean;
+  /** Itens que foram pro escaninho de recusados NESTA drenagem. */
+  rejeitados: number;
+};
+
+/** Reenvia em ordem. Para de vez so quando nada sai do aparelho; item que o servidor
+ * recusa vai pro FIM da fila em vez de travar quem esta atras. Item envenenado e
+ * descartado. Tudo criptografado em repouso. */
+async function _flush(): Promise<ResultadoDoFlush> {
   let idx = await readIdx();
+  // Uma volta so: assim que reencontramos alguem que ja falhou nesta drenagem, a fila
+  // so tem recusados e continuar seria girar pra sempre.
+  const jaFalharamAgora = new Set<string>();
+  let semSaida = false;
+  let rejeitados = 0;
+
   while (idx.length > 0) {
     const entry = idx[0];
+    if (jaFalharamAgora.has(entry.id)) break;
+
     let item: QueuedItem;
     try {
       item = await readItem(entry);
@@ -146,18 +175,72 @@ async function _flush(): Promise<number> {
       await deleteItem(entry);
       continue;
     }
+
     try {
       await sendOne(item);
-    } catch {
-      break; // erro de rede: para e tenta de novo depois (rede continua ruim)
+    } catch (erro) {
+      const tentativas = (entry.tentativas ?? 0) + 1;
+      const decisao = decidirAposFalha(erro, tentativas);
+
+      if (paraAFila(decisao)) {
+        // Rede caida ou sessao expirada: nao e culpa deste item e o resto da fila
+        // responderia igual. Nao gasta tentativa.
+        semSaida = true;
+        break;
+      }
+
+      jaFalharamAgora.add(entry.id);
+      idx = idx.slice(1);
+
+      if (decisao === "desistir") {
+        await writeIdx(idx);
+        await arquivarRejeitado({ ...entry, tentativas });
+        rejeitados += 1;
+      } else {
+        // Pro fim da fila, com a tentativa contada: um 404 eterno nao segura mais
+        // a captura que entrou depois dele.
+        idx = [...idx, { ...entry, tentativas }];
+        await writeIdx(idx);
+      }
+      continue;
     }
+
     idx = idx.slice(1);
     await writeIdx(idx); // de-indexa ANTES de apagar os chunks (orfao > fantasma)
     await deleteItem(entry);
   }
-  return idx.length;
+
+  return { restantes: idx.length, semSaida, rejeitados };
 }
 
-export function flush(): Promise<number> {
+async function arquivarRejeitado(entry: IdxEntry): Promise<void> {
+  const raw = await SecureStore.getItemAsync(IDX_REJEITADOS);
+  let atuais: IdxEntry[] = [];
+  if (raw) {
+    try {
+      atuais = JSON.parse(raw) as IdxEntry[];
+    } catch {
+      atuais = [];
+    }
+  }
+  await SecureStore.setItemAsync(
+    IDX_REJEITADOS,
+    JSON.stringify([...atuais, entry]),
+  );
+}
+
+/** Quantos itens o servidor recusou vezes demais. Sao os que exigem o Leo — nenhum
+ * retry automatico resolve — e por isso a tela precisa saber contar. */
+export async function rejectedCount(): Promise<number> {
+  const raw = await SecureStore.getItemAsync(IDX_REJEITADOS);
+  if (!raw) return 0;
+  try {
+    return (JSON.parse(raw) as IdxEntry[]).length;
+  } catch {
+    return 0;
+  }
+}
+
+export function flush(): Promise<ResultadoDoFlush> {
   return serialized(() => _flush());
 }

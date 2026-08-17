@@ -18,7 +18,9 @@ import {
   enqueue,
   flush,
   pendingCount,
+  rejectedCount,
 } from "../captureQueue";
+import { ehFalhaDeRede, mensagemDaRecusa } from "../offlineError";
 import {
   clearReadingDraft,
   loadReadingDraft,
@@ -151,6 +153,7 @@ export default function Capture({
   const [busy, setBusy] = useState(false);
   const [sensitive, setSensitive] = useState(false);
   const [pending, setPending] = useState(0);
+  const [rejected, setRejected] = useState(0);
   const [status, setStatus] = useState("");
 
   // sessão de leitura
@@ -434,8 +437,10 @@ export default function Capture({
   useEffect(() => {
     let alive = true;
     const refreshPending = async () => {
-      const count = await pendingCount();
-      if (alive) setPending(count);
+      const [count, recusados] = await Promise.all([pendingCount(), rejectedCount()]);
+      if (!alive) return;
+      setPending(count);
+      setRejected(recusados);
     };
     refreshPending();
     const sub = AppState.addEventListener("change", (s) => {
@@ -648,29 +653,8 @@ export default function Capture({
 
     setBusy(true);
     setStatus("");
-    try {
-      const restantes = await flush();
-      if (restantes > 0) {
-        await enqueue({
-          kind: "capture",
-          payload: { text: t, client_key: clientKey, sensivel: sensitive },
-          ts,
-        });
-        setText("");
-        setSensitive(false);
-        setPending(await pendingCount());
-        setStatus(
-          "sem conexão — guardado no aparelho, reenvio automático",
-        );
-        return;
-      }
 
-      const r = await capture(t, undefined, clientKey, sensitive);
-      setReply(r);
-      setText("");
-      setSensitive(false);
-      setPending(await pendingCount());
-    } catch (error) {
+    const guardarNaFila = async () => {
       // A mesma client_key usada no primeiro POST acompanha o retry. Se o BFF
       // recebeu a captura e só a resposta se perdeu, ele devolve o id existente.
       await enqueue({
@@ -681,9 +665,36 @@ export default function Capture({
       setText("");
       setSensitive(false);
       setPending(await pendingCount());
-      setStatus(
-        "sem conexão — guardado no aparelho, reenvio automático",
-      );
+      setStatus("sem conexão — guardado no aparelho, reenvio automático");
+    };
+
+    try {
+      // Drena antes pra manter a ordem: uma captura nova não pode passar na frente
+      // do que já estava esperando. Mas o desvio pra fila agora depende de `semSaida`,
+      // não de `restantes > 0` — a fila também pode ter sobra com a rede boa (itens
+      // que o servidor recusou), e nesse caso mandar a captura nova pra fila era
+      // enterrá-la atrás de um item que nunca sai, mentindo "sem conexão".
+      const { semSaida } = await flush();
+      if (semSaida) {
+        await guardarNaFila();
+        return;
+      }
+
+      const r = await capture(t, undefined, clientKey, sensitive);
+      setReply(r);
+      setText("");
+      setSensitive(false);
+      setPending(await pendingCount());
+    } catch (error) {
+      if (ehFalhaDeRede(error)) {
+        await guardarNaFila();
+        return;
+      }
+      // O servidor RESPONDEU e recusou. Enfileirar aqui era o defeito: 401 e 404
+      // nunca melhoram sozinhos, e o 500 pode ter gravado do outro lado — reenviar
+      // às cegas duplica. O texto fica na caixa, que é o único lugar onde ele não
+      // se perde sem o Leo saber.
+      setStatus(mensagemDaRecusa(error));
     } finally {
       setBusy(false);
     }
@@ -1727,6 +1738,17 @@ export default function Capture({
             <View style={styles.queueRow}>
               <Feather name="cloud-off" size={13} color={colors.info} />
               <Text style={styles.queueText}>{pending} captura(s) seguras no aparelho</Text>
+            </View>
+          ) : null}
+          {/* Recusados: saíram da fila pra não travá-la, mas NÃO foram apagados.
+              Nenhum reenvio automático resolve — é o único estado da fila que
+              precisa do Leo, então é o único que vale interromper a tela. */}
+          {rejected > 0 ? (
+            <View style={styles.queueRow}>
+              <Feather name="alert-triangle" size={13} color={colors.danger} />
+              <Text style={[styles.queueText, { color: colors.danger }]}>
+                {rejected} não saíram — o servidor recusou
+              </Text>
             </View>
           ) : null}
           {status ? <Text style={styles.status}>{status}</Text> : null}
