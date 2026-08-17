@@ -128,8 +128,16 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
   // Preço do hero (tabela de tarifas, display-only). null = não desenha nada.
   const valorHero = valorDaAcao(action.target, params.tarifas);
   const focus = (digest?.tasks ?? []).slice(0, 3);
-  const routineDone = abertura?.rotinas_manha.filter((routine) => routine.feito).length ?? 0;
-  const routineTotal = abertura?.rotinas_manha.length ?? 0;
+  // O tile diz "RITMOS", não "ritmos da manhã": conta o DIA inteiro. Contando
+  // `rotinas_manha` as rotinas de tarde/noite não mexiam no número — marcar
+  // skincare-pm, diário ou leitura-noturna deixava o placar parado.
+  // O `??` cobre um BFF mais velho que ainda não manda `rotinas_hoje`.
+  const routineDone =
+    abertura?.rotinas_hoje?.feitas ??
+    abertura?.rotinas_manha.filter((routine) => routine.feito).length ??
+    0;
+  const routineTotal =
+    abertura?.rotinas_hoje?.total ?? abertura?.rotinas_manha.length ?? 0;
   const cycleProgress = points?.ciclo.meta
     ? points.ciclo.pontos / points.ciclo.meta
     : 0;
@@ -257,7 +265,13 @@ export default function Home({ onOpenTab }: { onOpenTab?: (tab: string) => void 
                 ) : (
                   <>
                     <Text style={styles.metricValue}>—</Text>
-                    <Text style={styles.metricHint}>nada no radar</Text>
+                    {/* "nada no radar" era dito TAMBÉM quando o digest falhou: lista
+                        vazia por sucesso e lista vazia por erro viravam a mesma frase,
+                        e a tela afirmava calma sem ter perguntado. Três linhas abaixo,
+                        COBRANÇAS já fazia certo com `loaded.has("digest")`. */}
+                    <Text style={styles.metricHint}>
+                      {loaded.has("digest") ? "nada no radar" : "não respondeu"}
+                    </Text>
                   </>
                 )}
               </Pressable>

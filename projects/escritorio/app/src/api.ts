@@ -573,6 +573,8 @@ export type Abertura = {
   dias_ausente?: number;
   template: Template | null; // null = ainda não respondeu o toque das 5h30
   rotinas_manha: RotinaDoDia[];
+  /** O dia INTEIRO (manhã + tarde + noite). A Home conta por aqui. */
+  rotinas_hoje?: { feitas: number; total: number };
   prioridades_de_ontem: string[]; // vêm do Shutdown de ontem; [] se não houve
   temas: TemaSemana[];
   hoje: {

@@ -150,6 +150,7 @@ export default function Capture({
   // captura livre
   const [text, setText] = useState("");
   const [reply, setReply] = useState("");
+  const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [busy, setBusy] = useState(false);
   const [sensitive, setSensitive] = useState(false);
   const [pending, setPending] = useState(0);
@@ -653,6 +654,9 @@ export default function Capture({
 
     setBusy(true);
     setStatus("");
+    // O toast anterior sai de cena antes do envio novo. Sem isto ele ficava na tela
+    // pelo resto da sessão — junto com o literal "agora", que envelhecia mentindo.
+    setReply("");
 
     const guardarNaFila = async () => {
       // A mesma client_key usada no primeiro POST acompanha o retry. Se o BFF
@@ -682,6 +686,9 @@ export default function Capture({
 
       const r = await capture(t, undefined, clientKey, sensitive);
       setReply(r);
+      // E some sozinho: um recibo é um instante, não um estado da tela.
+      if (replyTimer.current) clearTimeout(replyTimer.current);
+      replyTimer.current = setTimeout(() => setReply(""), 6000);
       setText("");
       setSensitive(false);
       setPending(await pendingCount());
@@ -1715,11 +1722,18 @@ export default function Capture({
                 hitSlop={6}
                 style={[styles.lockButton, sensitive && styles.lockButtonOn]}
               >
+                {/* Glifo DIFERENTE por estado, não só tom diferente: o de antes era
+                    "lock" nos dois casos, e distinguir ligado de desligado só pela cor
+                    falha no relance, no sol e para quem confunde as duas. Errar aqui
+                    manda uma captura privada pro preview da tela de bloqueio. */}
                 <Feather
-                  name="lock"
+                  name={sensitive ? "lock" : "unlock"}
                   size={14}
                   color={sensitive ? colors.primary : colors.textMuted}
                 />
+                <Text style={[styles.lockText, sensitive && styles.lockTextOn]}>
+                  {sensitive ? "sensível" : "normal"}
+                </Text>
               </Pressable>
               <View style={{ flex: 1 }} />
               <Pressable
@@ -1760,8 +1774,13 @@ export default function Capture({
                 <Feather name="check" size={14} color={colors.success} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.toastTitle}>Caiu na triagem. Organiza depois.</Text>
-                <Text style={styles.toastMeta}>agora · +{tarifas.captura}</Text>
+                {/* Dizia "Caiu na triagem" duas linhas acima de uma dica que anuncia
+                    `hack:` e `melhoria:` — prefixos que o capture_pipeline manda pra
+                    edificação e pra fila de melhorias, não pra triagem. A tela não sabe
+                    o destino (o /capture é fire-and-forget e responde antes de
+                    classificar), então ela para de afirmar um. */}
+                <Text style={styles.toastTitle}>{reply}</Text>
+                <Text style={styles.toastMeta}>vale +{tarifas.captura} quando materializar</Text>
               </View>
             </View>
           ) : null}
@@ -2224,8 +2243,11 @@ const styles = StyleSheet.create({
   micButtonOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   micText: { fontFamily: fonts.uiSemi, fontSize: 12, color: colors.textMuted },
   micTextOn: { color: colors.primaryText },
-  lockButton: { width: 38, height: 38, borderRadius: 11, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+  // Deixa de ser quadrado fixo: agora carrega o rótulo ao lado do glifo.
+  lockButton: { flexDirection: "row", alignItems: "center", gap: 5, height: 38, paddingHorizontal: 10, borderRadius: 11, justifyContent: "center", borderWidth: 1, borderColor: colors.border },
   lockButtonOn: { borderColor: "rgba(222,184,120,0.45)", backgroundColor: colors.primarySoft },
+  lockText: { fontFamily: fonts.mono, fontSize: 9, color: colors.textMuted, letterSpacing: 0.6 },
+  lockTextOn: { color: colors.primary },
   sendButton: { flexDirection: "row", alignItems: "center", gap: 5, height: 40, paddingHorizontal: spacing.lg, borderRadius: radius.md, backgroundColor: colors.primary, borderBottomWidth: 2, borderBottomColor: "#B6935C" },
   sendButtonDisabled: { opacity: 0.4 },
   sendText: { fontFamily: fonts.uiSemi, fontSize: 13, color: colors.primaryText },

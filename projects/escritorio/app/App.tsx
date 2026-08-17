@@ -36,7 +36,8 @@ import {
 
 import Abertura from "./src/screens/Abertura";
 import Agenda from "./src/screens/Agenda";
-import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
+import { clearToken, getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
+import { sessaoValida } from "./src/sessao";
 import { flush } from "./src/captureQueue";
 import { registerForPushToken } from "./src/notifications";
 import Capture from "./src/screens/Capture";
@@ -106,7 +107,7 @@ const TITLES: Partial<Record<Tab, string>> = {
   agenda: "Agenda",
   shutdown: "Shutdown",
   fechar: "Fechar o dia",
-  rotinas: "Rotinas",
+  rotinas: "Ritmos",  // as duas portas (Home e Mesa) já diziam "Ritmos"
   edificacao: "Edificação",
   melhorias: "Melhorias",
   triagem: "Triagem",
@@ -185,12 +186,30 @@ export default function App() {
   }
 
   useEffect(() => {
-    getToken().then((t) => {
-      const autenticado = !!t;
-      setAuthed(autenticado);
-      setReady(true);
-      if (autenticado) startPushSync();
-    });
+    // Três defeitos moravam nestas cinco linhas.
+    //
+    // (1) `!!t` decidia autenticação pela EXISTÊNCIA do token, nunca pela validade.
+    // Com TTL de 30 dias, o dia 31 abria a tabbar inteira em "erro 401" sem nenhum
+    // caminho de volta ao login. Agora a validade é lida do próprio token, offline.
+    // (2) Sem `.catch`, uma rejeição do expo-secure-store (restore de aparelho,
+    // keystore invalidada) deixava `ready=false` PARA SEMPRE: splash permanente com
+    // uma palavra, sem erro e sem retry, e a única saída era limpar os dados do app
+    // — que leva junto a fila offline e o rascunho de leitura.
+    // (3) `setReady` fora do `.finally` tinha o mesmo efeito em qualquer outra falha.
+    getToken()
+      .then((t) => {
+        const autenticado = sessaoValida(t, Date.now());
+        setAuthed(autenticado);
+        if (autenticado) startPushSync();
+        // Token vencido sai do cofre agora: deixá-lo lá faria a próxima abertura
+        // repetir a mesma dança, e o login já grava um novo por cima.
+        else if (t) clearToken().catch(() => {});
+      })
+      .catch((e) => {
+        console.log("sessão:", e);
+        setAuthed(false);
+      })
+      .finally(() => setReady(true));
   }, []);
 
   useEffect(() => {

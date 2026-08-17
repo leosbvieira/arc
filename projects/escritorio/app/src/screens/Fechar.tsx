@@ -17,6 +17,7 @@ import {
 import { buildClosingChecks, seedDecisions } from "../closingChecks";
 import { closingLabel, closingReward } from "../closingPoints";
 import { useParams } from "../parametros";
+import * as storage from "../storage";
 import { colors, fonts, spacing } from "../theme";
 import { BigAction, QuestRow, RewardSheet } from "../ui";
 
@@ -98,10 +99,20 @@ export default function Fechar() {
   const [routines, setRoutines] = useState<ClosingRotina[]>([]);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [dump, setDump] = useState("");
+  // O despejo é o único texto do rito que o Leo escreve à mão, e era um `useState`
+  // nu. A tela promete "falha ao gravar — nada se perdeu", e a frase virava mentira
+  // no instante em que a tela desmontava: a Fechar mora na cadeia de ternários do
+  // App.tsx (a Capturar e o Chat ficam montadas atrás do `hiddenScreen` justamente
+  // pra o texto sobreviver), e o botão físico de voltar TROCA DE ABA. Um toque
+  // errado apagava o diário do dia.
+  const [dumpCarregado, setDumpCarregado] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [done, setDone] = useState(false);
+  // Separado de `done` de propósito: `done` é "estou na tela de recompensa" e o
+  // ghost o desliga; este é "o dia já foi fechado" e não volta atrás.
+  const [jaFechouHoje, setJaFechouHoje] = useState(false);
   const [pontosFecho, setPontosFecho] = useState(0);
   const [err, setErr] = useState("");
   const [loadingRoutines, setLoadingRoutines] = useState(false);
@@ -133,6 +144,35 @@ export default function Fechar() {
       alive = false;
     };
   }, []);
+
+  // Rascunho do despejo: carrega uma vez, grava a cada digitação.
+  const DUMP_KEY = "fechar_despejo_v1";
+
+  useEffect(() => {
+    let alive = true;
+    storage
+      .getItemAsync(DUMP_KEY)
+      .then((salvo) => {
+        if (alive && salvo) setDump(salvo);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setDumpCarregado(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    // Só depois da carga: gravar antes dela apagaria o salvo com o "" inicial.
+    if (!dumpCarregado) return;
+    const id = setTimeout(() => {
+      (dump ? storage.setItemAsync(DUMP_KEY, dump) : storage.deleteItemAsync(DUMP_KEY))
+        .catch(() => {});
+    }, 400);
+    return () => clearTimeout(id);
+  }, [dump, dumpCarregado]);
 
   useEffect(() => {
     let alive = true;
@@ -219,6 +259,9 @@ export default function Fechar() {
       const marcadas = routines.filter((r) => checks[r.slug]).length;
       setPontosFecho(closingReward(marcadas, routines.length, temTexto, tarifas).garantido);
       setDone(true);
+      setJaFechouHoje(true);
+      // Gravou no vault: o rascunho local cumpriu o papel e sai de cena.
+      storage.deleteItemAsync(DUMP_KEY).catch(() => {});
       getPontos().then(setPlacar).catch(() => {/* o placar é bônus, não trava o fecho */});
     } catch {
       setErr("falha ao gravar — nada se perdeu, tenta de novo");
@@ -249,7 +292,13 @@ export default function Fechar() {
   // O modo mínimo fecha o dia mesmo sem diário: as rotinas já foram gravadas por
   // toque, e obrigar a escrever é o que fazia o dia ruim virar dia não-registrado.
   // Escrever nunca é portão — o despejo é bônus opcional abaixo do botão.
-  const fecharDisabled = busy || gerando || routinesUnavailable;
+  // `done` entra na conta. O ghost "ver o que ficou sem marcar" faz `setDone(false)`
+  // pra devolver ao rito, e sem esta guarda o botão de fechar voltava ARMADO: fechar
+  // de novo repetia o RewardSheet com "+80" já pago e, antes da dedupe por dia virar
+  // por DIA no BFF, escrevia um segundo bloco de Fechamento na mesma Daily.
+  // Rever o que ficou sem marcar é conferência; as rotinas se marcam por toque e já
+  // estão gravadas. O dia só fecha uma vez.
+  const fecharDisabled = busy || gerando || routinesUnavailable || jaFechouHoje;
 
   // O rótulo do BigAction: o que o toque garante agora e o máximo do dia.
   const marcadas = routines.filter((r) => checks[r.slug]).length;

@@ -2310,6 +2310,7 @@ async def abertura(
     template = linha["template"] if linha else None
 
     checks = store.get_checks_on(data)
+    do_dia = routines.do_dia(store.list_routines(), ref, template)
     rotinas_manha = [
         {
             "id": r["id"],
@@ -2318,9 +2319,18 @@ async def abertura(
             "passos": r["passos"],
             "feito": checks.get(r["slug"], False),
         }
-        for r in routines.do_dia(store.list_routines(), ref, template)
+        for r in do_dia
         if r["bloco"] == "manha"
     ]
+    # O DIA inteiro, não só a manhã. A Home mostra "RITMOS n/N" e vinha contando
+    # `rotinas_manha`, então as rotinas de tarde/noite — skincare-pm, diário,
+    # leitura-noturna, máscara, glicólico, arrumar-casa — não existiam para o
+    # placar: marcar todas elas não mexia no número. O campo da manhã continua
+    # intacto porque a /abertura é o pack da MANHÃ e é isso que ela deve listar.
+    rotinas_hoje = {
+        "feitas": sum(1 for r in do_dia if checks.get(r["slug"], False)),
+        "total": len(do_dia),
+    }
 
     ontem = store.get_shutdown((ref - timedelta(days=1)).isoformat())
 
@@ -2370,6 +2380,7 @@ async def abertura(
         "dias_ausente": store.dias_desde_ultima_interacao(),
         "template": template,
         "rotinas_manha": rotinas_manha,
+        "rotinas_hoje": rotinas_hoje,
         "prioridades_de_ontem": ontem["prioridades"] if ontem else [],
         "temas": temas,
         "hoje": {

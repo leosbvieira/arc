@@ -95,7 +95,7 @@ function TaskRow({
     <View style={styles.taskRow}>
       {/* Checkbox da decisão 01=B/12=C: quadrado de 24px, canto 7, borda na cor
           da área (ou danger, se atrasada). Feito = sálvia cheia com tique escuro. */}
-      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={5} style={[styles.check, { borderColor: aceso ? colors.success : color }, aceso && styles.checkDone]}>
+      <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: false }} accessibilityLabel={`Concluir ${task.name}`} onPress={onComplete} hitSlop={12} style={[styles.check, { borderColor: aceso ? colors.success : color }, aceso && styles.checkDone]}>
         {aceso ? <Feather name="check" size={13} color={colors.bg} /> : null}
       </Pressable>
       <Pressable style={styles.taskBody} onPress={onOpen}>
@@ -240,9 +240,13 @@ export default function Tasks({
     grouped[key].sort((a, b) => (b.days_overdue ?? -100000) - (a.days_overdue ?? -100000));
   });
   const overdue = allTasks.filter((task) => (task.days_overdue ?? -1) >= 0).length;
-  // Acordeões da C: tudo que tem prazo futuro (30 dias ou além) recolhe sob
-  // "PRÓXIMOS 30 DIAS"; o sem-prazo recolhe sob "BACKLOG". Filtrando (área ou
-  // busca), os dois expandem sozinhos — esconder resultado de busca é trapaça.
+  // Acordeões da C: tudo que tem prazo FUTURO recolhe sob "COM PRAZO"; o sem-prazo
+  // recolhe sob "BACKLOG". Filtrando (área ou busca), os dois expandem sozinhos —
+  // esconder resultado de busca é trapaça.
+  //
+  // O rótulo dizia "PRÓXIMOS 30 DIAS" e contava `programadas` junto, que é
+  // justamente o bucket de `days_overdue < -30` — ou seja, ALÉM de 30 dias. O
+  // número contradizia a frase na segunda tela mais usada do app.
   const future = [...grouped.proximas, ...grouped.programadas];
   const filtering = areaFilter !== "Todas" || !!normalizedQuery;
   const showFuture = scheduledOpen || filtering;
@@ -308,7 +312,7 @@ export default function Tasks({
         >
           <Feather name="search" size={15} color={colors.textMuted} />
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={createOpen ? "Fechar nova ação" : "Nova ação"} onPress={() => setCreateOpen((value) => !value)} style={[styles.addButton, createOpen && styles.addButtonOpen]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={createOpen ? "Fechar nova ação" : "Nova ação"} onPress={() => setCreateOpen((value) => !value)} hitSlop={6} style={[styles.addButton, createOpen && styles.addButtonOpen]}>
           <Feather name={createOpen ? "x" : "plus"} size={18} color={createOpen ? colors.text : colors.primaryText} />
         </Pressable>
       </View>
@@ -425,7 +429,7 @@ export default function Tasks({
               {future.length ? (
                 <Pressable accessibilityRole="button" accessibilityState={{ expanded: showFuture }} onPress={() => setScheduledOpen((value) => !value)} hitSlop={6}>
                   <Text style={styles.accLabel}>
-                    PRÓXIMOS 30 DIAS · {future.length} <Text style={styles.accChevron}>{showFuture ? "▾" : "▸"}</Text>
+                    COM PRAZO · {future.length} <Text style={styles.accChevron}>{showFuture ? "▾" : "▸"}</Text>
                   </Text>
                 </Pressable>
               ) : null}
@@ -438,8 +442,20 @@ export default function Tasks({
               ) : null}
             </View>
           ) : null}
-          {showFuture ? <View style={styles.group}>{renderRows(future)}</View> : null}
-          {showBacklog ? <View style={styles.group}>{renderRows(grouped.backlog)}</View> : null}
+          {/* Cada grupo expandido leva o próprio cabeçalho: com os dois abertos,
+              antes eram dois <View> nus em sequência e nada dizia onde um acabava. */}
+          {showFuture ? (
+            <View style={styles.group}>
+              <SectionHeader eyebrow="agendado" title="Com prazo" meta={`${future.length}`} />
+              {renderRows(future)}
+            </View>
+          ) : null}
+          {showBacklog ? (
+            <View style={styles.group}>
+              <SectionHeader eyebrow="sem prazo" title="Backlog" meta={`${grouped.backlog.length}`} />
+              {renderRows(grouped.backlog)}
+            </View>
+          ) : null}
           {!filtered.length ? (
             <View style={styles.empty}><Feather name="check-circle" size={25} color={colors.success} /><Text style={styles.emptyTitle}>Nada nesta vista.</Text><Text style={styles.emptyText}>Troque o filtro ou capture uma nova ação.</Text></View>
           ) : null}
@@ -494,7 +510,9 @@ const styles = StyleSheet.create({
   completionDoText: { fontFamily: fonts.uiSemi, fontSize: 10.5, color: colors.primaryText },
   group: { marginBottom: spacing.xl },
   accLine: { flexDirection: "row", gap: 18, paddingHorizontal: 2, marginBottom: spacing.lg },
-  accLabel: { fontFamily: fonts.mono, fontSize: 9, color: colors.faint, letterSpacing: 0.8 },
+  // 9px em `faint` dava 3.27:1 sobre o fundo — abaixo do piso AA de 4.5:1, e estes
+  // são os ÚNICOS controles que levam a toda tarefa que não é "agora".
+  accLabel: { fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, letterSpacing: 0.8 },
   accChevron: { color: colors.textMuted },
   filaAviso: {
     flexDirection: "row",
@@ -520,6 +538,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.success,
   },
   taskRow: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 11, borderBottomWidth: 1, borderBottomColor: colors.border, paddingVertical: 10 },
+  // O toque mais frequente do app, e coladinho num Pressable que abre o modal em vez
+  // de concluir: 24+hitSlop 5 = 34 efetivos, contra o piso de 48dp do Android. O
+  // desenho de 24 fica; o alvo volta pelo hitSlop (ver `hitSlop` da linha do check).
   check: { width: 24, height: 24, borderRadius: 7, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
   checkDone: { backgroundColor: colors.success },
   taskBody: { flex: 1 },
