@@ -200,7 +200,12 @@ async def _oneshot(prompt: str, *, primeiro_plano: bool = False) -> str:
             raise _classificar(f"{proc.stdout or ''}\n{proc.stderr or ''}")
         reply = _clean(proc.stdout or "")
         return reply or "(o Hermes respondeu vazio)"
-    except HermesFalhou:
+    except (HermesFalhou, HermesOcupado):
+        # `HermesOcupado` TEM que passar reto. Sem ele nesta lista o `except Exception`
+        # abaixo o convertia em `HermesFalhou("hermes_error")`, e o /chat respondia 502
+        # "hermes_indisponivel" — dizendo que o Mentor está fora do ar quando ele está
+        # inteiro, só ocupado. O teste que eu tinha escrito não pegava isso porque
+        # stubava `hermes_client.chat` inteiro: passava pelo handler sem passar por aqui.
         raise
     except Exception:
         raise HermesFalhou("hermes_error") from None

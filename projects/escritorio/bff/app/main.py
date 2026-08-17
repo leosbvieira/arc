@@ -182,14 +182,37 @@ DIR_BACKUPS = "backups"
 
 async def _backup_worker() -> None:
     while True:
+        hoje = pontos.hoje_local().isoformat()
         try:
             await asyncio.to_thread(
                 store.fazer_backup,
                 Path(settings.db_path).parent / DIR_BACKUPS,
-                hoje=pontos.hoje_local().isoformat(),
+                hoje=hoje,
             )
         except Exception:  # noqa: BLE001 - rede de seguranca nunca derruba o loop
             logger.exception("backup")
+
+        # Segunda cópia, em OUTRO lugar. A de cima mora em `Path(db_path).parent`, ou
+        # seja, no mesmo volume do banco que ela existe para salvar: cobre apagão e
+        # corrupção do arquivo, e não cobre o disco. E `data.db*` está no .gitignore,
+        # então nenhum push, clone ou cópia no GitHub alcança isto — tudo que o vault
+        # não guarda (pontos, nível, rotinas, routine_checks, melhorias, aprendizados,
+        # reading_sessions, notif_log, histórico da fila de captura) vive só aqui.
+        #
+        # Vazio por padrão: escolher o destino é do Leo (outro volume, pendrive,
+        # pasta sincronizada), e inventar um caminho seria fingir uma garantia que
+        # depende de uma decisão que não é minha. Basta apontar BACKUP_DIR_2 no .env.
+        if settings.backup_dir_2:
+            try:
+                await asyncio.to_thread(
+                    store.fazer_backup, Path(settings.backup_dir_2), hoje=hoje
+                )
+            except Exception:  # noqa: BLE001
+                # Fail-open e BARULHENTO: um segundo destino indisponível (pendrive
+                # fora, rede caída) não pode derrubar o worker nem impedir a cópia
+                # principal — mas backup que falha calado é backup que não existe.
+                logger.exception("backup 2 (%s)", settings.backup_dir_2)
+
         await asyncio.sleep(INTERVALO_BACKUP_S)
 
 

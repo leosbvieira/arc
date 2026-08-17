@@ -483,20 +483,79 @@ async def test_o_mentor_nao_espera_para_sempre_pelo_slot(monkeypatch, slot_limpo
     await ocupando
 
 
-def test_o_chat_ocupado_responde_503_e_nao_502(client, monkeypatch):
-    """502 "hermes_indisponivel" diria que o Mentor esta fora do ar; ele esta inteiro,
-    so ocupado. `HermesOcupado` e subclasse de RuntimeError, entao sem o except
-    proprio ANTES do generico ela caia no 502."""
+@pytest.mark.hermes_oneshot  # precisa do `_oneshot` DE VERDADE: e nele que o slot mora
+def test_o_chat_ocupado_responde_503_e_nao_502(client, monkeypatch, slot_limpo):
+    """O caminho INTEIRO, do slot tomado ate o status na resposta.
+
+    A primeira versao deste teste stubava `hermes_client.chat` pra levantar
+    `HermesOcupado` -- ou seja, entrava no handler sem passar por `_oneshot`, e por
+    isso passava com o codigo errado. Uma revisao hostil montou o cenario de verdade e
+    a resposta era 502 "hermes_indisponivel": o `except Exception` do `_oneshot`
+    convertia `HermesOcupado` (subclasse de RuntimeError) em `HermesFalhou`.
+
+    Licao embutida no teste: stub que pula a camada onde o bug mora prova nada. Este
+    aqui toma o slot de verdade e deixa a excecao subir por todas as camadas -- e por
+    isso precisa do marcador `hermes_oneshot`, senao a guarda autouse do conftest
+    troca o `_oneshot` inteiro e o teste volta a nao exercitar o slot.
+    """
+    import asyncio
+
     from app import hermes_client
 
-    async def ocupado(*_a, **_kw):
-        raise hermes_client.HermesOcupado("hermes_ocupado")
+    monkeypatch.setattr(settings, "hermes_mock", False)
+    monkeypatch.setattr(hermes_client, "_ESPERA_MAX_S", 0.05)
+    # Semaforo sem permit nenhum = slot tomado por trabalho de fundo ja em execucao.
+    monkeypatch.setattr(hermes_client, "_UM_POR_VEZ", asyncio.Semaphore(0))
 
-    monkeypatch.setattr(hermes_client, "chat", ocupado)
     r = client.post(
         "/chat", json={"text": "oi", "mode": "Capturas", "historico": []},
         headers=token(client),
     )
-    assert r.status_code == 503
+    assert r.status_code == 503, r.json()
     assert r.json()["detail"] == "hermes_ocupado"
     assert r.headers["Retry-After"] == "60"
+
+
+async def test_a_segunda_copia_do_banco_e_opcional_e_barulhenta(tmp_path, monkeypatch, caplog):
+    """O backup padrao grava ao lado do proprio data.db -- mesmo volume do arquivo que
+    ele existe pra salvar. E `data.db*` esta no .gitignore, entao nada do que o vault
+    nao guarda tem copia fora desta maquina."""
+    import asyncio
+    import logging
+
+    from app import main as m
+
+    chamadas = []
+
+    def fake_backup(destino, hoje):
+        chamadas.append(str(destino))
+        if "quebrado" in str(destino):
+            raise OSError("pendrive fora")
+
+    monkeypatch.setattr(m.store, "fazer_backup", fake_backup)
+    monkeypatch.setattr(m, "INTERVALO_BACKUP_S", 0.01)
+
+    async def uma_rodada():
+        tarefa = asyncio.create_task(m._backup_worker())
+        await asyncio.sleep(0.05)
+        tarefa.cancel()
+        try:
+            await tarefa
+        except asyncio.CancelledError:
+            pass
+
+    # Desligado por padrao: so a copia de sempre.
+    monkeypatch.setattr(m.settings, "backup_dir_2", "")
+    await uma_rodada()
+    assert all("quebrado" not in c for c in chamadas)
+    primeiro = len(chamadas)
+    assert primeiro >= 1
+
+    # Ligado: a segunda copia acontece, e uma falha dela NAO derruba o worker nem
+    # impede a principal -- mas deixa rastro, porque backup que falha calado nao existe.
+    chamadas.clear()
+    monkeypatch.setattr(m.settings, "backup_dir_2", str(tmp_path / "quebrado"))
+    with caplog.at_level(logging.ERROR):
+        await uma_rodada()
+    assert any("quebrado" in c for c in chamadas), chamadas
+    assert any("backup 2" in r.message for r in caplog.records)

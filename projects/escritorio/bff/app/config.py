@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     internal_token: str = DEFAULTS["internal_token"]
 
     db_path: str = str(_PROJECT_DIR / "data.db")
+    # Segundo destino do backup do banco, em OUTRO volume. Vazio = desligado.
+    # O backup padrão grava ao lado do próprio `data.db`, o que cobre apagar o arquivo
+    # e não cobre perder o disco — e `data.db*` está no .gitignore, então nada do que
+    # o vault não guarda tem cópia fora desta máquina.
+    backup_dir_2: str = ""
 
     @field_validator("db_path")
     @classmethod
