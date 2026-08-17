@@ -48,7 +48,7 @@ async def test_citacao_nao_entra_no_payload_do_recap(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     prompts = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         prompts.append(prompt)
         return "Você parou na discussão sobre ordem imaginada."
 
@@ -84,7 +84,7 @@ async def test_recap_vira_uma_linha_e_tem_teto(monkeypatch):
     pode empurrar a lista inteira para fora da tela."""
     monkeypatch.setattr(settings, "hermes_mock", False)
 
-    async def fake_oneshot(_prompt):
+    async def fake_oneshot(_prompt, **_kw):
         return "linha um\n\n  linha dois  \n" + ("x" * 900)
 
     monkeypatch.setattr(hermes_client, "_oneshot", fake_oneshot)

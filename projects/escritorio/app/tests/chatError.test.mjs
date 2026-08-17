@@ -52,3 +52,23 @@ test("Retry-After só aceita a forma delta-seconds", () => {
   assert.equal(segundosDoRetryAfter("1.5"), null);
   assert.equal(segundosDoRetryAfter(""), null);
 });
+
+
+test("ocupado não é o mesmo que fora do ar", () => {
+  // O slot do Hermes é UM só, compartilhado por chat, captura, triagem, leitura,
+  // anki, diário e review. Trabalho de fundo segurando a vez não é defeito — e cair
+  // no genérico "erro 503" mandava o Leo caçar problema que não existe.
+  const msg = mensagemDaFalhaDoChat({
+    status: 503,
+    detail: "hermes_ocupado",
+    retryAposS: 60,
+  });
+  assert.match(msg, /terminando outra tarefa/);
+  assert.ok(!msg.includes("503"), `código cru vazou pra bolha: ${msg}`);
+  assert.ok(!msg.includes("desligado"), "ocupado não é PC desligado");
+});
+
+test("ocupado sem Retry-After ainda diz o que fazer", () => {
+  const msg = mensagemDaFalhaDoChat({ status: 503, detail: "hermes_ocupado", retryAposS: null });
+  assert.match(msg, /Tenta de novo daqui a pouco/);
+});

@@ -26,7 +26,7 @@ async def test_propose_triage_com_lote_vazio_nao_chama_o_hermes(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     chamadas = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         chamadas.append(prompt)
         return "[]"
 
@@ -40,7 +40,7 @@ async def test_propose_triage_envia_lote_e_extrai_json(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     chamadas = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         chamadas.append(prompt)
         return (
             'resposta: [{"id":"s1","area":"Trabalho"},'
@@ -74,7 +74,7 @@ async def test_propose_triage_envia_lote_e_extrai_json(monkeypatch):
 async def test_propose_triage_sem_json_falha_sem_payload(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
 
-    async def fake_oneshot(_prompt):
+    async def fake_oneshot(_prompt, **_kw):
         return "Não há uma proposta estruturada."
 
     monkeypatch.setattr(hermes_client, "_oneshot", fake_oneshot)

@@ -311,7 +311,7 @@ def test_parse_quando_degrada_para_none_em_lixo():
 def test_chat_hermes_error_vira_502_sem_texto(spies, monkeypatch):
     secret = "conteudo-ultrassecreto-do-usuario"
 
-    async def boom(prompt):
+    async def boom(prompt, **_kw):
         raise RuntimeError("hermes_error")
 
     monkeypatch.setattr(settings, "hermes_mock", False)

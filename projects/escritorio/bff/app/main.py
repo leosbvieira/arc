@@ -1900,6 +1900,16 @@ async def chat(body: ChatIn, _: str = Depends(require_auth)):
             contexto=contexto,
             historico=[t.model_dump() for t in body.historico],
         )
+    except hermes_client.HermesOcupado:
+        # ANTES do RuntimeError genérico: `HermesOcupado` é subclasse dele, e cair no
+        # 502 "hermes_indisponivel" seria dizer que o Mentor está fora do ar quando na
+        # verdade ele está ocupado com trabalho de fundo. Recusa rápida e explicada
+        # vale mais que cinco minutos de "pensando…".
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="hermes_ocupado",
+            headers={"Retry-After": "60"},
+        ) from None
     except hermes_client.HermesFalhou as exc:
         raise _erro_do_hermes(exc) from None
     except RuntimeError:

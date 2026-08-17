@@ -79,7 +79,7 @@ async def test_chat_injeta_o_contexto_no_prompt(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     prompts: list[str] = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         prompts.append(prompt)
         return "ok"
 
@@ -104,7 +104,7 @@ async def test_chat_sem_contexto_continua_funcionando(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     prompts: list[str] = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         prompts.append(prompt)
         return "ok"
 
@@ -124,7 +124,7 @@ async def test_chat_manda_os_turnos_anteriores(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     prompts: list[str] = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         prompts.append(prompt)
         return "ok"
 
@@ -151,7 +151,7 @@ async def test_historico_e_limitado(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     prompts: list[str] = []
 
-    async def fake_oneshot(prompt):
+    async def fake_oneshot(prompt, **_kw):
         prompts.append(prompt)
         return "ok"
 

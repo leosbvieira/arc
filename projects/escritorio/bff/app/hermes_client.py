@@ -6,6 +6,7 @@ Rodamos num thread (asyncio.to_thread) porque o loop do uvicorn no Windows nem s
 suporta subprocess assíncrono; subprocess.run num thread é à prova disso.
 """
 import asyncio
+from contextlib import asynccontextmanager
 import json as _json
 import logging
 import re as _re
@@ -72,6 +73,49 @@ def _hermes_python() -> str:
 # processos do agente brigando por memória/sessão deixam os DOIS lentos.
 _UM_POR_VEZ = asyncio.Semaphore(1)
 
+# ...mas UM slot para tudo tratava o Leo esperando na frente da tela igual a um worker
+# de fundo. `asyncio.Semaphore` é FIFO justo, então uma captura que chegou primeiro
+# segura o Mentor pelos seus 150s inteiros, e o Leo fica olhando "pensando…" sem saber
+# por quê. Duas regras consertam isso sem preempção (matar o `hermes.exe` no meio
+# perderia o trabalho dele):
+#
+# 1. trabalho de FUNDO não pega o slot enquanto houver pedido de primeiro plano
+#    esperando — ele cede a vez em vez de entrar na fila na frente;
+# 2. o primeiro plano não espera para sempre: passou de `_ESPERA_MAX_S`, o handler
+#    responde "ocupado" na hora. Uma recusa rápida e explicada é melhor que cinco
+#    minutos de spinner — e o app já sabe transformar isso em frase.
+_esperando_primeiro_plano = 0
+_ESPERA_MAX_S = 30.0
+
+
+class HermesOcupado(RuntimeError):
+    """O slot estava tomado por trabalho de fundo além do tempo de espera."""
+
+
+@asynccontextmanager
+async def _slot(primeiro_plano: bool):
+    global _esperando_primeiro_plano
+    if primeiro_plano:
+        _esperando_primeiro_plano += 1
+        try:
+            try:
+                await asyncio.wait_for(_UM_POR_VEZ.acquire(), timeout=_ESPERA_MAX_S)
+            except asyncio.TimeoutError:
+                raise HermesOcupado("hermes_ocupado") from None
+        finally:
+            _esperando_primeiro_plano -= 1
+        try:
+            yield
+        finally:
+            _UM_POR_VEZ.release()
+        return
+
+    # Fundo: cede a vez enquanto alguém na frente da tela estiver esperando.
+    while _esperando_primeiro_plano > 0:
+        await asyncio.sleep(0.05)
+    async with _UM_POR_VEZ:
+        yield
+
 
 class HermesFalhou(RuntimeError):
     """Falha do Hermes reduzida a um CÓDIGO conhecido — nunca ao texto que a produziu.
@@ -118,7 +162,7 @@ def _classificar(saida: str) -> HermesFalhou:
     return HermesFalhou("hermes_error")
 
 
-async def _oneshot(prompt: str) -> str:
+async def _oneshot(prompt: str, *, primeiro_plano: bool = False) -> str:
     """Roda um prompt no Hermes CLI e devolve apenas a resposta limpa.
 
     Toda falha vira `HermesFalhou` com um código de uma lista fechada — `hermes_quota`,
@@ -147,7 +191,7 @@ async def _oneshot(prompt: str) -> str:
         )
 
     try:
-        async with _UM_POR_VEZ:
+        async with _slot(primeiro_plano):
             proc = await asyncio.to_thread(_run)
         if proc.returncode != 0:
             # Só a saída de um processo que já falhou é classificada. Com returncode 0
@@ -498,7 +542,9 @@ async def chat(
             f"{contexto}"
         )
     partes.append(text)
-    return await _oneshot("\n\n".join(p for p in partes if p))
+    # O ÚNICO caminho com o Leo esperando na frente da tela: ele fura a fila do
+    # trabalho de fundo, e não espera para sempre pelo slot.
+    return await _oneshot("\n\n".join(p for p in partes if p), primeiro_plano=True)
 
 
 DIARIO_FRAME = """Voce estrutura o diario do Leo (sistema Aeternum). NAO use ferramentas. NAO invente

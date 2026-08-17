@@ -160,7 +160,7 @@ async def test_excecao_do_subprocesso_ainda_vira_hermes_error(sem_mock, monkeypa
 
 
 def _chat(monkeypatch, exc: Exception, texto="oi"):
-    async def boom(prompt):
+    async def boom(prompt, **_kw):
         raise exc
 
     monkeypatch.setattr(settings, "hermes_mock", False)

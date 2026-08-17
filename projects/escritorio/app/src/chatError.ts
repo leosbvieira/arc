@@ -34,6 +34,12 @@ export function mensagemDaFalhaDoChat(falha: FalhaDoChat): string {
       );
     case "hermes_indisponivel":
       return "O Hermes não respondeu. O PC pode estar desligado.";
+    case "hermes_ocupado":
+      // Nem defeito nem queda: o slot do Hermes é UM só e estava com trabalho de
+      // fundo (classificar captura, resumir leitura). Sem esta frase o caso caía no
+      // genérico "erro 503", que soa como servidor quebrado — e ele está inteiro,
+      // só ocupado. Dizer o motivo é o que impede o Leo de ir caçar defeito.
+      return `O Hermes está terminando outra tarefa. ${quandoVolta(falha.retryAposS)}`;
     default:
       return `Não consegui responder agora (erro ${falha.status}).`;
   }

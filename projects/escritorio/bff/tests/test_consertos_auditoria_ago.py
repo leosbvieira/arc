@@ -408,3 +408,95 @@ def test_o_app_consegue_ver_e_reprocessar_as_capturas_paradas(client):
     assert client.get("/captures/failed", headers=hdr).json()["n"] == 1
     assert client.post("/captures/retry-failed", headers=hdr).json()["requeued"] == 1
     assert client.get("/captures/failed", headers=hdr).json()["n"] == 0
+
+
+@pytest.fixture
+def slot_limpo():
+    """O slot do Hermes e estado GLOBAL de modulo, e o pytest-asyncio da um event loop
+    novo por teste: um semaforo com waiters de outro loop faz o teste seguinte falhar
+    por motivo que nao tem nada a ver com ele. Zerar aqui e explicito de proposito --
+    esconder isso numa fixture autouse mascararia que a trava e global de verdade."""
+    import asyncio
+
+    from app import hermes_client
+
+    hermes_client._UM_POR_VEZ = asyncio.Semaphore(1)
+    hermes_client._esperando_primeiro_plano = 0
+    yield
+    hermes_client._UM_POR_VEZ = asyncio.Semaphore(1)
+    hermes_client._esperando_primeiro_plano = 0
+
+
+async def test_o_trabalho_de_fundo_cede_a_vez_pro_mentor(slot_limpo):
+    """O slot do Hermes e UM so, e `asyncio.Semaphore` e FIFO justo.
+
+    Isso tratava o Leo esperando na frente da tela igual a um worker de fundo: uma
+    captura que chegou primeiro segurava o Mentor pelos 150s inteiros dela.
+    """
+    import asyncio
+
+    from app import hermes_client
+
+    ordem = []
+
+    async def usa(nome, primeiro_plano):
+        async with hermes_client._slot(primeiro_plano):
+            ordem.append(nome)
+            await asyncio.sleep(0.05)
+
+    # O de fundo entra primeiro na fila; o do Mentor chega logo depois.
+    async def cenario():
+        fundo_1 = asyncio.create_task(usa("fundo-1", False))
+        await asyncio.sleep(0.01)  # fundo-1 ja pegou o slot
+        mentor = asyncio.create_task(usa("mentor", True))
+        await asyncio.sleep(0.01)
+        fundo_2 = asyncio.create_task(usa("fundo-2", False))
+        await asyncio.gather(fundo_1, mentor, fundo_2)
+
+    await cenario()
+    # fundo-1 nao da pra tirar (matar o hermes.exe perderia o trabalho), mas fundo-2
+    # NAO pode passar na frente de quem esta esperando com a tela aberta.
+    assert ordem.index("mentor") < ordem.index("fundo-2"), ordem
+
+
+async def test_o_mentor_nao_espera_para_sempre_pelo_slot(monkeypatch, slot_limpo):
+    """Recusa rapida e explicada vale mais que cinco minutos de "pensando...".
+
+    Sem teto, o app ficava com `sending` travado e a conversa so vive em useState:
+    matar o app era a saida, e levava a conversa junto.
+    """
+    import asyncio
+
+    from app import hermes_client
+
+    monkeypatch.setattr(hermes_client, "_ESPERA_MAX_S", 0.05)
+
+    async def segura():
+        async with hermes_client._slot(False):
+            await asyncio.sleep(0.5)
+
+    ocupando = asyncio.create_task(segura())
+    await asyncio.sleep(0.01)
+    with pytest.raises(hermes_client.HermesOcupado):
+        async with hermes_client._slot(True):
+            pass
+    await ocupando
+
+
+def test_o_chat_ocupado_responde_503_e_nao_502(client, monkeypatch):
+    """502 "hermes_indisponivel" diria que o Mentor esta fora do ar; ele esta inteiro,
+    so ocupado. `HermesOcupado` e subclasse de RuntimeError, entao sem o except
+    proprio ANTES do generico ela caia no 502."""
+    from app import hermes_client
+
+    async def ocupado(*_a, **_kw):
+        raise hermes_client.HermesOcupado("hermes_ocupado")
+
+    monkeypatch.setattr(hermes_client, "chat", ocupado)
+    r = client.post(
+        "/chat", json={"text": "oi", "mode": "Capturas", "historico": []},
+        headers=token(client),
+    )
+    assert r.status_code == 503
+    assert r.json()["detail"] == "hermes_ocupado"
+    assert r.headers["Retry-After"] == "60"
