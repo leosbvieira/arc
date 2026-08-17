@@ -39,6 +39,9 @@ export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void
   const [detailId, setDetailId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
+  // `shutdown.prioridades` NAS DEPS: com `[]` o load congelava o valor do primeiro
+  // render, e o provider carrega os parâmetros de forma assíncrona — o pull-to-refresh
+  // seguia remontando os campos com o número velho depois de o certo ter chegado.
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -52,14 +55,19 @@ export default function Shutdown({ onOpenTriagem }: { onOpenTriagem?: () => void
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [shutdown.prioridades]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   async function salvar() {
-    const prioridades = campos.map((c) => c.trim()).filter(Boolean).slice(0, 3);
+    // Sem `.slice(0, 3)`. Era a quinta cópia do número — e a pior das cinco, porque
+    // as outras só desenhavam ou cortavam no envio: esta DESCARTA o que o Leo
+    // escreveu. Com o servidor em 4, ele digitava a quarta prioridade, tocava gravar,
+    // e ela sumia sem aviso. O teto já é o número de caixas desenhadas, e o servidor
+    // valida contra a mesma constante (422 se sobrar).
+    const prioridades = campos.map((c) => c.trim()).filter(Boolean);
     setSalvando(true);
     setErro("");
     try {

@@ -85,7 +85,21 @@ _UM_POR_VEZ = asyncio.Semaphore(1)
 #    responde "ocupado" na hora. Uma recusa rápida e explicada é melhor que cinco
 #    minutos de spinner — e o app já sabe transformar isso em frase.
 _esperando_primeiro_plano = 0
-_ESPERA_MAX_S = 30.0
+
+# O ORÇAMENTO, e ele tem que FECHAR embaixo do teto do cliente. A primeira versão
+# escolheu 30s no olho e o commit afirmou que cabia: não cabia — 30 + 150 = 180 contra
+# os 175s do `TIMEOUT_CHAT_MS` do app, e isso sem contar o `mentor_contexto.montar()`,
+# que roda ANTES do slot e busca 10 listas do ClickUp sem teto nenhum. O cliente
+# abortaria um pedido que ia dar certo, que é exatamente o defeito que o teto existe
+# para evitar. Os números abaixo são conferidos por teste; ver `TETO_CLIENTE_MS`.
+_ESPERA_MAX_S = 20.0
+MONTAR_MAX_S = 15.0
+# Margem para serializar a resposta e atravessar a rede local.
+MARGEM_RESPOSTA_S = 10.0
+# O teto do lado do app (`api.ts: TIMEOUT_CHAT_MS`). Mora aqui como número para o teste
+# poder cobrar a conta: se alguém subir `hermes_timeout` e não subir o app junto, o
+# teste cai antes de o Leo descobrir olhando para um spinner.
+TETO_CLIENTE_MS = 200_000
 
 
 class HermesOcupado(RuntimeError):
@@ -111,7 +125,19 @@ async def _slot(primeiro_plano: bool):
         return
 
     # Fundo: cede a vez enquanto alguém na frente da tela estiver esperando.
-    while _esperando_primeiro_plano > 0:
+    #
+    # A condição é reavaliada A CADA VOLTA, e isso é o conserto. A primeira versão
+    # checava uma vez e só então entrava no `async with`: depois de virar waiter do
+    # semáforo, a task de fundo nunca mais reavaliava nada, e como o `Semaphore` do
+    # 3.11 é FIFO estrito, um pedido de primeiro plano que chegasse DEPOIS ficava atrás
+    # dela. O Mentor levava 30s de espera e uma recusa por causa de trabalho de fundo
+    # que ainda nem tinha começado — exatamente o que a regra existe para impedir.
+    #
+    # `locked()` entra na condição porque é o que evita entrar na fila: enquanto o slot
+    # estiver tomado, o fundo espera FORA dela, e assim o primeiro plano encontra o
+    # deque vazio quando chegar. Entre o teste e o `acquire` do ramo livre não há ponto
+    # de suspensão, então não há corrida.
+    while _esperando_primeiro_plano > 0 or _UM_POR_VEZ.locked():
         await asyncio.sleep(0.05)
     async with _UM_POR_VEZ:
         yield

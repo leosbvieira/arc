@@ -120,7 +120,12 @@ export type ChatTurno = { role: "user" | "ai"; text: string };
 // Matar o app resolvia — e levava a conversa junto, que só vive em `useState`.
 // O valor dá folga sobre os 150s do servidor: abortar antes dele seria transformar
 // resposta lenta em erro, e o `readingApi.ts` já usa a mesma folga (165s).
-const TIMEOUT_CHAT_MS = 175_000;
+// A conta TEM que fechar com o servidor, e a primeira versão errou: 30s de espera
+// pelo slot + 150s do Hermes = 180s, contra 175s aqui — o cliente abortaria pedido que
+// ia dar certo, o exato defeito que este teto existe para evitar. Hoje o servidor cabe
+// em 15 (montar) + 20 (slot) + 150 (Hermes) + 10 (margem) = 195, e um teste no BFF
+// (`test_o_orcamento_do_chat_fecha`) cobra essa soma contra o número abaixo.
+const TIMEOUT_CHAT_MS = 200_000;
 
 export async function chatSend(
   text: string,

@@ -204,8 +204,12 @@ export default function Capture({
   const [presaErro, setPresaErro] = useState("");
   // Capturas que o SERVIDOR desistiu de processar (fila do BFF, não a do aparelho).
   const [falhadasNoServidor, setFalhadasNoServidor] = useState(0);
+  const [reprocessando, setReprocessando] = useState(false);
 
   const loadShelf = useCallback(async () => {
+    // Qualquer recarga torna a explicação anterior obsoleta por definição — sem isto
+    // uma frase velha reaparecia colada na próxima obra que ficasse presa.
+    setPresaErro("");
     try {
       const { books } = await listBooks("lendo");
       setShelf(books);
@@ -337,7 +341,14 @@ export default function Capture({
         // "terminando", e "Começar leitura" respondia "essa obra foi terminada —
         // reabra antes de ler": não foi terminada, e reabrir é impossível nesse
         // estado. Duas frases erradas em sequência a partir de um toque só.
-        if (selectedBookId === bookId) setSelectedBookId(null);
+        if (selectedBookId === bookId) {
+          // Solta TAMBÉM o que a seleção preencheu. Zerar só o `selectedBookId` deixava
+          // o título na caixa: o botão seguia habilitado, e a próxima sessão nascia com
+          // `book_id` null — órfã da estante, que é o defeito que a fatia 1 existe para
+          // matar. `voltarParaEstante` já faz as três coisas juntas.
+          voltarParaEstante();
+          setSelectedBookId(null);
+        }
         setSpeechError(mensagemDeTerminoFalho(detalhe));
       }
     } finally {
@@ -680,6 +691,7 @@ export default function Capture({
       setRejected(0);
       return;
     }
+    const ids = recusados.map((r) => r.id);
     const previa = recusados
       .slice(0, 3)
       .map((r) => `• ${String(r.item.payload?.text ?? r.item.kind).slice(0, 60)}`)
@@ -693,16 +705,26 @@ export default function Capture({
         {
           text: "Tentar de novo",
           onPress: async () => {
-            await retryRejected();
+            // `flush()` logo em seguida, senão "tentar de novo" não tentava nada:
+            // trocava o badge vermelho por um azul e prometia um reenvio que só
+            // aconteceria no próximo foco da tela. O flush é serializado, então
+            // chamá-lo aqui é seguro.
+            const devolvidos = await retryRejected(ids);
+            const { restantes } = await flush();
             setPending(await pendingCount());
             setRejected(await rejectedCount());
+            setStatus(
+              `${devolvidos} devolvido(s) à fila · ${devolvidos - restantes > 0 ? devolvidos - restantes : 0} saíram`,
+            );
           },
         },
         {
           text: "Descartar",
           style: "destructive",
           onPress: async () => {
-            await discardRejected();
+            // Só os ids que o alerta mostrou: um item que caísse no escaninho entre
+            // abrir o alerta e tocar aqui seria apagado sem nunca ter sido visto.
+            await discardRejected(ids);
             setRejected(await rejectedCount());
           },
         },
@@ -1842,23 +1864,44 @@ export default function Capture({
               accessibilityLabel={`Reprocessar ${falhadasNoServidor} capturas paradas`}
               hitSlop={8}
               style={styles.queueRow}
+              disabled={reprocessando}
               onPress={async () => {
+                // Trava contra toque duplo: sem ela, dois toques disparavam dois POST
+                // e a linha sumia debaixo do dedo entre um e outro.
+                if (reprocessando) return;
+                setReprocessando(true);
                 try {
                   const n = await reprocessarCapturasFalhadas();
-                  setStatus(
-                    n > 0
-                      ? `${n} captura(s) voltaram para a fila do servidor`
-                      : "nada para reprocessar",
-                  );
-                  setFalhadasNoServidor(await contarCapturasFalhadas());
-                } catch {
-                  setStatus("não deu para falar com o servidor agora");
+                  const restam = await contarCapturasFalhadas();
+                  setFalhadasNoServidor(restam);
+                  // Só escreve na tela se ele ainda estiver na Capturar: o `status` é
+                  // compartilhado com o modo leitura, e um recado sobre a fila do
+                  // servidor aparecendo no meio de uma sessão de leitura é ruído.
+                  if (modeRef.current === "captura") {
+                    setStatus(
+                      n > 0
+                        ? `${n} captura(s) voltaram para a fila do servidor`
+                        : "nada para reprocessar",
+                    );
+                  }
+                } catch (erro) {
+                  if (modeRef.current === "captura") {
+                    // Distingue "não saiu do aparelho" de "o servidor recusou", em vez
+                    // de culpar o servidor pelas duas.
+                    setStatus(
+                      ehFalhaDeRede(erro)
+                        ? "sem conexão — não deu para falar com o servidor"
+                        : mensagemDaRecusa(erro),
+                    );
+                  }
+                } finally {
+                  setReprocessando(false);
                 }
               }}
             >
               <Feather name="rotate-ccw" size={13} color={colors.amber} />
               <Text style={[styles.queueText, { color: colors.amber }]}>
-                {falhadasNoServidor} paradas no servidor · reprocessar
+                {falhadasNoServidor} paradas no servidor · {reprocessando ? "reenviando…" : "reprocessar"}
               </Text>
             </Pressable>
           ) : null}
@@ -2007,9 +2050,16 @@ export default function Capture({
               </>
             ) : null}
 
-            {presas.length > 0 ? (
+            {/* `|| presaErro`: o bloco tem que sobreviver ao próprio desfecho. Quando o
+                resolver muda o estado da obra, `loadShelf` esvazia `presas` — e com o
+                gate só em `presas.length` o bloco desmontava levando junto a explicação
+                que acabou de nascer. No caso normal (UMA obra presa, que é o caso real)
+                o conserto ficava invisível: só apareceria com duas ou mais. */}
+            {presas.length > 0 || presaErro ? (
               <View style={styles.presasBloco}>
-                <Text style={styles.presasAviso}>{avisoDeObrasPresas(presas.length)}</Text>
+                {presas.length > 0 ? (
+                  <Text style={styles.presasAviso}>{avisoDeObrasPresas(presas.length)}</Text>
+                ) : null}
                 {presas.map((obra) => (
                   <Pressable
                     key={obra.id}

@@ -196,42 +196,61 @@ export async function rejectedCount(): Promise<number> {
  * sabia le-los de volta. "Nada se perde" que ninguem consegue recuperar e perda com
  * outro nome — e o badge vermelho nao tinha como voltar a zero. */
 export async function listRejected(): Promise<{ id: string; item: QueuedItem }[]> {
+  const entradas = await lerRejeitados();
   const saida: { id: string; item: QueuedItem }[] = [];
-  for (const entry of await lerRejeitados()) {
+  const vivas: IdxEntry[] = [];
+  for (const entry of entradas) {
     try {
       saida.push({ id: entry.id, item: await readItem(entry) });
+      vivas.push(entry);
     } catch {
-      // chunk sumiu: nao ha o que mostrar, e insistir travaria a lista inteira
+      // Chunk sumiu: o conteudo ja se perdeu, entao a entrada e PODADA do indice --
+      // mesma politica do item envenenado na drenagem. Antes ela era so pulada, e o
+      // resultado era contador e lista divergindo para sempre: `rejectedCount` seguia
+      // contando o fantasma, o badge vermelho nunca zerava, e abrir a lista mostrava
+      // menos itens do que o numero prometia.
     }
+  }
+  if (vivas.length !== entradas.length) {
+    await SecureStore.setItemAsync(IDX_REJEITADOS, JSON.stringify(vivas));
   }
   return saida;
 }
 
 /** Devolve os recusados pro fim da fila, com a contagem zerada. E o que faz sentido
  * depois de entrar de novo, ou depois de o servidor voltar ao normal. */
-export function retryRejected(): Promise<number> {
+export function retryRejected(ids?: string[]): Promise<number> {
   return serialized(async () => {
-    const rejeitados = await lerRejeitados();
-    if (!rejeitados.length) return 0;
+    const todos = await lerRejeitados();
+    // Escopado pelos ids que a tela MOSTROU. Sem isto, um item que caisse no escaninho
+    // entre abrir o alerta e tocar no botao era levado junto por uma decisao tomada
+    // sobre uma lista que nao o continha -- e no caso do descarte, apagado sem nunca
+    // ter sido visto.
+    const alvo = ids ? todos.filter((e) => ids.includes(e.id)) : todos;
+    const resto = ids ? todos.filter((e) => !ids.includes(e.id)) : [];
+    if (!alvo.length) return 0;
+    const rejeitados = alvo;
     // Fila primeiro, escaninho depois: se morrer no meio, o item aparece nos dois
     // (a drenagem resolve) em vez de em nenhum.
     await writeIdx([
       ...(await readIdx()),
       ...rejeitados.map((e) => ({ id: e.id, chunks: e.chunks })),
     ]);
-    await SecureStore.setItemAsync(IDX_REJEITADOS, "[]");
+    await SecureStore.setItemAsync(IDX_REJEITADOS, JSON.stringify(resto));
     return rejeitados.length;
   });
 }
 
 /** Descarta de vez. So o Leo pode mandar fazer isto: e a unica operacao do modulo
  * que destroi conteudo dele de proposito. */
-export function discardRejected(): Promise<number> {
+export function discardRejected(ids?: string[]): Promise<number> {
   return serialized(async () => {
-    const rejeitados = await lerRejeitados();
-    await SecureStore.setItemAsync(IDX_REJEITADOS, "[]");
-    for (const entry of rejeitados) await deleteItem(entry);
-    return rejeitados.length;
+    const todos = await lerRejeitados();
+    const alvo = ids ? todos.filter((e) => ids.includes(e.id)) : todos;
+    const resto = ids ? todos.filter((e) => !ids.includes(e.id)) : [];
+    await SecureStore.setItemAsync(IDX_REJEITADOS, JSON.stringify(resto));
+    for (const entry of alvo) await deleteItem(entry);
+    return alvo.length;
   });
 }
 

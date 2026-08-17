@@ -7,6 +7,8 @@ A primeira versão deste arquivo dizia "cada um destes falha antes", o que era f
 para três deles: uma revisão hostil pegou, e frase que não se sustenta em docstring de
 teste é pior que frase nenhuma.
 """
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -289,14 +291,29 @@ def test_senha_com_acento_nao_derruba_o_login(client, monkeypatch):
     assert r.json()["token"]
 
 
-def test_o_bloqueio_e_por_origem_e_nao_tranca_o_dono(client):
-    """O castigo global era uma arma: como ele vale tambem pra senha certa, qualquer
-    um na rede trancava o app do Leo com 5 requests a cada 5 minutos."""
-    import time as _t
+def test_o_bloqueio_e_por_origem_e_nao_tranca_o_dono(tmp_path, monkeypatch):
+    """O castigo global era uma ARMA: como ele vale tambem pra senha certa, qualquer um
+    na rede trancava o app do Leo com 5 requests a cada 5 minutos, sem como destrancar.
 
-    main._login_erros["10.0.0.99"] = [_t.monotonic()] * main._LOGIN_MAX_ERROS
-    # O dono, de outra origem, continua entrando.
-    assert client.post("/auth/login", json={"password": "senha-de-teste"}).status_code == 200
+    A primeira versao deste teste plantava o contador na mao e so checava que o dono
+    entrava -- um contador GLOBAL unico passaria igual. Agora sao dois clientes com
+    hosts diferentes, que e o unico jeito de a origem importar.
+    """
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "t.db"))
+    monkeypatch.setattr(settings, "app_password", "senha-de-teste")
+    store.init_db()
+    main._login_erros = {}
+
+    atacante = TestClient(app, client=("10.0.0.99", 5555))
+    dono = TestClient(app, client=("192.168.0.7", 5555))
+
+    for _ in range(main._LOGIN_MAX_ERROS):
+        assert atacante.post("/auth/login", json={"password": "chute"}).status_code == 401
+    # O atacante tranca A SI MESMO -- inclusive com a senha certa, que e o ponto.
+    assert atacante.post("/auth/login", json={"password": "chute"}).status_code == 429
+    assert atacante.post("/auth/login", json={"password": "senha-de-teste"}).status_code == 429
+    # E o celular do Leo, de outra origem, passa.
+    assert dono.post("/auth/login", json={"password": "senha-de-teste"}).status_code == 200
 
 
 def test_o_429_diz_quanto_esperar(client):
@@ -327,6 +344,64 @@ def test_login_nao_conta_como_o_leo_ter_estado_aqui(client):
     client.post("/auth/login", json={"password": "chute"})
     client.post("/auth/login", json={"password": "senha-de-teste"})
     assert store.dias_desde_ultima_interacao() >= 19
+
+
+async def test_append_file_substitui_o_bloco_marcado_de_verdade(monkeypatch):
+    """O `substituir_marcado` testado no PROPRIO vault_client, nao num fake.
+
+    O teste de ponta a ponta abaixo montava um `append_file` de mentira que CHAMAVA
+    `substituir_bloco` -- ou seja, reimplementava o conserto dentro do duble e deixava
+    o `append_file` de verdade sem prova nenhuma. Aqui os stubs sao so `_get`/`_put`,
+    o padrao que test_vault_client.py ja usa, e o que se observa e o CONTEUDO do PUT.
+    """
+    import base64
+
+    marker = "<!-- fechamento:2026-08-17 -->"
+    atual = (
+        "# 2026-08-17\n\n## Manha\n\nmanha\n\n"
+        f"## Fechamento (21:00) {marker}\n\nprimeira\n\n## Depois\n\ndepois\n"
+    )
+    enviado = {}
+
+    async def get(_path):
+        return {"sha": "abc", "content": base64.b64encode(atual.encode()).decode()}
+
+    async def put(path, content, message, sha):
+        enviado["content"] = content
+        return path
+
+    monkeypatch.setattr(vault_client, "_get", get)
+    monkeypatch.setattr(vault_client, "_put", put)
+
+    novo = f"## Fechamento (21:30) {marker}\n\nCORRIGIDO\n"
+    await vault_client.append_file(
+        "Daily/2026-08-17.md", novo, "msg", dedupe_marker=marker, substituir_marcado=True
+    )
+    corpo = enviado["content"]
+    assert corpo.count("## Fechamento") == 1, corpo
+    assert "CORRIGIDO" in corpo and "primeira" not in corpo
+    assert "manha" in corpo and "depois" in corpo, "os vizinhos nao podem sumir"
+
+
+async def test_append_file_sem_substituir_continua_idempotente(monkeypatch):
+    """O contrapeso: sem a flag, marker presente segue sendo no-op (retry idempotente)."""
+    import base64
+
+    marker = "<!-- fechamento:2026-08-17 -->"
+    atual = f"# dia\n\n## Fechamento (21:00) {marker}\n\nprimeira\n"
+    tocou = {"put": False}
+
+    async def get(_path):
+        return {"sha": "abc", "content": base64.b64encode(atual.encode()).decode()}
+
+    async def put(*_a, **_kw):
+        tocou["put"] = True
+        return "x"
+
+    monkeypatch.setattr(vault_client, "_get", get)
+    monkeypatch.setattr(vault_client, "_put", put)
+    await vault_client.append_file("Daily/x.md", "novo", "msg", dedupe_marker=marker)
+    assert tocou["put"] is False
 
 
 def test_refechar_com_texto_corrigido_substitui_o_bloco(client, monkeypatch):
@@ -432,31 +507,57 @@ async def test_o_trabalho_de_fundo_cede_a_vez_pro_mentor(slot_limpo):
 
     Isso tratava o Leo esperando na frente da tela igual a um worker de fundo: uma
     captura que chegou primeiro segurava o Mentor pelos 150s inteiros dela.
+
+    O teste espera por CONDICAO, nao por relogio. A primeira versao usava sleeps de
+    20ms e falhou de forma intermitente com a maquina carregada -- teste que depende de
+    timing vira ruido, e ruido acaba sendo ignorado, que e o oposto do que ele serve.
     """
     import asyncio
 
     from app import hermes_client
 
     ordem = []
+    tentou = set()
+    soltar = asyncio.Event()
 
-    async def usa(nome, primeiro_plano):
-        async with hermes_client._slot(primeiro_plano):
-            ordem.append(nome)
-            await asyncio.sleep(0.05)
+    async def esperar_por(cond, oque, limite=5.0):
+        alvo = asyncio.get_running_loop().time() + limite
+        while not cond():
+            assert asyncio.get_running_loop().time() < alvo, f"nunca aconteceu: {oque}"
+            await asyncio.sleep(0.01)
 
-    # O de fundo entra primeiro na fila; o do Mentor chega logo depois.
-    async def cenario():
-        fundo_1 = asyncio.create_task(usa("fundo-1", False))
-        await asyncio.sleep(0.01)  # fundo-1 ja pegou o slot
-        mentor = asyncio.create_task(usa("mentor", True))
-        await asyncio.sleep(0.01)
-        fundo_2 = asyncio.create_task(usa("fundo-2", False))
-        await asyncio.gather(fundo_1, mentor, fundo_2)
+    async def usa(nome, primeiro_plano, segura=False):
+        tentou.add(nome)
+        try:
+            async with hermes_client._slot(primeiro_plano):
+                ordem.append(nome)
+                if segura:
+                    await soltar.wait()
+        except hermes_client.HermesOcupado:
+            ordem.append(f"{nome}:RECUSADO")
 
-    await cenario()
-    # fundo-1 nao da pra tirar (matar o hermes.exe perderia o trabalho), mas fundo-2
-    # NAO pode passar na frente de quem esta esperando com a tela aberta.
-    assert ordem.index("mentor") < ordem.index("fundo-2"), ordem
+    # fundo-1 toma o slot e SEGURA ate mandarmos soltar.
+    f1 = asyncio.create_task(usa("fundo-1", False, segura=True))
+    await esperar_por(lambda: "fundo-1" in ordem, "fundo-1 pegar o slot")
+
+    # fundo-2 tenta entrar ENQUANTO o slot esta tomado. Com a checagem feita uma vez
+    # so (a versao errada), ele vira waiter do semaforo aqui e garante o lugar na fila.
+    f2 = asyncio.create_task(usa("fundo-2", False))
+    await esperar_por(lambda: "fundo-2" in tentou, "fundo-2 tentar")
+    await asyncio.sleep(0.15)  # tempo de sobra pra ele parkar, se for parkar
+
+    # O Mentor chega DEPOIS de fundo-2 ja estar na fila. Este e o caso que discrimina:
+    # com FIFO cru ele fica atras; com a regra, na frente.
+    mentor = asyncio.create_task(usa("mentor", True))
+    await esperar_por(lambda: "mentor" in tentou, "mentor tentar")
+    await asyncio.sleep(0.15)
+
+    soltar.set()
+    await asyncio.gather(f1, f2, mentor)
+
+    assert ordem.index("mentor") < ordem.index("fundo-2"), (
+        f"trabalho de fundo que nem tinha comecado passou na frente do Mentor: {ordem}"
+    )
 
 
 async def test_o_mentor_nao_espera_para_sempre_pelo_slot(monkeypatch, slot_limpo):
@@ -559,3 +660,44 @@ async def test_a_segunda_copia_do_banco_e_opcional_e_barulhenta(tmp_path, monkey
         await uma_rodada()
     assert any("quebrado" in c for c in chamadas), chamadas
     assert any("backup 2" in r.message for r in caplog.records)
+
+
+def test_o_orcamento_do_chat_fecha():
+    """A conta do teto, cobrada em vez de afirmada.
+
+    A primeira versao escolheu 30s no olho e o commit AFIRMOU que cabia: nao cabia.
+    30 + 150 = 180 contra os 175s do cliente, e isso sem contar o `montar()`, que roda
+    antes do slot e busca 10 listas do ClickUp. O cliente abortaria pedido que ia dar
+    certo -- o exato defeito que o teto existe pra evitar.
+
+    Este teste existe porque afirmacao em commit message nao segura numero: quem subir
+    `hermes_timeout` amanha e nao subir o app junto cai aqui, e nao num spinner.
+    """
+    from app import hermes_client
+    from app.config import settings
+
+    pior_caso_s = (
+        hermes_client.MONTAR_MAX_S
+        + hermes_client._ESPERA_MAX_S
+        + settings.hermes_timeout
+        + hermes_client.MARGEM_RESPOSTA_S
+    )
+    assert pior_caso_s * 1000 <= hermes_client.TETO_CLIENTE_MS, (
+        f"o servidor pode levar {pior_caso_s}s e o app desiste em "
+        f"{hermes_client.TETO_CLIENTE_MS / 1000}s"
+    )
+
+
+def test_o_teto_do_app_bate_com_o_declarado_no_bff():
+    """Os dois lados sao arquivos diferentes em linguagens diferentes; sem esta guarda
+    o numero do BFF vira ficcao no dia em que alguem mexer so no TypeScript."""
+    import re
+
+    api_ts = (
+        Path(__file__).resolve().parents[2] / "app" / "src" / "api.ts"
+    ).read_text(encoding="utf-8")
+    achado = re.search(r"TIMEOUT_CHAT_MS\s*=\s*([\d_]+);", api_ts)
+    assert achado, "TIMEOUT_CHAT_MS sumiu do api.ts"
+    from app import hermes_client
+
+    assert int(achado.group(1).replace("_", "")) == hermes_client.TETO_CLIENTE_MS

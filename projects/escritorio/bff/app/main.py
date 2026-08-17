@@ -1911,11 +1911,18 @@ async def chat(body: ChatIn, _: str = Depends(require_auth)):
 
     Mentor e Conselho recebem o estado do sistema; Capturas não precisa (é sobre o
     texto que o Leo acabou de trazer) e pagaria tokens à toa."""
-    contexto = (
-        await mentor_contexto.montar()
-        if body.mode in ("Mentor", "Conselho")
-        else None
-    )
+    # Com TETO. `montar()` busca as 10 listas do ClickUp e roda ANTES do slot, fora de
+    # qualquer orçamento — uma fonte externa lenta estourava o teto do app inteiro
+    # antes de o Hermes sequer começar. O contexto é enriquecimento: melhor o Mentor
+    # responder sem ele do que o Leo não receber resposta nenhuma.
+    contexto = None
+    if body.mode in ("Mentor", "Conselho"):
+        try:
+            contexto = await asyncio.wait_for(
+                mentor_contexto.montar(), timeout=hermes_client.MONTAR_MAX_S
+            )
+        except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+            logger.exception("contexto do mentor indisponível, seguindo sem ele")
     try:
         reply = await hermes_client.chat(
             body.text,
