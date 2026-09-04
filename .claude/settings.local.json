@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(echo \"add exit: $?\")"
+      "Bash(echo \"add exit: $?\")",
+      "WebFetch(domain:www.searchenginejournal.com)",
+      "PowerShell(Get-Command *)"
     ]
+  },
+  "remote": {
+    "defaultEnvironmentId": "env_01QgwRfaCrWHi7kCT6DEQ3bU"
   }
 }
