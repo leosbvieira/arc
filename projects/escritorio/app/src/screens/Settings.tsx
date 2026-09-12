@@ -39,8 +39,19 @@ export default function Settings({
   async function save() {
     if (!server.trim()) return;
     setSaving(true);
-    await setBffUrl(server);
-    onServerSaved(server.trim().replace(/\/+$/, ""));
+    try {
+      await setBffUrl(server);
+      const salva = await getBffUrl();
+      setServer(salva);
+      onServerSaved(salva);
+    } catch (e: any) {
+      // Endereço recusado (esquema, credencial, http num build https-only): o
+      // valor antigo continua valendo e o motivo aparece — antes salvava qualquer
+      // coisa e o erro só aparecia como "offline" no check.
+      Alert.alert("Servidor", e?.message ?? "endereço inválido");
+      setSaving(false);
+      return;
+    }
     setSaving(false);
     await check();
   }

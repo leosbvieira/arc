@@ -44,6 +44,9 @@ export function AppButton({
   return (
     <Pressable
       accessibilityRole="button"
+      // O rótulo fica mesmo com o spinner no lugar do texto: sem isto o leitor de
+      // tela anunciava "botão, ocupado" sem dizer QUAL botão.
+      accessibilityLabel={title}
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
       onPress={onPress}
       disabled={disabled || loading}
@@ -69,6 +72,9 @@ export function Field(props: TextInputProps) {
   return (
     <TextInput
       placeholderTextColor={colors.textMuted}
+      // Campo sem rótulo visível é lido como "caixa de edição" e nada mais; o
+      // placeholder vira o rótulo a menos que a tela passe um explícito.
+      accessibilityLabel={props.accessibilityLabel ?? props.placeholder}
       {...props}
       style={[styles.field, props.style]}
     />
@@ -567,6 +573,7 @@ const styles = StyleSheet.create({
   },
   btn: {
     height: 50,
+    minHeight: 44, // alvo de toque mínimo (WCAG 2.5.8 / Material)
     borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
@@ -578,6 +585,7 @@ const styles = StyleSheet.create({
   btnTextPrimary: { color: colors.primaryText },
   btnTextGhost: { color: colors.text },
   field: {
+    minHeight: 44,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
