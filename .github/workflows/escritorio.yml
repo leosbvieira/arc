@@ -51,14 +51,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: |
-            projects/escritorio/bff/requirements.txt
-            projects/escritorio/bff/requirements-dev.txt
+          cache-dependency-path: projects/escritorio/bff/requirements-dev.lock
 
-      - name: Instalar dependências
+      - name: Instalar dependências (lock com hashes)
+        # O lock é gerado por `uv pip compile` a partir de requirements*.txt (ver
+        # bff/README.md). `--require-hashes` recusa qualquer artefato fora do lock.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.lock
 
       - name: Confirmar que não há .env no runner
         # Se algum dia um `.env` entrar no repo por engano, o teste abaixo passaria

@@ -55,12 +55,16 @@ sozinho.
 7. `/reload-mcp` + teste: "liste minhas tasks de Saúde" e "anexa em 1- Inbox/teste: ok".
 
 ## Estágio C — BFF no VPS
-1. `git`/scp do `projects/escritorio/bff` pro VPS. `python -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+1. `git`/scp do `projects/escritorio/bff` pro VPS. `python -m venv .venv && .venv/bin/pip install --require-hashes -r requirements.lock`.
 2. `.env` do BFF: `HERMES_MOCK=false` · `HERMES_BASE_URL=http://localhost:<porta-api-hermes>` ·
    `HERMES_API_KEY=<a key do B.6>` · `APP_PASSWORD`, `JWT_SECRET`, `INTERNAL_TOKEN` (strings longas).
 3. Implementar os TODOs reais (eu faço, é código): `bff/app/tasks.py` (`list_by_area`/`create`/`complete`/
    `run_digest`) e confirmar o shape do `hermes_client.capture`. Decisão de arquitetura no fim deste doc.
 4. `systemd` unit `escritorio-bff.service` → `uvicorn app.main:app --host 127.0.0.1 --port 8000`. Enable + start.
+   Candidatos prontos em `ops/`: `escritorio-bff.service` (hardening, HOME do Hermes, TimeoutStopSec
+   acima do HERMES_TIMEOUT), `bff.env.example` (formato EnvironmentFile) e `release-backup-rollback.md`
+   (backup pela API do SQLite, verificação antes de religar o cron, rollback de código sem voltar o banco).
+   Portados do ramo `local-2026-09` em 12/09/2026; nenhum executado num VPS ainda.
 
 ## Estágio D — HTTPS (Caddy)
 1. `apt install caddy`. `/etc/caddy/Caddyfile`:
