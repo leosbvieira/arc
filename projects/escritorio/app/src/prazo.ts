@@ -25,3 +25,33 @@ export function comPrazo<T>(promessa: Promise<T>, ms: number, rotulo: string): P
     );
   });
 }
+
+/**
+ * Igual ao `comPrazo`, mas o prazo também ABORTA o request. Só a rejeição não
+ * bastava (revisão Codex, 12/09/2026): o fetch continuava vivo, o servidor
+ * registrava o token depois do "Sair" e ninguém mais tinha a referência local
+ * pra removê-lo.
+ */
+export function comPrazoAbortavel<T>(
+  executar: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  rotulo: string,
+): Promise<T> {
+  const controle = new AbortController();
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      controle.abort();
+      reject(new PrazoEsgotado(rotulo, ms));
+    }, ms);
+    executar(controle.signal).then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}

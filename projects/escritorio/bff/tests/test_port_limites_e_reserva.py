@@ -72,10 +72,15 @@ def test_snapshot_de_leitura_com_chunks_demais_vira_422(client):
     assert r.status_code == 422
 
 
-def test_chat_com_historico_demais_vira_422(client):
+def test_chat_longo_passa_e_turno_gigante_vira_422(client):
+    """A tela manda a conversa inteira; o hermes_client corta nos últimos turnos.
+    Um teto na LISTA matava conversas longas com 422 (revisão Codex, 12/09/2026)."""
     h = _auth(client)
-    historico = [{"role": "user", "text": "oi"}] * (main.MAX_TURNOS_CHAT + 1)
+    historico = [{"role": "user", "text": "oi"}] * 200
     r = client.post("/chat", json={"text": "e aí", "historico": historico}, headers=h)
+    assert r.status_code == 200
+    gigante = [{"role": "user", "text": "x" * (main.TEXTO_CAPTURA + 1)}]
+    r = client.post("/chat", json={"text": "e aí", "historico": gigante}, headers=h)
     assert r.status_code == 422
 
 
@@ -232,3 +237,23 @@ async def test_nudge_simultaneo_entrega_uma_vez(client, monkeypatch):
     )
     assert len(sent) == 1
     assert sorted("skipped" in r for r in (r1, r2)) == [False, True]
+
+
+def test_telegram_incerto_marca_a_reserva_e_nao_reenvia_hoje(client, monkeypatch):
+    """ReadTimeout = o request saiu e a resposta não veio: pode TER chegado.
+    Antes virava False, a reserva era liberada e o cron seguinte mandava de novo."""
+    _um_item(monkeypatch)
+    tentativas = []
+
+    async def send_incerto(text):
+        tentativas.append(text)
+        raise telegram.EntregaIncerta("ReadTimeout")
+
+    monkeypatch.setattr(telegram, "send", send_incerto)
+    hoje = main.pontos.hoje_local().isoformat()
+    with pytest.raises(telegram.EntregaIncerta):
+        client.post("/internal/run-digest", headers=HDR)
+    assert store.reserva_notif("digest", hoje)["estado"] == "incerto"
+    r = client.post("/internal/run-digest", headers=HDR)
+    assert "skipped" in r.json()
+    assert len(tentativas) == 1

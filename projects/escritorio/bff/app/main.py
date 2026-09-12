@@ -333,7 +333,6 @@ TEXTO_CAPTURA = 20_000     # uma captura / uma pergunta ao mentor / notas de ses
 TEXTO_CHUNK = 50_000       # um chunk de leitura (páginas ditadas de uma vez)
 TEXTO_LONGO = 200_000      # fechamento do dia (raw + md), notas pro Anki
 MAX_CHUNKS_SNAPSHOT = 2_000
-MAX_TURNOS_CHAT = 60
 MAX_CHECKS_FECHAMENTO = 200
 
 
@@ -536,7 +535,10 @@ class ChatIn(BaseModel):
     mode: str = Field(default="Mentor", max_length=TEXTO_CURTO)
     # A conversa mora no app (não é persistida no servidor); ele reenvia os turnos
     # recentes para o modelo não receber cada pergunta como órfã.
-    historico: list[ChatTurno] = Field(default=[], max_length=MAX_TURNOS_CHAT)
+    # Sem teto na LISTA: a tela manda a conversa inteira e o hermes_client corta
+    # nos últimos MAX_TURNOS. Um 422 aqui matava conversas longas (revisão Codex,
+    # 12/09/2026). O teto por turno (texto) continua.
+    historico: list[ChatTurno] = []
 
 
 class ChatOut(BaseModel):

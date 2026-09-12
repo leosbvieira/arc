@@ -75,13 +75,28 @@ Num diretório isolado, com `HERMES_MOCK=true`, `TASKS_SOURCE=mock`, sem `GITHUB
 sem Telegram, sem `EXPO_PUSH_URL` alcançável:
 
 ```
-DB_PATH=/tmp/ensaio/data.db  .venv/bin/python -c "from app import store; store.init_db()"
-sqlite3 /tmp/ensaio/data.db "PRAGMA integrity_check; SELECT count(*) FROM capture_queue;"
-DB_PATH=/tmp/ensaio/data.db  .venv/bin/python -m pytest -q
+# 1. restaurar o SNAPSHOT (não um banco vazio) num caminho isolado
+cp /backup/<dia>/data.db /tmp/ensaio/data.db
+sha256sum -c /backup/<dia>/SHA256SUMS
+# 2. migrar com o código da release NOVA e conferir
+DB_PATH=/tmp/ensaio/data.db .venv/bin/python - <<'PY'
+import sqlite3
+from contextlib import closing
+from app import store
+from app.config import settings
+store.init_db()
+with closing(sqlite3.connect(settings.db_path)) as con:
+    assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    for t in ("capture_queue", "reading_sessions", "routine_checks", "notif_log", "devices"):
+        print(t, con.execute(f"SELECT count(*) FROM {t}").fetchone()[0])
+    print("fila", con.execute("SELECT status, count(*) FROM capture_queue GROUP BY status").fetchall())
+PY
 ```
 
-Provar: o backup abre, `integrity_check` = ok, o `init_db` da release nova migra o backup
-sem erro, contagens batem com o manifesto. Só então o backup "vale".
+Provar: o hash confere, o snapshot abre, `integrity_check` = ok, o `init_db` da release
+nova migra sem erro e as contagens batem com o manifesto do backup. **Não** use o
+`pytest` como prova: o `conftest` troca o `DB_PATH` por um banco temporário, então a suíte
+fica verde sem nunca abrir o snapshot. Só então o backup "vale".
 
 ## Caddy
 

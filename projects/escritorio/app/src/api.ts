@@ -197,7 +197,9 @@ async function chatRequest(
   return data.reply;
 }
 
-export async function registerDevice(expoToken: string): Promise<void> {
+// `signal`: quem chama com prazo aborta o request de verdade — um POST que
+// sobrevive ao prazo registraria o token depois do "Sair" (ver `prazo.ts`).
+export async function registerDevice(expoToken: string, signal?: AbortSignal): Promise<void> {
   const base = await getBffUrl();
   const token = await getToken();
   const response = await fetch(`${base}/devices`, {
@@ -207,11 +209,12 @@ export async function registerDevice(expoToken: string): Promise<void> {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ token: expoToken }),
+    signal,
   });
   if (!response.ok) throw new Error(`registrar push: ${response.status}`);
 }
 
-export async function unregisterDevice(expoToken: string): Promise<void> {
+export async function unregisterDevice(expoToken: string, signal?: AbortSignal): Promise<void> {
   const base = await getBffUrl();
   const token = await getToken();
   const response = await fetch(`${base}/devices`, {
@@ -221,6 +224,7 @@ export async function unregisterDevice(expoToken: string): Promise<void> {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ token: expoToken }),
+    signal,
   });
   if (!response.ok) throw new Error(`remover push: ${response.status}`);
 }

@@ -45,7 +45,7 @@ import {
   lembrarPushToken,
   obterPushToken,
 } from "./src/notifications";
-import { comPrazo } from "./src/prazo";
+import { comPrazoAbortavel } from "./src/prazo";
 import { sincronizarPush } from "./src/pushSync";
 import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
@@ -144,8 +144,10 @@ async function syncPushDevice() {
   const resultado = await sincronizarPush({
     registrado: getRegisteredPushToken,
     atual: obterPushToken,
-    registerDevice: (t) => comPrazo(registerDevice(t), PRAZO_PUSH_MS, "registrar push"),
-    unregisterDevice: (t) => comPrazo(unregisterDevice(t), PRAZO_PUSH_MS, "remover push"),
+    registerDevice: (t) =>
+      comPrazoAbortavel((signal) => registerDevice(t, signal), PRAZO_PUSH_MS, "registrar push"),
+    unregisterDevice: (t) =>
+      comPrazoAbortavel((signal) => unregisterDevice(t, signal), PRAZO_PUSH_MS, "remover push"),
     lembrar: lembrarPushToken,
     esquecer: esquecerPushToken,
   });

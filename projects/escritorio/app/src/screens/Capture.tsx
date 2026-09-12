@@ -159,6 +159,9 @@ export default function Capture({
   const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [busy, setBusy] = useState(false);
   const [sensitive, setSensitive] = useState(false);
+  // O que está na caixa AGORA, legível de dentro de um callback antigo.
+  const textRef = useRef("");
+  textRef.current = text;
   const [pending, setPending] = useState(0);
   const [rejected, setRejected] = useState(0);
   const [status, setStatus] = useState("");
@@ -743,9 +746,15 @@ export default function Capture({
     // O que estava na caixa NA HORA do toque. A caixa segue editável durante o
     // request, e o Leo emenda a próxima ideia enquanto a primeira viaja: limpar
     // com `setText("")` na resposta apagava o que ele acabou de digitar (teste de
-    // tela "resposta tardia"). Só limpa se a caixa ainda tem o texto enviado.
+    // tela "resposta tardia"). Só limpa se a caixa ainda tem o texto enviado — e o
+    // cadeado vai junto: desmarcar "sensível" de uma captura nova que ele acabou
+    // de marcar a mandaria como conteúdo normal (revisão Codex, 12/09/2026).
     const enviado = text;
-    const limparSeIntacto = () => setText((atual) => (atual === enviado ? "" : atual));
+    const limparSeIntacto = () => {
+      if (textRef.current !== enviado) return;
+      setText("");
+      setSensitive(false);
+    };
 
     const ts = Date.now();
     const clientKey = createCaptureClientKey(ts);
@@ -781,11 +790,9 @@ export default function Capture({
         if (replyTimer.current) clearTimeout(replyTimer.current);
         replyTimer.current = setTimeout(() => setReply(""), 6000);
         limparSeIntacto();
-        setSensitive(false);
         setPending(await pendingCount());
       } else if (resultado.tipo === "guardado") {
         limparSeIntacto();
-        setSensitive(false);
         setPending(await pendingCount());
         // O texto nunca se perde nos dois casos, mas a frase muda: no 401 nenhum
         // reenvio automático vai acontecer enquanto ele não entrar de novo, e dizer

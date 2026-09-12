@@ -129,3 +129,25 @@ test("servidor recusou (500): o texto fica na caixa e nada vai pra fila", async 
   );
   expect(screen.queryByText(/seguras no aparelho/)).toBeNull();
 });
+
+test("resposta tardia: o cadeado marcado na captura NOVA não é desmarcado", async () => {
+  const resposta = deferido<Resposta>();
+  servidor((url, init) => {
+    if (url.endsWith("/capture") && init?.method === "POST") return resposta.promise;
+    return vazio;
+  });
+  await abrirCaptura();
+
+  const caixa = screen.getByPlaceholderText(/cobrar a Ana/);
+  fireEvent.changeText(caixa, "primeira");
+  fireEvent.press(screen.getByLabelText("Enviar captura"));
+  fireEvent.changeText(caixa, "consulta com a psiquiatra");
+  fireEvent.press(screen.getByLabelText("Conteúdo sensível"));
+
+  await act(async () => {
+    resposta.resolve({ status: 200, body: { reply: "✅ anotado" } });
+  });
+  await waitFor(() => expect(screen.getByText("Anotado. Organiza depois.")).toBeTruthy());
+  expect(caixa.props.value).toBe("consulta com a psiquiatra");
+  expect(screen.getByLabelText("Conteúdo sensível").props.accessibilityState?.checked).toBe(true);
+});

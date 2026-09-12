@@ -4,6 +4,7 @@ import { Alert, StyleSheet, Text, View } from "react-native";
 
 import { clearToken, getBffUrl, setBffUrl, unregisterDevice } from "../api";
 import { performLogout } from "../logout";
+import { comPrazo } from "../prazo";
 import { disableLocalPush, getRegisteredPushToken } from "../notifications";
 import { colors, fonts, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
@@ -64,7 +65,10 @@ export default function Settings({
         style: "destructive",
         onPress: async () => {
           try {
-            await beforeLogout();
+            // O sync de push do boot pode estar no ar; espera um pouco pra não
+            // remover um token que está sendo registrado — mas com prazo: sair
+            // nunca depende do servidor.
+            await comPrazo(beforeLogout(), 3000, "sair: sync de push");
           } catch {
             /* best-effort: nada aqui pode impedir a saída */
           }

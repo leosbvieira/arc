@@ -24,12 +24,23 @@
 // VPS com TLS existir. Sem isto um build "de produção" nascia apontando pra LAN em
 // texto claro e ninguém via. A mesma regra vale em runtime (`src/bffUrl.ts`) e no
 // manifesto Android (`plugins/withCleartextTraffic.js`).
-function conferirBffUrl(config) {
-  const ambiente = process.env.EXPO_PUBLIC_APP_ENV;
+// "https://" sozinho passava no regex antigo e o build nascia sem servidor
+// (revisão Codex, 12/09/2026): precisa ser https E ter host.
+function ehHttpsComHost(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && u.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function conferirBffUrl(config, env = process.env) {
+  const ambiente = env.EXPO_PUBLIC_APP_ENV;
   if (ambiente !== "preview" && ambiente !== "production") return;
-  if (process.env.EXPO_PUBLIC_ALLOW_HTTP === "1") return;
-  const url = process.env.EXPO_PUBLIC_BFF_URL || (config.extra && config.extra.bffUrl) || "";
-  if (!/^https:\/\//i.test(url)) {
+  if (env.EXPO_PUBLIC_ALLOW_HTTP === "1") return;
+  const url = env.EXPO_PUBLIC_BFF_URL || (config.extra && config.extra.bffUrl) || "";
+  if (!ehHttpsComHost(url)) {
     throw new Error(
       "[app.config] perfil " + ambiente + " exige BFF https:// (recebido: \"" + (url || "vazio") + "\"). " +
         "Defina EXPO_PUBLIC_BFF_URL=https://... no perfil do eas.json, ou EXPO_PUBLIC_ALLOW_HTTP=1 enquanto o BFF estiver na LAN.",
@@ -51,3 +62,6 @@ module.exports = ({ config }) => {
   }
   return saida;
 };
+
+module.exports.conferirBffUrl = conferirBffUrl;
+module.exports.ehHttpsComHost = ehHttpsComHost;
