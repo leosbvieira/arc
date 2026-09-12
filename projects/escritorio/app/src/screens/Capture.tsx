@@ -740,6 +740,12 @@ export default function Capture({
   async function onSend() {
     const t = text.trim();
     if (!t) return;
+    // O que estava na caixa NA HORA do toque. A caixa segue editável durante o
+    // request, e o Leo emenda a próxima ideia enquanto a primeira viaja: limpar
+    // com `setText("")` na resposta apagava o que ele acabou de digitar (teste de
+    // tela "resposta tardia"). Só limpa se a caixa ainda tem o texto enviado.
+    const enviado = text;
+    const limparSeIntacto = () => setText((atual) => (atual === enviado ? "" : atual));
 
     const ts = Date.now();
     const clientKey = createCaptureClientKey(ts);
@@ -774,11 +780,11 @@ export default function Capture({
         // E some sozinho: um recibo é um instante, não um estado da tela.
         if (replyTimer.current) clearTimeout(replyTimer.current);
         replyTimer.current = setTimeout(() => setReply(""), 6000);
-        setText("");
+        limparSeIntacto();
         setSensitive(false);
         setPending(await pendingCount());
       } else if (resultado.tipo === "guardado") {
-        setText("");
+        limparSeIntacto();
         setSensitive(false);
         setPending(await pendingCount());
         // O texto nunca se perde nos dois casos, mas a frase muda: no 401 nenhum
