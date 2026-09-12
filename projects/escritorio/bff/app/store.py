@@ -1961,6 +1961,19 @@ def areas_propostas_por_task() -> dict[str, str]:
     return {str(r["clickup_task_id"]): str(r["area_proposta"]) for r in rows}
 
 
+class CaptureKeyConflict(Exception):
+    """A mesma `client_key` já está na fila com OUTRO texto/sensibilidade.
+
+    O retry idempotente (mesma chave, mesmo conteúdo) devolve o id existente. Chave
+    igual com conteúdo diferente não é retry: é bug do cliente ou reuso de chave — e
+    devolver o id antigo em silêncio fazia o app acreditar que o texto NOVO estava
+    gravado. Não carrega os textos (lei 7)."""
+
+    def __init__(self, existing_id: int):
+        super().__init__(f"client_key já usada pela captura {existing_id}")
+        self.existing_id = existing_id
+
+
 def enqueue_capture(
     text: str,
     profile: str | None,
@@ -1973,11 +1986,13 @@ def enqueue_capture(
             # o retry encontra e devolve exatamente o id originalmente enfileirado.
             con.execute("BEGIN IMMEDIATE")
             row = con.execute(
-                "SELECT id FROM capture_queue WHERE client_key = ?",
+                "SELECT id, text, sensivel FROM capture_queue WHERE client_key = ?",
                 (client_key,),
             ).fetchone()
             if row is not None:
                 con.commit()
+                if row["text"] != text or bool(row["sensivel"]) != bool(sensivel):
+                    raise CaptureKeyConflict(int(row["id"]))
                 return int(row["id"])
             cur = con.execute(
                 "INSERT INTO capture_queue "

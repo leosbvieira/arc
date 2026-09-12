@@ -1149,12 +1149,22 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     """Fire-and-forget (B6): enfileira e responde na hora. O worker processa a fila em
     fundo (Raw → classificação → Staging). O Chat NÃO usa mais esta rota (ela não devolve
     a resposta do Hermes) — conversa síncrona vai por /chat."""
-    cid = store.enqueue_capture(
-        body.text,
-        body.profile,
-        body.client_key,
-        sensivel=body.sensivel,
-    )
+    try:
+        cid = store.enqueue_capture(
+            body.text,
+            body.profile,
+            body.client_key,
+            sensivel=body.sensivel,
+        )
+    except store.CaptureKeyConflict as e:
+        # Mesma chave, conteúdo diferente: não é retry. O app manda o item pro
+        # escaninho (409 = desistir em `offlineError.ts`) em vez de girar. Sem os
+        # textos no corpo (lei 7).
+        store.log_event("capture_key_conflito", ref=str(e.existing_id))
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "client_key_conflito",
+        )
     store.log_event("capture_in", ref=str(cid))
     return CaptureOut(reply="✅ anotado", queued=True)
 

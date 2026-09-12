@@ -115,7 +115,10 @@ def test_capture_vira_failed_e_reapresenta(tmp_path, monkeypatch):
 def test_capture_client_key_retorna_mesmo_id(tmp_path, monkeypatch):
     _fresh_db(tmp_path, monkeypatch)
     first = store.enqueue_capture("primeiro texto", None, "device-123")
-    second = store.enqueue_capture("texto de retry", "Capturas", "device-123")
+    # Retry = MESMO conteúdo com a mesma chave (o profile não entra na identidade).
+    # Chave igual com texto diferente virou conflito em 12/09/2026 — ver
+    # test_port_capture_durable.py.
+    second = store.enqueue_capture("primeiro texto", "Capturas", "device-123")
 
     assert second == first
     with store._connect() as con:

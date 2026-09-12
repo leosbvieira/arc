@@ -93,7 +93,7 @@ function splitChunks(s: string): string[] {
   return out.length ? out : [""];
 }
 
-async function _enqueue(item: QueuedItem): Promise<void> {
+async function _enqueue(item: QueuedItem): Promise<string> {
   const id = idForTimestamp(item.ts);
   const storedItem: QueuedItem =
     item.kind === "capture"
@@ -114,10 +114,29 @@ async function _enqueue(item: QueuedItem): Promise<void> {
     ...(await readIdx()),
     { id, chunks: parts.length },
   ]); // indice por ultimo: item orfao > item perdido
+  return id;
 }
 
-export function enqueue(item: QueuedItem): Promise<void> {
+/** Grava e devolve o id do item na fila (o mesmo que `removeQueued` aceita). */
+export function enqueue(item: QueuedItem): Promise<string> {
   return serialized(() => _enqueue(item));
+}
+
+/** Tira UM item da fila porque ele já foi entregue por outro caminho (o POST
+ * direto da tela). A captura agora é gravada ANTES do primeiro envio — se o app
+ * morrer no meio do POST, a drenagem seguinte a reencontra com a mesma
+ * client_key. Quando o POST responde, esta é a contrapartida. Se a drenagem
+ * global passou na frente e já entregou/apagou o item, não há nada a fazer: a
+ * client_key fez o BFF devolver o mesmo id, e aqui vira no-op. */
+export function removeQueued(id: string): Promise<boolean> {
+  return serialized(async () => {
+    const idx = await readIdx();
+    const entry = idx.find((e) => e.id === id);
+    if (!entry) return false;
+    await writeIdx(idx.filter((e) => e.id !== id)); // de-indexa ANTES de apagar
+    await deleteItem(entry);
+    return true;
+  });
 }
 
 export async function pendingCount(): Promise<number> {
