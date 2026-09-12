@@ -19,7 +19,9 @@ from fastapi import (
     Request,
     status,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from . import (
@@ -43,7 +45,7 @@ from . import (
     tz,
     vault_client,
 )
-from .auth import make_token, require_auth
+from .auth import make_token, require_auth, secret_equal
 from .config import DEFAULTS, settings
 
 logger = logging.getLogger(__name__)
@@ -76,11 +78,13 @@ NUDGE_COPY = montar_nudge_copy()
 
 
 def _guard_default_secrets() -> None:
+    # Vazio é tão ruim quanto default: `INTERNAL_TOKEN=` no .env deixava o `!=`
+    # antigo aceitar qualquer header vazio nos /internal/*.
     if any(
-        getattr(settings, field) == default
+        getattr(settings, field) in (default, "", None)
         for field, default in DEFAULTS.items()
     ):
-        raise RuntimeError("segredos default detectados — configure o .env")
+        raise RuntimeError("segredos default detectados ou vazios — configure o .env")
 
 
 async def _capture_worker() -> None:
@@ -245,6 +249,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _entrada_invalida(_request: Request, _exc: RequestValidationError) -> JSONResponse:
+    """422 sem ecoar a entrada. O handler padrão do FastAPI devolve `input` em cada
+    erro — num `POST /auth/login` com `{"password": ["x"]}` isso repete a senha
+    recebida no corpo da resposta (e em qualquer log de resposta). Lei 7: o
+    cliente só precisa saber que o formato estava errado."""
+    return JSONResponse({"detail": "entrada inválida", "code": "validation_error"}, status_code=422)
 
 
 class LoginIn(BaseModel):
@@ -3180,7 +3193,8 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
 
 
 def _check_internal(token: str) -> None:
-    if token != settings.internal_token:
+    # Tempo constante e vazio-nunca-passa, como o login já fazia (`secret_equal`).
+    if not secret_equal(token, settings.internal_token):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "token interno inválido",
