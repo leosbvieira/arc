@@ -4,7 +4,7 @@ import { Alert, StyleSheet, Text, View } from "react-native";
 
 import { clearToken, getBffUrl, setBffUrl, unregisterDevice } from "../api";
 import { performLogout } from "../logout";
-import { disableLocalPush, getRegisteredPushToken, registerForPushToken } from "../notifications";
+import { disableLocalPush, getRegisteredPushToken } from "../notifications";
 import { colors, fonts, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
 
@@ -69,8 +69,9 @@ export default function Settings({
             /* best-effort: nada aqui pode impedir a saída */
           }
           const { serverOk } = await performLogout({
-            pushToken: async () =>
-              (await getRegisteredPushToken()) ?? (await registerForPushToken()),
+            // Só o token REGISTRADO. Antes caía em `registerForPushToken()`, que pede
+            // permissão ao sistema — um diálogo de permissão no meio do "Sair".
+            pushToken: getRegisteredPushToken,
             unregisterDevice,
             disableLocalPush,
             clearToken,
