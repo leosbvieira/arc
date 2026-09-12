@@ -71,6 +71,12 @@ jobs:
   app:
     name: App (tsc + node --test)
     runs-on: ubuntu-latest
+    # O app decide o hero pelo relógio LOCAL do celular (getHours/getDay), e a suíte
+    # do homeAction escreve instantes em -03:00. Num runner em UTC, 16:00 de domingo
+    # vira 19:00 e sete testes caem (era o vermelho do main desde 04/09). Fixar o
+    # fuso reproduz o aparelho do Leo; não é maquiagem do teste.
+    env:
+      TZ: America/Sao_Paulo
     defaults:
       run:
         working-directory: projects/escritorio/app
