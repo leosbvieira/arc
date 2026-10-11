@@ -95,6 +95,10 @@ async def _tentar_push(kind: str, corpo: str) -> bool:
 async def _tentar_telegram(corpo: str) -> bool:
     try:
         return bool(await telegram.send(corpo))
+    except telegram.EntregaIncerta:
+        # Pode ter chegado. Sobe até a rota, que marca a reserva do dia como
+        # `incerto` em vez de liberar pra reenvio.
+        raise
     except Exception as e:  # noqa: BLE001 - canal nunca propaga falha ao chamador
         logger.warning("telegram falhou: %s", type(e).__name__)
         return False

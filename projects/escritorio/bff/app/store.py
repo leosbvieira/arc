@@ -222,6 +222,11 @@ CREATE TABLE IF NOT EXISTS anki_suggestion_runs (
   created REAL NOT NULL,
   updated REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS notif_reserva (
+  evento TEXT NOT NULL, data_local TEXT NOT NULL, ts REAL NOT NULL,
+  estado TEXT NOT NULL,
+  PRIMARY KEY (evento, data_local)
+);
 """
 
 
@@ -1932,6 +1937,70 @@ def log_notif(evento: str, canal: str, entregue: bool) -> None:
         con.commit()
 
 
+# --- notif_reserva: o slot do dia, tomado de forma atômica ---------------------
+# `notif_log` é o histórico do que SAIU; `notif_reserva` é quem está tratando o evento
+# HOJE. A PK (evento, dia) faz do INSERT o mutex: só um chamador pega a reserva.
+# Estados: em_curso (alguém está entregando) → entregue | incerto (o envio explodiu no
+# meio; pode ter saído, então ninguém reenvia hoje). `liberar` apaga uma reserva
+# em_curso quando NADA saiu — o retry same-day continua permitido.
+# Uma reserva em_curso mais velha que RESERVA_STALE_S é um processo que morreu no
+# meio: pode ser tomada de novo (senão um crash calava o digest pelo resto do dia).
+
+RESERVA_STALE_S = 10 * 60
+
+
+def reservar_notif_dia(evento: str, data_local: str) -> bool:
+    agora = time.time()
+    with closing(_connect()) as con:
+        try:
+            con.execute(
+                "INSERT INTO notif_reserva (evento, data_local, ts, estado) "
+                "VALUES (?, ?, ?, 'em_curso')",
+                (evento, data_local, agora),
+            )
+            con.commit()
+            return True
+        except sqlite3.IntegrityError:
+            pass
+        cur = con.execute(
+            "UPDATE notif_reserva SET ts = ? "
+            "WHERE evento = ? AND data_local = ? AND estado = 'em_curso' AND ts < ?",
+            (agora, evento, data_local, agora - RESERVA_STALE_S),
+        )
+        con.commit()
+        return cur.rowcount == 1
+
+
+def concluir_reserva_notif(evento: str, data_local: str, estado: str) -> None:
+    assert estado in ("entregue", "incerto"), estado
+    with closing(_connect()) as con:
+        con.execute(
+            "UPDATE notif_reserva SET estado = ?, ts = ? WHERE evento = ? AND data_local = ?",
+            (estado, time.time(), evento, data_local),
+        )
+        con.commit()
+
+
+def liberar_reserva_notif(evento: str, data_local: str) -> None:
+    with closing(_connect()) as con:
+        con.execute(
+            "DELETE FROM notif_reserva "
+            "WHERE evento = ? AND data_local = ? AND estado = 'em_curso'",
+            (evento, data_local),
+        )
+        con.commit()
+
+
+def reserva_notif(evento: str, data_local: str) -> dict | None:
+    with closing(_connect()) as con:
+        row = con.execute(
+            "SELECT evento, data_local, ts, estado FROM notif_reserva "
+            "WHERE evento = ? AND data_local = ?",
+            (evento, data_local),
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def notif_sent_today(evento: str) -> bool:
     with closing(_connect()) as con:
         row = con.execute(
@@ -1961,6 +2030,19 @@ def areas_propostas_por_task() -> dict[str, str]:
     return {str(r["clickup_task_id"]): str(r["area_proposta"]) for r in rows}
 
 
+class CaptureKeyConflict(Exception):
+    """A mesma `client_key` já está na fila com OUTRO texto/sensibilidade.
+
+    O retry idempotente (mesma chave, mesmo conteúdo) devolve o id existente. Chave
+    igual com conteúdo diferente não é retry: é bug do cliente ou reuso de chave — e
+    devolver o id antigo em silêncio fazia o app acreditar que o texto NOVO estava
+    gravado. Não carrega os textos (lei 7)."""
+
+    def __init__(self, existing_id: int):
+        super().__init__(f"client_key já usada pela captura {existing_id}")
+        self.existing_id = existing_id
+
+
 def enqueue_capture(
     text: str,
     profile: str | None,
@@ -1973,11 +2055,13 @@ def enqueue_capture(
             # o retry encontra e devolve exatamente o id originalmente enfileirado.
             con.execute("BEGIN IMMEDIATE")
             row = con.execute(
-                "SELECT id FROM capture_queue WHERE client_key = ?",
+                "SELECT id, text, sensivel FROM capture_queue WHERE client_key = ?",
                 (client_key,),
             ).fetchone()
             if row is not None:
                 con.commit()
+                if row["text"] != text or bool(row["sensivel"]) != bool(sensivel):
+                    raise CaptureKeyConflict(int(row["id"]))
                 return int(row["id"])
             cur = con.execute(
                 "INSERT INTO capture_queue "

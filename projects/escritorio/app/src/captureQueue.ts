@@ -43,9 +43,34 @@ export function createCaptureClientKey(ts: number = Date.now()): string {
 // (sem envio duplicado) e um enqueue no meio de um flush nao perde/envenena o indice.
 let lock: Promise<unknown> = Promise.resolve();
 
+type OuvinteDaFila = () => void;
+const ouvintes = new Set<OuvinteDaFila>();
+
+/** Avisa quando uma operação que muta a fila terminou (enqueue, flush, retry, discard).
+ * Achado do teste no aparelho (PR #1, cenário 1): a tela de captura lia `pendingCount()`
+ * no mesmo "active" em que o App dispara `flush()` — lia ANTES do envio e o badge ficava
+ * em "1 captura(s) seguras no aparelho" até o próximo foco. Com o aviso, a tela refaz a
+ * contagem assim que a fila muda de verdade. */
+export function onQueueChanged(ouvinte: OuvinteDaFila): () => void {
+  ouvintes.add(ouvinte);
+  return () => {
+    ouvintes.delete(ouvinte);
+  };
+}
+
+function avisarOuvintes(): void {
+  for (const ouvinte of ouvintes) {
+    try {
+      ouvinte();
+    } catch {
+      /* um ouvinte quebrado não pode travar a fila */
+    }
+  }
+}
+
 function serialized<T>(op: () => Promise<T>): Promise<T> {
   const run = lock.then(op, op);
-  lock = run.catch(() => {});
+  lock = run.catch(() => {}).then(avisarOuvintes);
   return run;
 }
 
@@ -93,7 +118,7 @@ function splitChunks(s: string): string[] {
   return out.length ? out : [""];
 }
 
-async function _enqueue(item: QueuedItem): Promise<void> {
+async function _enqueue(item: QueuedItem): Promise<string> {
   const id = idForTimestamp(item.ts);
   const storedItem: QueuedItem =
     item.kind === "capture"
@@ -114,10 +139,29 @@ async function _enqueue(item: QueuedItem): Promise<void> {
     ...(await readIdx()),
     { id, chunks: parts.length },
   ]); // indice por ultimo: item orfao > item perdido
+  return id;
 }
 
-export function enqueue(item: QueuedItem): Promise<void> {
+/** Grava e devolve o id do item na fila (o mesmo que `removeQueued` aceita). */
+export function enqueue(item: QueuedItem): Promise<string> {
   return serialized(() => _enqueue(item));
+}
+
+/** Tira UM item da fila porque ele já foi entregue por outro caminho (o POST
+ * direto da tela). A captura agora é gravada ANTES do primeiro envio — se o app
+ * morrer no meio do POST, a drenagem seguinte a reencontra com a mesma
+ * client_key. Quando o POST responde, esta é a contrapartida. Se a drenagem
+ * global passou na frente e já entregou/apagou o item, não há nada a fazer: a
+ * client_key fez o BFF devolver o mesmo id, e aqui vira no-op. */
+export function removeQueued(id: string): Promise<boolean> {
+  return serialized(async () => {
+    const idx = await readIdx();
+    const entry = idx.find((e) => e.id === id);
+    if (!entry) return false;
+    await writeIdx(idx.filter((e) => e.id !== id)); // de-indexa ANTES de apagar
+    await deleteItem(entry);
+    return true;
+  });
 }
 
 export async function pendingCount(): Promise<number> {

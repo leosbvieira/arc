@@ -15,14 +15,17 @@ import {
 import { capture, contarCapturasFalhadas, reprocessarCapturasFalhadas } from "../api";
 import {
   createCaptureClientKey,
+  discardRejected,
   enqueue,
   flush,
+  listRejected,
+  onQueueChanged,
   pendingCount,
   rejectedCount,
-  discardRejected,
-  listRejected,
+  removeQueued,
   retryRejected,
 } from "../captureQueue";
+import { enviarCaptura } from "../envioDeCaptura";
 import { ehFalhaDeRede, mensagemDaRecusa } from "../offlineError";
 import {
   clearReadingDraft,
@@ -157,6 +160,9 @@ export default function Capture({
   const replyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [busy, setBusy] = useState(false);
   const [sensitive, setSensitive] = useState(false);
+  // O que está na caixa AGORA, legível de dentro de um callback antigo.
+  const textRef = useRef("");
+  textRef.current = text;
   const [pending, setPending] = useState(0);
   const [rejected, setRejected] = useState(0);
   const [status, setStatus] = useState("");
@@ -488,9 +494,13 @@ export default function Capture({
     const sub = AppState.addEventListener("change", (s) => {
       if (s === "active") refreshPending();
     });
+    // O "active" acima corre junto com o flush do App e pode ler a fila antes do envio.
+    // A fila avisa quando muda e a contagem se refaz — sem esperar o próximo foco.
+    const pararDeOuvir = onQueueChanged(refreshPending);
     return () => {
       alive = false;
       sub.remove();
+      pararDeOuvir();
     };
   }, []);
 
@@ -738,6 +748,18 @@ export default function Capture({
   async function onSend() {
     const t = text.trim();
     if (!t) return;
+    // O que estava na caixa NA HORA do toque. A caixa segue editável durante o
+    // request, e o Leo emenda a próxima ideia enquanto a primeira viaja: limpar
+    // com `setText("")` na resposta apagava o que ele acabou de digitar (teste de
+    // tela "resposta tardia"). Só limpa se a caixa ainda tem o texto enviado — e o
+    // cadeado vai junto: desmarcar "sensível" de uma captura nova que ele acabou
+    // de marcar a mandaria como conteúdo normal (revisão Codex, 12/09/2026).
+    const enviado = text;
+    const limparSeIntacto = () => {
+      if (textRef.current !== enviado) return;
+      setText("");
+      setSensitive(false);
+    };
 
     const ts = Date.now();
     const clientKey = createCaptureClientKey(ts);
@@ -748,63 +770,48 @@ export default function Capture({
     // pelo resto da sessão — junto com o literal "agora", que envelhecia mentindo.
     setReply("");
 
-    const guardarNaFila = async (motivo: "rede" | "login" = "rede") => {
-      // A mesma client_key usada no primeiro POST acompanha o retry. Se o BFF
-      // recebeu a captura e só a resposta se perdeu, ele devolve o id existente.
-      await enqueue({
-        kind: "capture",
-        payload: { text: t, client_key: clientKey, sensivel: sensitive },
-        ts,
-      });
-      setText("");
-      setSensitive(false);
-      setPending(await pendingCount());
-      // O texto nunca se perde nos dois casos, mas a frase muda: no 401 nenhum
-      // reenvio automático vai acontecer enquanto ele não entrar de novo, e dizer
-      // "sem conexão" ali seria prometer um reenvio que não vem.
-      setStatus(
-        motivo === "login"
-          ? "sessão expirada — guardado no aparelho; entre de novo pra enviar"
-          : "sem conexão — guardado no aparelho, reenvio automático",
-      );
-    };
-
     try {
-      // Drena antes pra manter a ordem: uma captura nova não pode passar na frente
-      // do que já estava esperando. Mas o desvio pra fila agora depende de `semSaida`,
-      // não de `restantes > 0` — a fila também pode ter sobra com a rede boa (itens
-      // que o servidor recusou), e nesse caso mandar a captura nova pra fila era
-      // enterrá-la atrás de um item que nunca sai, mentindo "sem conexão".
-      const { parou, rejeitados } = await flush();
-      if (rejeitados > 0) {
+      // A ordem (flush → grava → POST → apaga) mora em `envioDeCaptura.ts`, que é
+      // puro e testado. Aqui só a fiação com a fila real e a tela.
+      const resultado = await enviarCaptura(
+        {
+          flush,
+          enqueue,
+          removeQueued,
+          capture: (tx, ck, s) => capture(tx, undefined, ck, s),
+          ehFalhaDeRede,
+        },
+        { text: t, clientKey, sensivel: sensitive, ts },
+      );
+      if (resultado.rejeitados > 0) {
         // O badge vermelho so era recalculado no foco da tela: sem isto, um item
         // abandonado AGORA sumia do contador de pendentes e nada aparecia no lugar,
         // e a queda do numero se lia como entrega.
         setRejected(await rejectedCount());
       }
-      if (parou) {
-        await guardarNaFila(parou);
-        return;
+      if (resultado.tipo === "enviado") {
+        setReply(resultado.reply);
+        // E some sozinho: um recibo é um instante, não um estado da tela.
+        if (replyTimer.current) clearTimeout(replyTimer.current);
+        replyTimer.current = setTimeout(() => setReply(""), 6000);
+        limparSeIntacto();
+        setPending(await pendingCount());
+      } else if (resultado.tipo === "guardado") {
+        limparSeIntacto();
+        setPending(await pendingCount());
+        // O texto nunca se perde nos dois casos, mas a frase muda: no 401 nenhum
+        // reenvio automático vai acontecer enquanto ele não entrar de novo, e dizer
+        // "sem conexão" ali seria prometer um reenvio que não vem.
+        setStatus(
+          resultado.motivo === "login"
+            ? "sessão expirada — guardado no aparelho; entre de novo pra enviar"
+            : "sem conexão — guardado no aparelho, reenvio automático",
+        );
+      } else {
+        // O servidor RESPONDEU e recusou. O texto fica na caixa, que é o único
+        // lugar onde ele não se perde sem o Leo saber.
+        setStatus(mensagemDaRecusa(resultado.erro));
       }
-
-      const r = await capture(t, undefined, clientKey, sensitive);
-      setReply(r);
-      // E some sozinho: um recibo é um instante, não um estado da tela.
-      if (replyTimer.current) clearTimeout(replyTimer.current);
-      replyTimer.current = setTimeout(() => setReply(""), 6000);
-      setText("");
-      setSensitive(false);
-      setPending(await pendingCount());
-    } catch (error) {
-      if (ehFalhaDeRede(error)) {
-        await guardarNaFila();
-        return;
-      }
-      // O servidor RESPONDEU e recusou. Enfileirar aqui era o defeito: 401 e 404
-      // nunca melhoram sozinhos, e o 500 pode ter gravado do outro lado — reenviar
-      // às cegas duplica. O texto fica na caixa, que é o único lugar onde ele não
-      // se perde sem o Leo saber.
-      setStatus(mensagemDaRecusa(error));
     } finally {
       setBusy(false);
     }

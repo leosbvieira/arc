@@ -12,8 +12,12 @@ no BFF: o modelo propõe; código idempotente valida e escreve.
 ```powershell
 cd projects/escritorio/bff
 python -m venv .venv
-# rede normal:
-.venv\Scripts\python -m pip install -r requirements.txt
+# rede normal (lock com hashes = exatamente o que a suíte e o CI validaram):
+.venv\Scripts\python -m pip install --require-hashes -r requirements.lock
+# pra rodar os testes: requirements-dev.lock no lugar de requirements.lock
+# regenerar os locks depois de mexer em requirements*.txt:
+#   uv pip compile requirements.txt --generate-hashes --universal --python-version 3.11 -o requirements.lock
+#   uv pip compile requirements.txt requirements-dev.txt --generate-hashes --universal --python-version 3.11 -o requirements-dev.lock
 # se a rede intercepta TLS (como no cutuca), use:
 # .venv\Scripts\python -m pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
 

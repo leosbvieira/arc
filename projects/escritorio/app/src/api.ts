@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 import { mensagemDaFalhaDoChat, segundosDoRetryAfter } from "./chatError";
 import * as SecureStore from "./storage";
+import { bffUrlValidaOuNull, validarBffUrl } from "./bffUrl";
 
 const KEY = "session_token";
 const URL_KEY = "bff_url";
@@ -15,17 +16,27 @@ let cachedUrl: string | null = null;
 
 export async function getBffUrl(): Promise<string> {
   if (cachedUrl) return cachedUrl;
+  // Cada candidato passa pela validação (esquema, host, sem credencial). Um
+  // override salvo que virou inválido — ou http num build que exige https — é
+  // IGNORADO e cai pro próximo, em vez de quebrar todo request em silêncio.
   const stored = await SecureStore.getItemAsync(URL_KEY);
+  const doConfig = (Constants.expoConfig?.extra as { bffUrl?: string } | undefined)?.bffUrl;
   cachedUrl =
-    stored ||
-    (Constants.expoConfig?.extra as { bffUrl?: string } | undefined)?.bffUrl ||
+    bffUrlValidaOuNull(stored) ??
+    bffUrlValidaOuNull(doConfig) ??
+    bffUrlValidaOuNull(DEFAULT_BFF_URL) ??
+    // Último recurso (build https-only sem URL https configurada): devolve o default
+    // pra tela de login abrir e o Leo corrigir o endereço ali — o request vai falhar
+    // com mensagem, não o app.
     DEFAULT_BFF_URL;
   return cachedUrl;
 }
 
+/** Lança `BffUrlInvalida` (mensagem em português) se o endereço não servir. */
 export async function setBffUrl(url: string): Promise<void> {
-  cachedUrl = url.trim().replace(/\/+$/, "");
-  await SecureStore.setItemAsync(URL_KEY, cachedUrl);
+  const valida = validarBffUrl(url);
+  cachedUrl = valida;
+  await SecureStore.setItemAsync(URL_KEY, valida);
 }
 
 export async function getToken(): Promise<string | null> {
@@ -186,7 +197,9 @@ async function chatRequest(
   return data.reply;
 }
 
-export async function registerDevice(expoToken: string): Promise<void> {
+// `signal`: quem chama com prazo aborta o request de verdade — um POST que
+// sobrevive ao prazo registraria o token depois do "Sair" (ver `prazo.ts`).
+export async function registerDevice(expoToken: string, signal?: AbortSignal): Promise<void> {
   const base = await getBffUrl();
   const token = await getToken();
   const response = await fetch(`${base}/devices`, {
@@ -196,11 +209,12 @@ export async function registerDevice(expoToken: string): Promise<void> {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ token: expoToken }),
+    signal,
   });
   if (!response.ok) throw new Error(`registrar push: ${response.status}`);
 }
 
-export async function unregisterDevice(expoToken: string): Promise<void> {
+export async function unregisterDevice(expoToken: string, signal?: AbortSignal): Promise<void> {
   const base = await getBffUrl();
   const token = await getToken();
   const response = await fetch(`${base}/devices`, {
@@ -210,6 +224,7 @@ export async function unregisterDevice(expoToken: string): Promise<void> {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ token: expoToken }),
+    signal,
   });
   if (!response.ok) throw new Error(`remover push: ${response.status}`);
 }

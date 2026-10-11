@@ -36,10 +36,17 @@ import {
 
 import Abertura from "./src/screens/Abertura";
 import Agenda from "./src/screens/Agenda";
-import { getBffUrl, getToken, login, registerDevice, setBffUrl } from "./src/api";
+import { getBffUrl, getToken, login, registerDevice, setBffUrl, unregisterDevice } from "./src/api";
 import { sessaoValida } from "./src/sessao";
 import { flush } from "./src/captureQueue";
-import { registerForPushToken } from "./src/notifications";
+import {
+  esquecerPushToken,
+  getRegisteredPushToken,
+  lembrarPushToken,
+  obterPushToken,
+} from "./src/notifications";
+import { comPrazoAbortavel } from "./src/prazo";
+import { sincronizarPush } from "./src/pushSync";
 import Capture from "./src/screens/Capture";
 import Chat from "./src/screens/Chat";
 import Edificacao from "./src/screens/Edificacao";
@@ -128,9 +135,23 @@ function tabDaNotificacao(kind: unknown): Tab | null {
   return null;
 }
 
+const PRAZO_PUSH_MS = 8000;
+
 async function syncPushDevice() {
-  const expoToken = await registerForPushToken();
-  if (expoToken) await registerDevice(expoToken);
+  // A regra (rotação, revogação, quando esquecer) mora em `pushSync.ts`, puro e
+  // testado. Aqui só a fiação. Cada chamada ao BFF tem prazo: o boot não pode
+  // ficar preso atrás de um servidor que aceita a conexão e não responde.
+  const resultado = await sincronizarPush({
+    registrado: getRegisteredPushToken,
+    atual: obterPushToken,
+    registerDevice: (t) =>
+      comPrazoAbortavel((signal) => registerDevice(t, signal), PRAZO_PUSH_MS, "registrar push"),
+    unregisterDevice: (t) =>
+      comPrazoAbortavel((signal) => unregisterDevice(t, signal), PRAZO_PUSH_MS, "remover push"),
+    lembrar: lembrarPushToken,
+    esquecer: esquecerPushToken,
+  });
+  if (resultado.tipo !== "registrado") console.log("push:", resultado);
 }
 
 export default function App() {

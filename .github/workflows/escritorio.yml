@@ -28,6 +28,11 @@ concurrency:
   group: escritorio-${{ github.ref }}
   cancel-in-progress: true
 
+# O token do job só lê. Nenhum passo aqui escreve no repo, abre PR ou publica
+# artefato — e uma action comprometida herda exatamente o que estiver aqui.
+permissions:
+  contents: read
+
 jobs:
   bff:
     name: BFF (pytest)
@@ -36,20 +41,24 @@ jobs:
       run:
         working-directory: projects/escritorio/bff
     steps:
-      - uses: actions/checkout@v4
+      # Actions fixadas por SHA (a tag `v4` é móvel; o SHA não). Sem persistir a
+      # credencial do checkout: os passos seguintes não fazem git push.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: |
-            projects/escritorio/bff/requirements.txt
-            projects/escritorio/bff/requirements-dev.txt
+          cache-dependency-path: projects/escritorio/bff/requirements-dev.lock
 
-      - name: Instalar dependências
+      - name: Instalar dependências (lock com hashes)
+        # O lock é gerado por `uv pip compile` a partir de requirements*.txt (ver
+        # bff/README.md). `--require-hashes` recusa qualquer artefato fora do lock.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.lock
 
       - name: Confirmar que não há .env no runner
         # Se algum dia um `.env` entrar no repo por engano, o teste abaixo passaria
@@ -62,13 +71,21 @@ jobs:
   app:
     name: App (tsc + node --test)
     runs-on: ubuntu-latest
+    # O app decide o hero pelo relógio LOCAL do celular (getHours/getDay), e a suíte
+    # do homeAction escreve instantes em -03:00. Num runner em UTC, 16:00 de domingo
+    # vira 19:00 e sete testes caem (era o vermelho do main desde 04/09). Fixar o
+    # fuso reproduz o aparelho do Leo; não é maquiagem do teste.
+    env:
+      TZ: America/Sao_Paulo
     defaults:
       run:
         working-directory: projects/escritorio/app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # O runner do repo tem Node 24, e a suíte depende disso: ela importa `.ts`
           # direto (type stripping nativo) e o ESM do 24 exige extensão explícita.

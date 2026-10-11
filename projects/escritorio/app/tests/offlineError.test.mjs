@@ -108,3 +108,7 @@ test("a mensagem da recusa nunca culpa a rede e sempre diz o que fazer", () => {
   assert.match(mensagemDaRecusa(doServidor(500)), /recebeu e falhou/);
   assert.match(mensagemDaRecusa(doServidor(404)), /404/);
 });
+
+test("409 (client_key com outro conteúdo) desiste na primeira: reenviar nunca muda a resposta", () => {
+  assert.equal(decidirAposFalha(doServidor(409), 1), "desistir");
+});

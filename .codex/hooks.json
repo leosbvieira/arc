@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/arcanum-user-prompt-submit.sh",
+            "command": "bash .codex/hooks/arcanum-user-prompt-submit.sh",
             "statusMessage": "Opening Arcanum observer envelope"
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/arcanum-post-tool-use.sh",
+            "command": "bash .codex/hooks/arcanum-post-tool-use.sh",
             "statusMessage": "Recording Arcanum tool evidence"
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".codex/hooks/arcanum-stop.sh",
+            "command": "bash .codex/hooks/arcanum-stop.sh",
             "statusMessage": "Closing Arcanum observer envelope"
           }
         ]

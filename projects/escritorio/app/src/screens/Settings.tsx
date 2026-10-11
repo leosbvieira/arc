@@ -4,7 +4,8 @@ import { Alert, StyleSheet, Text, View } from "react-native";
 
 import { clearToken, getBffUrl, setBffUrl, unregisterDevice } from "../api";
 import { performLogout } from "../logout";
-import { disableLocalPush, getRegisteredPushToken, registerForPushToken } from "../notifications";
+import { comPrazo } from "../prazo";
+import { disableLocalPush, getRegisteredPushToken } from "../notifications";
 import { colors, fonts, spacing } from "../theme";
 import { AppButton, Card, Field } from "../ui";
 
@@ -20,6 +21,10 @@ export default function Settings({
   const [server, setServer] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "online" | "offline">("idle");
   const [saving, setSaving] = useState(false);
+  // Achado do teste no aparelho (PR #1, cenário 4): depois de confirmar o "Sair", o app
+  // ficava até 8 s (3 do sync de push + 5 do aviso ao servidor) sem sinal nenhum no botão,
+  // e a mão vai de novo pro botão. Girando, a espera tem cara de espera.
+  const [saindo, setSaindo] = useState(false);
 
   useEffect(() => { getBffUrl().then(setServer); }, []);
 
@@ -39,8 +44,19 @@ export default function Settings({
   async function save() {
     if (!server.trim()) return;
     setSaving(true);
-    await setBffUrl(server);
-    onServerSaved(server.trim().replace(/\/+$/, ""));
+    try {
+      await setBffUrl(server);
+      const salva = await getBffUrl();
+      setServer(salva);
+      onServerSaved(salva);
+    } catch (e: any) {
+      // Endereço recusado (esquema, credencial, http num build https-only): o
+      // valor antigo continua valendo e o motivo aparece — antes salvava qualquer
+      // coisa e o erro só aparecia como "offline" no check.
+      Alert.alert("Servidor", e?.message ?? "endereço inválido");
+      setSaving(false);
+      return;
+    }
     setSaving(false);
     await check();
   }
@@ -52,14 +68,19 @@ export default function Settings({
         text: "Sair",
         style: "destructive",
         onPress: async () => {
+          setSaindo(true);
           try {
-            await beforeLogout();
+            // O sync de push do boot pode estar no ar; espera um pouco pra não
+            // remover um token que está sendo registrado — mas com prazo: sair
+            // nunca depende do servidor.
+            await comPrazo(beforeLogout(), 3000, "sair: sync de push");
           } catch {
             /* best-effort: nada aqui pode impedir a saída */
           }
           const { serverOk } = await performLogout({
-            pushToken: async () =>
-              (await getRegisteredPushToken()) ?? (await registerForPushToken()),
+            // Só o token REGISTRADO. Antes caía em `registerForPushToken()`, que pede
+            // permissão ao sistema — um diálogo de permissão no meio do "Sair".
+            pushToken: getRegisteredPushToken,
             unregisterDevice,
             disableLocalPush,
             clearToken,
@@ -99,7 +120,7 @@ export default function Settings({
         <Text style={styles.label}>SESSÃO</Text>
         <Text style={styles.sessionTitle}>Acesso autenticado</Text>
         <Text style={styles.hint}>Sair encerra a sessão e remove este aparelho das notificações. Capturas locais e dados do servidor não são apagados.</Text>
-        <AppButton title="Sair deste aparelho" variant="ghost" onPress={logout} />
+        <AppButton title="Sair deste aparelho" variant="ghost" onPress={logout} loading={saindo} />
       </Card>
     </View>
   );

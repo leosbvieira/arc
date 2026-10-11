@@ -18,12 +18,50 @@
 // O `app.json` continua sendo a fonte; aqui não se declara nada, só se redireciona um
 // caminho quando o ambiente manda.
 
-module.exports = ({ config }) => {
-  const doSegredo = process.env.GOOGLE_SERVICES_JSON;
-  if (!doSegredo) return config;
+// Segunda responsabilidade (set/2026): o portão de https por ambiente. O perfil do
+// eas.json define `EXPO_PUBLIC_APP_ENV`; em preview/production o BFF precisa ser
+// https — a menos do escape `EXPO_PUBLIC_ALLOW_HTTP=1`, que o preview carrega até o
+// VPS com TLS existir. Sem isto um build "de produção" nascia apontando pra LAN em
+// texto claro e ninguém via. A mesma regra vale em runtime (`src/bffUrl.ts`) e no
+// manifesto Android (`plugins/withCleartextTraffic.js`).
+// "https://" sozinho passava no regex antigo e o build nascia sem servidor
+// (revisão Codex, 12/09/2026): precisa ser https E ter host.
+function ehHttpsComHost(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && u.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
 
-  return {
-    ...config,
-    android: { ...config.android, googleServicesFile: doSegredo },
-  };
+function conferirBffUrl(config, env = process.env) {
+  const ambiente = env.EXPO_PUBLIC_APP_ENV;
+  if (ambiente !== "preview" && ambiente !== "production") return;
+  if (env.EXPO_PUBLIC_ALLOW_HTTP === "1") return;
+  const url = env.EXPO_PUBLIC_BFF_URL || (config.extra && config.extra.bffUrl) || "";
+  if (!ehHttpsComHost(url)) {
+    throw new Error(
+      "[app.config] perfil " + ambiente + " exige BFF https:// (recebido: \"" + (url || "vazio") + "\"). " +
+        "Defina EXPO_PUBLIC_BFF_URL=https://... no perfil do eas.json, ou EXPO_PUBLIC_ALLOW_HTTP=1 enquanto o BFF estiver na LAN.",
+    );
+  }
+}
+
+module.exports = ({ config }) => {
+  conferirBffUrl(config);
+
+  // `EXPO_PUBLIC_BFF_URL` do perfil vence o `extra.bffUrl` do app.json (que é o
+  // default de desenvolvimento na LAN).
+  const bffUrl = process.env.EXPO_PUBLIC_BFF_URL;
+  let saida = bffUrl ? { ...config, extra: { ...config.extra, bffUrl } } : config;
+
+  const doSegredo = process.env.GOOGLE_SERVICES_JSON;
+  if (doSegredo) {
+    saida = { ...saida, android: { ...saida.android, googleServicesFile: doSegredo } };
+  }
+  return saida;
 };
+
+module.exports.conferirBffUrl = conferirBffUrl;
+module.exports.ehHttpsComHost = ehHttpsComHost;

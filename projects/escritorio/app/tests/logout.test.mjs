@@ -54,3 +54,26 @@ test("falha ao desligar o push local não trava a saída", async () => {
   assert.deepEqual(await performLogout(deps), { serverOk: false });
   assert.ok(chamadas.includes("clearToken"));
 });
+
+test("servidor aceita a conexão e não responde: o prazo vence e a saída segue", async () => {
+  const { chamadas, deps } = steps({
+    unregisterDevice: () => new Promise(() => {}),
+    prazoMs: 20,
+  });
+
+  assert.deepEqual(await performLogout(deps), { serverOk: false });
+  assert.deepEqual(chamadas, ["disableLocal", "clearToken"]);
+});
+
+test("o prazo ABORTA o request: o signal chega abortado ao unregister", async () => {
+  let sinal;
+  const { deps } = steps({
+    unregisterDevice: (_t, signal) => {
+      sinal = signal;
+      return new Promise(() => {});
+    },
+    prazoMs: 20,
+  });
+  assert.deepEqual(await performLogout(deps), { serverOk: false });
+  assert.equal(sinal.aborted, true);
+});

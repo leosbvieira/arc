@@ -66,7 +66,12 @@ export function decidirAposFalha(
   limite: number = MAX_TENTATIVAS,
 ): DecisaoDaFila {
   if (ehFalhaDeRede(erro)) return "esperar_rede";
-  if (statusDoErro(erro) === 401) return "esperar_login";
+  const status = statusDoErro(erro);
+  if (status === 401) return "esperar_login";
+  // 409 = a MESMA client_key já existe no BFF com outro conteúdo. Reenviar o mesmo
+  // par nunca muda a resposta; cinco voltas só atrasariam a fila. Vai direto pro
+  // escaninho, onde o Leo vê o texto.
+  if (status === 409) return "desistir";
   return tentativasFeitas >= limite ? "desistir" : "recolocar_no_fim";
 }
 

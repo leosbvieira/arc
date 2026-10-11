@@ -1,5 +1,6 @@
 """O consumidor PowerShell da fonte única, testado pelo plano que ele produz."""
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -8,6 +9,13 @@ import pytest
 from app import ritos
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "sync-cron.ps1"
+
+# O consumidor é o Agendador de Tarefas do Windows; sem `powershell.exe` (runner
+# Ubuntu do CI) não há o que testar aqui — o VPS usa cron/systemd, não este script.
+pytestmark = pytest.mark.skipif(
+    shutil.which("powershell.exe") is None,
+    reason="sync-cron.ps1 é o consumidor do Agendador do Windows; exige powershell.exe",
+)
 
 
 def plano(instaladas: list[str]) -> dict:

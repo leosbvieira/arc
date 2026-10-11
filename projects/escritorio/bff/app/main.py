@@ -19,7 +19,9 @@ from fastapi import (
     Request,
     status,
 )
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from . import (
@@ -43,7 +45,7 @@ from . import (
     tz,
     vault_client,
 )
-from .auth import make_token, require_auth
+from .auth import make_token, require_auth, secret_equal
 from .config import DEFAULTS, settings
 
 logger = logging.getLogger(__name__)
@@ -76,11 +78,13 @@ NUDGE_COPY = montar_nudge_copy()
 
 
 def _guard_default_secrets() -> None:
+    # Vazio é tão ruim quanto default: `INTERNAL_TOKEN=` no .env deixava o `!=`
+    # antigo aceitar qualquer header vazio nos /internal/*.
     if any(
-        getattr(settings, field) == default
+        getattr(settings, field) in (default, "", None)
         for field, default in DEFAULTS.items()
     ):
-        raise RuntimeError("segredos default detectados — configure o .env")
+        raise RuntimeError("segredos default detectados ou vazios — configure o .env")
 
 
 async def _capture_worker() -> None:
@@ -247,6 +251,15 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(RequestValidationError)
+async def _entrada_invalida(_request: Request, _exc: RequestValidationError) -> JSONResponse:
+    """422 sem ecoar a entrada. O handler padrão do FastAPI devolve `input` em cada
+    erro — num `POST /auth/login` com `{"password": ["x"]}` isso repete a senha
+    recebida no corpo da resposta (e em qualquer log de resposta). Lei 7: o
+    cliente só precisa saber que o formato estava errado."""
+    return JSONResponse({"detail": "entrada inválida", "code": "validation_error"}, status_code=422)
+
+
 class LoginIn(BaseModel):
     password: str
 
@@ -308,10 +321,25 @@ class ParametrosOut(BaseModel):
     ritos: list[RitoOut] = Field(min_length=1)
 
 
+# --- limites de tamanho POR CAMPO ----------------------------------------------
+# Não há middleware global de Content-Length: um teto único teria que caber no maior
+# snapshot de leitura e aí não protegeria nada. Cada campo de texto livre tem o SEU
+# teto, dimensionado pelo uso real (uma captura por voz tem centenas de caracteres;
+# um snapshot de leitura tem dezenas de chunks de até algumas páginas). Estourar vira
+# 422 genérico (sem eco). O proxy (Caddy) ainda pode ter `request_body max_size` como
+# segunda camada — ver ops/.
+TEXTO_CURTO = 300          # chaves, nomes, tokens, modos
+TEXTO_CAPTURA = 20_000     # uma captura / uma pergunta ao mentor / notas de sessão
+TEXTO_CHUNK = 50_000       # um chunk de leitura (páginas ditadas de uma vez)
+TEXTO_LONGO = 200_000      # fechamento do dia (raw + md), notas pro Anki
+MAX_CHUNKS_SNAPSHOT = 2_000
+MAX_CHECKS_FECHAMENTO = 200
+
+
 class CaptureIn(BaseModel):
-    text: str
-    profile: str | None = None
-    client_key: str | None = None
+    text: str = Field(max_length=TEXTO_CAPTURA)
+    profile: str | None = Field(default=None, max_length=TEXTO_CURTO)
+    client_key: str | None = Field(default=None, max_length=TEXTO_CURTO)
     sensivel: bool = False
 
 
@@ -326,15 +354,15 @@ class SessionIn(BaseModel):
     projeto: str | None = None
     paginas: int | None = None
     duracao_s: int
-    notas: str = ""
-    session_key: str | None = None
+    notas: str = Field(default="", max_length=TEXTO_CAPTURA)
+    session_key: str | None = Field(default=None, max_length=TEXTO_CURTO)
 
 
 class ReadingSessionIn(BaseModel):
     model_config = {"extra": "forbid"}
 
-    client_key: str
-    livro: str
+    client_key: str = Field(max_length=TEXTO_CURTO)
+    livro: str = Field(max_length=TEXTO_CURTO)
     pagina_inicial: int | None = None
     inicio: float | None = None
     book_id: int | None = None
@@ -362,7 +390,7 @@ class ReadingBufferIn(BaseModel):
 
     seq: int
     hook: Literal["quote", "comentario", "ideia", "coach", "lista", "texto"] = "texto"
-    texto: str
+    texto: str = Field(max_length=TEXTO_CHUNK)
     ts: float | None = None
 
     @field_validator("seq", mode="before")
@@ -383,9 +411,9 @@ class ReadingBufferIn(BaseModel):
 class ReadingBufferPatchIn(BaseModel):
     model_config = {"extra": "forbid"}
 
-    expected_chunk_id: str
+    expected_chunk_id: str = Field(max_length=TEXTO_CURTO)
     hook: Literal["quote", "comentario", "ideia", "coach", "lista", "texto"] | None = None
-    texto: str | None = None
+    texto: str | None = Field(default=None, max_length=TEXTO_CHUNK)
 
     @field_validator("texto")
     @classmethod
@@ -446,7 +474,7 @@ class ReadingSnapshotChunkIn(BaseModel):
 
     seq: int
     hook: Literal["quote", "comentario", "ideia", "coach", "lista", "texto"]
-    texto: str
+    texto: str = Field(max_length=TEXTO_CHUNK)
 
     @field_validator("seq", mode="before")
     @classmethod
@@ -466,11 +494,11 @@ class ReadingSnapshotChunkIn(BaseModel):
 class ReadingReconcileIn(BaseModel):
     model_config = {"extra": "forbid"}
 
-    client_key: str
-    livro: str
+    client_key: str = Field(max_length=TEXTO_CURTO)
+    livro: str = Field(max_length=TEXTO_CURTO)
     pagina_inicial: int | None = None
     pagina_final: int | None = None
-    buffer: list[ReadingSnapshotChunkIn]
+    buffer: list[ReadingSnapshotChunkIn] = Field(max_length=MAX_CHUNKS_SNAPSHOT)
 
     @field_validator("client_key", "livro")
     @classmethod
@@ -499,14 +527,17 @@ class ReadingReconcileIn(BaseModel):
 
 class ChatTurno(BaseModel):
     role: Literal["user", "ai"]
-    text: str
+    text: str = Field(max_length=TEXTO_CAPTURA)
 
 
 class ChatIn(BaseModel):
-    text: str
-    mode: str = "Mentor"
+    text: str = Field(max_length=TEXTO_CAPTURA)
+    mode: str = Field(default="Mentor", max_length=TEXTO_CURTO)
     # A conversa mora no app (não é persistida no servidor); ele reenvia os turnos
     # recentes para o modelo não receber cada pergunta como órfã.
+    # Sem teto na LISTA: a tela manda a conversa inteira e o hermes_client corta
+    # nos últimos MAX_TURNOS. Um 422 aqui matava conversas longas (revisão Codex,
+    # 12/09/2026). O teto por turno (texto) continua.
     historico: list[ChatTurno] = []
 
 
@@ -515,13 +546,13 @@ class ChatOut(BaseModel):
 
 
 class DeviceIn(BaseModel):
-    token: str
+    token: str = Field(min_length=1, max_length=TEXTO_CURTO)
 
 
 class NotifyIn(BaseModel):
-    title: str = "Escritório"
-    body: str
-    kind: str = "manual_notify"
+    title: str = Field(default="Escritório", max_length=TEXTO_CURTO)
+    body: str = Field(max_length=TEXTO_CAPTURA)
+    kind: str = Field(default="manual_notify", max_length=TEXTO_CURTO)
     sensivel: bool = False
 
     @field_validator("kind")
@@ -565,20 +596,20 @@ class CreateTaskIn(BaseModel):
 
 
 class ClosingDraftIn(BaseModel):
-    text: str
-    template: str = "yoga"
+    text: str = Field(max_length=TEXTO_LONGO)
+    template: str = Field(default="yoga", max_length=TEXTO_CURTO)
 
 
 class CheckItem(BaseModel):
-    rotina: str
+    rotina: str = Field(max_length=TEXTO_CURTO)
     feito: bool
 
 
 class ClosingApproveIn(BaseModel):
-    raw_text: str
-    draft_md: str
-    template: str = "yoga"
-    checks: list[CheckItem] = []
+    raw_text: str = Field(max_length=TEXTO_LONGO)
+    draft_md: str = Field(max_length=TEXTO_LONGO)
+    template: str = Field(default="yoga", max_length=TEXTO_CURTO)
+    checks: list[CheckItem] = Field(default=[], max_length=MAX_CHECKS_FECHAMENTO)
 
 
 class NudgeIn(BaseModel):
@@ -933,7 +964,7 @@ class TriagemAplicarIn(BaseModel):
 class AnkiSugerirIn(BaseModel):
     model_config = {"extra": "forbid"}
 
-    notas: str
+    notas: str = Field(max_length=TEXTO_LONGO)
     session_id: int | None = None
 
     @field_validator("notas")
@@ -1136,12 +1167,22 @@ async def capture(body: CaptureIn, _: str = Depends(require_auth)):
     """Fire-and-forget (B6): enfileira e responde na hora. O worker processa a fila em
     fundo (Raw → classificação → Staging). O Chat NÃO usa mais esta rota (ela não devolve
     a resposta do Hermes) — conversa síncrona vai por /chat."""
-    cid = store.enqueue_capture(
-        body.text,
-        body.profile,
-        body.client_key,
-        sensivel=body.sensivel,
-    )
+    try:
+        cid = store.enqueue_capture(
+            body.text,
+            body.profile,
+            body.client_key,
+            sensivel=body.sensivel,
+        )
+    except store.CaptureKeyConflict as e:
+        # Mesma chave, conteúdo diferente: não é retry. O app manda o item pro
+        # escaninho (409 = desistir em `offlineError.ts`) em vez de girar. Sem os
+        # textos no corpo (lei 7).
+        store.log_event("capture_key_conflito", ref=str(e.existing_id))
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "client_key_conflito",
+        )
     store.log_event("capture_in", ref=str(cid))
     return CaptureOut(reply="✅ anotado", queued=True)
 
@@ -3180,7 +3221,8 @@ async def closing_approve(body: ClosingApproveIn, _=Depends(require_auth)):
 
 
 def _check_internal(token: str) -> None:
-    if token != settings.internal_token:
+    # Tempo constante e vazio-nunca-passa, como o login já fazia (`secret_equal`).
+    if not secret_equal(token, settings.internal_token):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "token interno inválido",
@@ -3201,6 +3243,10 @@ async def internal_nudge(
         return {"skipped": "atrasado"}
     if store.notif_sent_today(f"nudge_{body.kind}"):
         return {"skipped": True}
+    hoje = tz.hoje_local().isoformat()
+    # Mesma reserva atômica do digest (ver /internal/run-digest).
+    if not store.reservar_notif_dia(f"nudge_{body.kind}", hoje):
+        return {"skipped": True}
     text = NUDGE_COPY[body.kind]
     if body.kind == "review":
         try:
@@ -3210,7 +3256,15 @@ async def internal_nudge(
         except Exception:
             # O nudge-base ainda é entregue se algum agregado estiver indisponível.
             pass
-    entrega = await notify.notificar(f"nudge_{body.kind}", text)
+    try:
+        entrega = await notify.notificar(f"nudge_{body.kind}", text)
+    except Exception:
+        store.concluir_reserva_notif(f"nudge_{body.kind}", hoje, "incerto")
+        raise
+    if entrega.get("push") or entrega.get("telegram"):
+        store.concluir_reserva_notif(f"nudge_{body.kind}", hoje, "entregue")
+    else:
+        store.liberar_reserva_notif(f"nudge_{body.kind}", hoje)
     return {"ok": True, **entrega}
 
 
@@ -3237,13 +3291,33 @@ async def internal_run_digest(x_internal_token: str = Header(default="")):
     today = pontos.hoje_local().isoformat()
     if store.notif_sent_today("digest"):
         return {"skipped": "digest ja enviado hoje"}
-    result = await tasks.run_digest()
+    # Reserva ATÔMICA do slot do dia (PK evento+dia). `notif_sent_today` sozinho tinha
+    # uma janela: duas chamadas simultâneas (cron + catch-up de boot, ou dois timers)
+    # passavam ambas pela leitura e o Leo recebia o digest em dobro. Quem não pega a
+    # reserva sai sem fazer nada; a reserva é devolvida se NADA saiu (falha de envio,
+    # retry same-day segue permitido) e fica marcada `incerto` se o envio explodiu no
+    # meio — aí ninguém reenvia hoje, porque pode TER saído.
+    if not store.reservar_notif_dia("digest", today):
+        return {"skipped": "digest em curso ou ja tratado hoje"}
+    try:
+        result = await tasks.run_digest()
+    except Exception:
+        store.liberar_reserva_notif("digest", today)  # nada saiu: pode tentar de novo
+        raise
     has_content = bool(result["tasks"]) or bool(result.get("lines_extra"))
     entrega = {"push": False, "telegram": False}
     if has_content:
         # `body_telegram` já vem neutralizado POR LINHA (áreas sensíveis) — é o corpo
         # de preview, e serve aos dois canais. O app lê o body_app inteiro no /digest.
-        entrega = await notify.notificar("digest", result["body_telegram"])
+        try:
+            entrega = await notify.notificar("digest", result["body_telegram"])
+        except Exception:
+            store.concluir_reserva_notif("digest", today, "incerto")
+            raise
+    if entrega["push"] or entrega["telegram"]:
+        store.concluir_reserva_notif("digest", today, "entregue")
+    else:
+        store.liberar_reserva_notif("digest", today)
     store.save_digest_run(
         today,
         result["body_app"],
