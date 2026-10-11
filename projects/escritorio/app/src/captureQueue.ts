@@ -43,9 +43,34 @@ export function createCaptureClientKey(ts: number = Date.now()): string {
 // (sem envio duplicado) e um enqueue no meio de um flush nao perde/envenena o indice.
 let lock: Promise<unknown> = Promise.resolve();
 
+type OuvinteDaFila = () => void;
+const ouvintes = new Set<OuvinteDaFila>();
+
+/** Avisa quando uma operação que muta a fila terminou (enqueue, flush, retry, discard).
+ * Achado do teste no aparelho (PR #1, cenário 1): a tela de captura lia `pendingCount()`
+ * no mesmo "active" em que o App dispara `flush()` — lia ANTES do envio e o badge ficava
+ * em "1 captura(s) seguras no aparelho" até o próximo foco. Com o aviso, a tela refaz a
+ * contagem assim que a fila muda de verdade. */
+export function onQueueChanged(ouvinte: OuvinteDaFila): () => void {
+  ouvintes.add(ouvinte);
+  return () => {
+    ouvintes.delete(ouvinte);
+  };
+}
+
+function avisarOuvintes(): void {
+  for (const ouvinte of ouvintes) {
+    try {
+      ouvinte();
+    } catch {
+      /* um ouvinte quebrado não pode travar a fila */
+    }
+  }
+}
+
 function serialized<T>(op: () => Promise<T>): Promise<T> {
   const run = lock.then(op, op);
-  lock = run.catch(() => {});
+  lock = run.catch(() => {}).then(avisarOuvintes);
   return run;
 }
 

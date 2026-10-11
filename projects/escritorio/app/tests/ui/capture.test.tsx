@@ -4,6 +4,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 import Capture from "../../src/screens/Capture";
+import { flush } from "../../src/captureQueue";
 import { secureStoreEmMemoria } from "./setup";
 
 type Resposta = { status: number; body: unknown };
@@ -109,6 +110,35 @@ test("sem rede: guardado no aparelho; fechar e reabrir o app mostra a pendência
   tela.unmount();
   render(<Capture />);
   await waitFor(() => expect(screen.getByText(/1 captura\(s\) seguras no aparelho/)).toBeTruthy());
+});
+
+test("rede voltou: o flush do App esvazia a fila e o badge some SEM esperar o próximo foco", async () => {
+  // Achado do teste no aparelho (PR #1, cenário 1): a tela lia a fila no mesmo "active"
+  // em que o App dispara `flush()`, antes do envio, e o badge ficava em "1 captura(s)".
+  let semRede = true;
+  servidor((url, init) => {
+    if (url.endsWith("/capture") && init?.method === "POST") {
+      if (semRede) throw new TypeError("Network request failed");
+      return { status: 200, body: { reply: "✅ anotado" } };
+    }
+    return vazio;
+  });
+  await abrirCaptura();
+
+  fireEvent.changeText(screen.getByPlaceholderText(/cobrar a Ana/), "ligar pro dentista");
+  await act(async () => {
+    fireEvent.press(screen.getByLabelText("Enviar captura"));
+  });
+  await waitFor(() => expect(screen.getByText(/1 captura\(s\) seguras no aparelho/)).toBeTruthy());
+
+  // A rede volta e o App (não esta tela) drena a fila, como no "active" real.
+  semRede = false;
+  await act(async () => {
+    await flush();
+  });
+  await waitFor(() => expect(screen.queryByText(/seguras no aparelho/)).toBeNull());
+  // Dois POSTs: a tentativa sem rede e o reenvio do flush — o mesmo texto, uma vez entregue.
+  expect(postsDeCaptura().map((p) => p.text)).toEqual(["ligar pro dentista", "ligar pro dentista"]);
 });
 
 test("servidor recusou (500): o texto fica na caixa e nada vai pra fila", async () => {

@@ -21,6 +21,10 @@ export default function Settings({
   const [server, setServer] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "online" | "offline">("idle");
   const [saving, setSaving] = useState(false);
+  // Achado do teste no aparelho (PR #1, cenário 4): depois de confirmar o "Sair", o app
+  // ficava até 8 s (3 do sync de push + 5 do aviso ao servidor) sem sinal nenhum no botão,
+  // e a mão vai de novo pro botão. Girando, a espera tem cara de espera.
+  const [saindo, setSaindo] = useState(false);
 
   useEffect(() => { getBffUrl().then(setServer); }, []);
 
@@ -64,6 +68,7 @@ export default function Settings({
         text: "Sair",
         style: "destructive",
         onPress: async () => {
+          setSaindo(true);
           try {
             // O sync de push do boot pode estar no ar; espera um pouco pra não
             // remover um token que está sendo registrado — mas com prazo: sair
@@ -115,7 +120,7 @@ export default function Settings({
         <Text style={styles.label}>SESSÃO</Text>
         <Text style={styles.sessionTitle}>Acesso autenticado</Text>
         <Text style={styles.hint}>Sair encerra a sessão e remove este aparelho das notificações. Capturas locais e dados do servidor não são apagados.</Text>
-        <AppButton title="Sair deste aparelho" variant="ghost" onPress={logout} />
+        <AppButton title="Sair deste aparelho" variant="ghost" onPress={logout} loading={saindo} />
       </Card>
     </View>
   );

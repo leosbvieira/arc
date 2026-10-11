@@ -15,13 +15,14 @@ import {
 import { capture, contarCapturasFalhadas, reprocessarCapturasFalhadas } from "../api";
 import {
   createCaptureClientKey,
+  discardRejected,
   enqueue,
   flush,
+  listRejected,
+  onQueueChanged,
   pendingCount,
   rejectedCount,
   removeQueued,
-  discardRejected,
-  listRejected,
   retryRejected,
 } from "../captureQueue";
 import { enviarCaptura } from "../envioDeCaptura";
@@ -493,9 +494,13 @@ export default function Capture({
     const sub = AppState.addEventListener("change", (s) => {
       if (s === "active") refreshPending();
     });
+    // O "active" acima corre junto com o flush do App e pode ler a fila antes do envio.
+    // A fila avisa quando muda e a contagem se refaz — sem esperar o próximo foco.
+    const pararDeOuvir = onQueueChanged(refreshPending);
     return () => {
       alive = false;
       sub.remove();
+      pararDeOuvir();
     };
   }, []);
 
