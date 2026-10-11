@@ -21,6 +21,12 @@ sozinho.
 > **Alternativa 10x mais barata (considere):** deixar o **PC ligado 24/7** + Telegram. Isso já dá
 > always-on + acesso de qualquer lugar, com **zero migração**. O VPS vale se você não quer o PC ligado
 > o tempo todo ou quer independência total. Se topar o VPS, siga abaixo.
+>
+> **Atualização 2026-10-11:** a decisão foi a opção B do `VPS-PLANO.md` — Hermes no VPS
+> com o **OAuth do Codex por device code** (não `ANTHROPIC_API_KEY`), e o BFF chama o
+> Hermes por subprocesso (`hermes -z`), não pelo API server. Os Estágios B–D abaixo estão
+> automatizados em `ops/vps-install.sh`; este arquivo fica como mapa dos estágios e do que
+> continua manual (login do Hermes, tokens, snapshot do banco, crons do Estágio F).
 
 ---
 

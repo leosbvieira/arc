@@ -12,6 +12,19 @@ DEFAULTS: dict[str, str] = {
     "internal_token": "troque-token-interno",
 }
 
+# Revisão Codex (2026-10-11, superfície de internet, achado #1): o placeholder do
+# `.env.example` era DIFERENTE do default bloqueado pelo guard — copiar o exemplo
+# pro VPS subia o serviço com um segredo JWT público. Agora qualquer valor que
+# carregue um marcador de placeholder é recusado, e o JWT precisa de tamanho de
+# chave de verdade (HS256: 32 bytes).
+PLACEHOLDER_MARKERS: tuple[str, ...] = ("troque", "dev-only", "changeme", "change-me")
+MIN_SECRET_LEN: dict[str, int] = {
+    "app_password": 8,
+    "jwt_secret": 32,
+    "internal_token": 16,
+}
+TASKS_SOURCES: tuple[str, ...] = ("mock", "clickup")
+
 
 class Settings(BaseSettings):
     """Config lida de variáveis de ambiente / .env. Segredos NUNCA no código."""

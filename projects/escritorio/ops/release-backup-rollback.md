@@ -21,7 +21,11 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
 
 ## Antes de qualquer troca de versão
 
-1. Diretório de backup **novo e privado**, fora de todos os caminhos acima.
+1. Diretório de backup **novo e privado**, fora de todos os caminhos acima — e **fora do
+   disco do VPS**: `BACKUP_DIR_2` nasce vazio no `bff.env.example`, então sem este passo
+   banco, `backups/`, `bff.env` e o HOME do Hermes morrem juntos com o disco. Vale um
+   `scp`/`rsync` pro PC ou um bucket; o corte pro VPS só acontece depois que uma cópia de
+   fora do VPS foi restaurada com sucesso no ensaio abaixo (revisão Codex 2026-10-11, #2).
 2. Parar produtores: cron/timers do Hermes que chamam `/internal/*`; o BFF (`systemctl stop`).
    Esperar o stop terminar (até `TimeoutStopSec`): uma captura em curso no Hermes precisa
    acabar. Se o stop estourar o prazo, a fila pode ter item em `processing` — isso é
@@ -30,7 +34,7 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
    ```
    sqlite3 /var/lib/escritorio-bff/data.db ".backup '/backup/<dia>/data.db'"
    sqlite3 /backup/<dia>/data.db "PRAGMA integrity_check"
-   sha256sum /backup/<dia>/data.db > /backup/<dia>/SHA256SUMS
+   (cd /backup/<dia> && sha256sum data.db > SHA256SUMS)   # caminho RELATIVO, ver ensaio
    ```
    Guardar junto: hash do release (commit), `pip freeze` do venv, versão do Hermes.
 4. Cópia do `bff.env` e do `~/.hermes` (cifradas) no mesmo diretório.
@@ -45,6 +49,11 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
 3. Com o BFF parado (passo anterior), `systemctl start`. O `init_db` aplica migrações
    idempotentes (`CREATE TABLE IF NOT EXISTS` + `ALTER` guardados) — **o schema novo é
    compatível pra frente, não pra trás** (ver rollback).
+   **Atenção:** o start já liga o worker de captura e o scheduler, mesmo com os crons
+   parados. Se a fila tiver `pending`/`processing`, a release nova escreve no vault e no
+   ClickUp antes de qualquer validação — e rollback de código não desfaz isso. Antes de
+   subir, conferir no snapshot: `SELECT status, count(*) FROM capture_queue GROUP BY status`;
+   com pendência, deixar a release antiga drenar primeiro (revisão Codex 2026-10-11, #5).
 4. Verificar antes de religar produtores:
    - `GET /health` via Caddy (HTTPS) e local (`127.0.0.1:8000`);
    - login com o app; `GET /tasks`; `GET /digest` (só leitura);
@@ -77,7 +86,9 @@ sem Telegram, sem `EXPO_PUSH_URL` alcançável:
 ```
 # 1. restaurar o SNAPSHOT (não um banco vazio) num caminho isolado
 cp /backup/<dia>/data.db /tmp/ensaio/data.db
-sha256sum -c /backup/<dia>/SHA256SUMS
+# o hash tem de ser conferido na CÓPIA, não na origem (SHA256SUMS com caminho absoluto
+# relia o original e deixa passar uma cópia diferente — revisão Codex 2026-10-11, #7)
+(cd /tmp/ensaio && sha256sum -c /backup/<dia>/SHA256SUMS)
 # 2. migrar com o código da release NOVA e conferir
 DB_PATH=/tmp/ensaio/data.db .venv/bin/python - <<'PY'
 import sqlite3
