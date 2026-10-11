@@ -169,6 +169,15 @@ migração — que é exatamente o que se quer deles.
    (token `pk_`) + MCP do vault (token igual).
 4. BFF + banco (Estágio C), Caddy/HTTPS (Estágio D), crons (Estágio F).
 
+**Automação (2026-10-11):** os passos 1, 3 (instalação do Hermes, sem o login) e 4 (BFF,
+unit, Caddy, firewall) estão em `ops/vps-install.sh`, ensaiado do zero num container
+Ubuntu 24.04 antes do corte. O script gera `APP_PASSWORD`/`JWT_SECRET`/`INTERNAL_TOKEN`
+novos no VPS (nenhum segredo do PC viaja), deixa o serviço **habilitado mas parado** e
+imprime o que continua manual: `hermes auth add openai-codex --no-browser` como o usuário
+do serviço (passo 2 acima), `CLICKUP_TOKEN`/`GITHUB_PAT`/`TELEGRAM_*` no `bff.env`, e o
+snapshot do banco (`ops/release-backup-rollback.md`). O BFF recusa subir com
+`TASKS_SOURCE=clickup` sem token e com segredo de exemplo — de propósito.
+
 **Nota técnica:** o `VPS-DEPLOY.md` manda ligar o API server do Hermes (`API_SERVER_ENABLED`)
 para o BFF falar com ele. **Isso está obsoleto:** o `hermes_client` de hoje não usa HTTP,
 ele sobe `hermes -z` como subprocesso. Com BFF e Hermes na mesma máquina, isso continua

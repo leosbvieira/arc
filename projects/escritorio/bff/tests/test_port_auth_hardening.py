@@ -92,3 +92,61 @@ def test_422_do_login_nao_ecoa_a_senha(client):
     assert r.status_code == 422
     assert "senha-vazada-123" not in r.text
     assert r.json() == {"detail": "entrada inválida", "code": "validation_error"}
+
+
+# --- guard de boot: placeholders, tamanho e fonte de tarefas (revisão Codex 2026-10-11) ---
+
+
+def _segredos_bons(monkeypatch):
+    for field in DEFAULTS:
+        monkeypatch.setattr(settings, field, f"ok-{field}-" + "0123456789abcdef" * 2)
+
+
+def test_guard_aceita_segredos_fortes(monkeypatch):
+    _segredos_bons(monkeypatch)
+    main._guard_default_secrets()
+
+
+def test_guard_rejeita_placeholder_do_env_example(monkeypatch):
+    """Achado #1: o JWT_SECRET do `.env.example` não estava em DEFAULTS e passava."""
+    _segredos_bons(monkeypatch)
+    monkeypatch.setattr(settings, "jwt_secret", "troque-por-32-ou-mais-caracteres-aleatorios")
+    with pytest.raises(RuntimeError, match="jwt_secret: placeholder"):
+        main._guard_default_secrets()
+
+
+def test_guard_rejeita_jwt_curto(monkeypatch):
+    _segredos_bons(monkeypatch)
+    monkeypatch.setattr(settings, "jwt_secret", "abcdef0123456789")  # 16 < 32
+    with pytest.raises(RuntimeError, match="jwt_secret: menos de 32"):
+        main._guard_default_secrets()
+
+
+def test_guard_nao_vaza_o_valor_na_mensagem(monkeypatch):
+    _segredos_bons(monkeypatch)
+    monkeypatch.setattr(settings, "app_password", "curta")
+    with pytest.raises(RuntimeError) as exc:
+        main._guard_default_secrets()
+    assert "curta" not in str(exc.value)
+
+
+def test_guard_tasks_source_clickup_sem_token_derruba_o_boot(monkeypatch):
+    """Achado #4: clickup sem token caía em silêncio no mock."""
+    monkeypatch.setattr(settings, "tasks_source", "clickup")
+    monkeypatch.setattr(settings, "clickup_token", "")
+    with pytest.raises(RuntimeError, match="CLICKUP_TOKEN"):
+        main._guard_tasks_source()
+
+
+def test_guard_tasks_source_desconhecido(monkeypatch):
+    monkeypatch.setattr(settings, "tasks_source", "notion")
+    with pytest.raises(RuntimeError, match="desconhecido"):
+        main._guard_tasks_source()
+
+
+def test_guard_tasks_source_aceita_mock_e_clickup_com_token(monkeypatch):
+    monkeypatch.setattr(settings, "tasks_source", "mock")
+    main._guard_tasks_source()
+    monkeypatch.setattr(settings, "tasks_source", "clickup")
+    monkeypatch.setattr(settings, "clickup_token", "pk_teste")
+    main._guard_tasks_source()

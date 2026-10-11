@@ -19,8 +19,18 @@ import pytest
 from app import hermes_client, ritos, store
 from app.config import DEFAULTS, settings
 
+# Os valores têm de passar pelo guard novo (sem marcador de placeholder e com o
+# tamanho mínimo de `config.MIN_SECRET_LEN`), por isso o sufixo comprido.
 for _field in DEFAULTS:
-    setattr(settings, _field, f"test-{_field}")
+    setattr(settings, _field, f"test-{_field}-" + "0123456789abcdef" * 2)
+
+# `_guard_tasks_source()` recusa `TASKS_SOURCE=clickup` sem token — e o `.env`
+# do Leo tem clickup. A suíte roda SEMPRE em mock; testes que precisam do source
+# clickup setam os dois campos via monkeypatch.
+settings.tasks_source = "mock"
+# Idem pro Hermes: o `.env` deste PC roda com HERMES_MOCK=false (Codex real) e
+# `test_port_limites_e_reserva` devolvia 502 por tentar o binário de verdade.
+settings.hermes_mock = True
 
 # --- as credenciais REAIS não sobrevivem ao import do conftest ----------------
 # O loop acima só varre `DEFAULTS`, que tem TRÊS chaves (app_password, jwt_secret,

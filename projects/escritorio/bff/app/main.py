@@ -46,7 +46,7 @@ from . import (
     vault_client,
 )
 from .auth import make_token, require_auth, secret_equal
-from .config import DEFAULTS, settings
+from .config import DEFAULTS, MIN_SECRET_LEN, PLACEHOLDER_MARKERS, TASKS_SOURCES, settings
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +80,38 @@ NUDGE_COPY = montar_nudge_copy()
 def _guard_default_secrets() -> None:
     # Vazio é tão ruim quanto default: `INTERNAL_TOKEN=` no .env deixava o `!=`
     # antigo aceitar qualquer header vazio nos /internal/*.
-    if any(
-        getattr(settings, field) in (default, "", None)
-        for field, default in DEFAULTS.items()
-    ):
-        raise RuntimeError("segredos default detectados ou vazios — configure o .env")
+    # Placeholder (`troque-...`, `dev-only-...`) e segredo curto também derrubam o
+    # boot: o `.env.example` tinha um JWT_SECRET que escapava do `DEFAULTS` e
+    # permitia forjar token de owner sem login (revisão Codex 2026-10-11, #1).
+    # A mensagem NÃO inclui o valor — lei 7.
+    problemas: list[str] = []
+    for field, default in DEFAULTS.items():
+        valor = getattr(settings, field)
+        if valor in (default, "", None):
+            problemas.append(f"{field}: default ou vazio")
+            continue
+        baixo = str(valor).lower()
+        if any(marca in baixo for marca in PLACEHOLDER_MARKERS):
+            problemas.append(f"{field}: placeholder de exemplo")
+        elif len(str(valor)) < MIN_SECRET_LEN[field]:
+            problemas.append(f"{field}: menos de {MIN_SECRET_LEN[field]} caracteres")
+    if problemas:
+        raise RuntimeError(
+            "segredos default detectados ou fracos — configure o .env: " + "; ".join(problemas)
+        )
+
+
+def _guard_tasks_source() -> None:
+    """`TASKS_SOURCE=clickup` com `CLICKUP_TOKEN` vazio caía em silêncio no mock:
+    o app respondia sucesso e as tarefas viviam só em memória (revisão Codex
+    2026-10-11, #4). Em vez de adivinhar, o boot recusa a combinação."""
+    fonte = settings.tasks_source
+    if fonte not in TASKS_SOURCES:
+        raise RuntimeError(
+            f"TASKS_SOURCE={fonte!r} desconhecido — use um de {', '.join(TASKS_SOURCES)}"
+        )
+    if fonte == "clickup" and not settings.clickup_token:
+        raise RuntimeError("TASKS_SOURCE=clickup exige CLICKUP_TOKEN preenchido no .env")
 
 
 async def _capture_worker() -> None:
@@ -223,6 +250,7 @@ async def _backup_worker() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _guard_default_secrets()
+    _guard_tasks_source()
     store.init_db()
     worker = asyncio.create_task(_capture_worker())
     scheduler = asyncio.create_task(_scheduler_worker())
