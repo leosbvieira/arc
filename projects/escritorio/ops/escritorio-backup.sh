@@ -133,6 +133,9 @@ Cada commit é um snapshot do `data.db` do BFF, tirado pela API online do SQLite
 
 Não há segredo aqui: `bff.env` e o `auth.json` do Hermes nunca entram neste repositório.
 LEIAME
+# Clone no Windows (autocrlf=true) trocaria o SHA256SUMS por CRLF e o `sha256sum -c`
+# da restauração falharia (visto no primeiro restauro, 12/out): nada aqui é texto pro git.
+echo '* -text' > .gitattributes
 git add -A
 # O manifesto carrega a hora, então uma rodada normal sempre tem o que gravar. Só não
 # tem quando roda duas vezes no mesmo segundo, e `git commit` sem mudança sai com 1:
