@@ -13,7 +13,10 @@ ConditionPathExists=/etc/escritorio/backup.env
 
 [Service]
 Type=oneshot
-User=root
+# Roda como root, que é o default de unit de sistema. NÃO escreva `User=root`: com ele
+# explícito e NoNewPrivileges, o systemd 255 tira o CAP_SETUID do processo e o `setpriv`
+# que desce pro usuário do BFF no snapshot leva EPERM (visto no VPS em 12/out; o ensaio
+# em container não tem systemd e não pegou).
 ExecStart=/usr/local/sbin/escritorio-backup
 UMask=0077
 Nice=10
