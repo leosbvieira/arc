@@ -14,7 +14,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-_ARQUIVO = Path(__file__).resolve().parent.parent / "ritos.json"
+from .tz import TZ
+
+_ARQUIVO =Path(__file__).resolve().parent.parent / "ritos.json"
 
 DIAS = {"segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"}
 _DIA_SEMANA = {"segunda": 0, "terça": 1, "quarta": 2, "quinta": 3,
@@ -138,3 +140,61 @@ def atrasado(slug: str, agora: datetime, tolerancia: int = TOLERANCIA_ATRASO_MIN
     if atraso is None:
         return True
     return not (-ADIANTAMENTO_MAX_MIN <= atraso <= tolerancia)
+
+
+# --- systemd: o Agendador do VPS ------------------------------------------------------
+# O `sync-cron.ps1` é o consumidor do Agendador do Windows; no VPS quem dispara é o
+# systemd. O corte de 11/out/2026 levou o BFF e esqueceu os gatilhos: nada chamava
+# `/internal/nudge` nem `/internal/run-digest`, e o servidor "always-on" ficou mudo.
+# O gerador mora aqui, e não em bash no instalador, pra sair da mesma lista validada e
+# pra ter teste: o `ops/vps-install.sh` só grava o que isto devolve.
+_DIA_SYSTEMD = {"segunda": "Mon", "terça": "Tue", "quarta": "Wed", "quinta": "Thu",
+                "sexta": "Fri", "sábado": "Sat", "domingo": "Sun"}
+_SLUG_DE_UNIT = re.compile(r"^[a-z0-9_]+$")
+
+_TIMER = """\
+# GERADO de bff/ritos.json por `python -m app.ritos` (ops/vps-install.sh).
+# Não edite aqui: mude o ritos.json e rode o instalador.
+[Unit]
+Description=Escritorio rito {slug} ({quando})
+
+[Timer]
+OnCalendar={quando}
+AccuracySec=1s
+Persistent=false
+Unit=escritorio-rito@{script}-{slug}.service
+
+[Install]
+WantedBy=timers.target
+"""
+
+
+def timers_systemd(ritos: list[dict] | None = None) -> dict[str, str]:
+    """Um `.timer` por rito: nome do arquivo -> conteúdo.
+
+    O fuso vai escrito no `OnCalendar`: o relógio do VPS é UTC e o rito é na hora do
+    Leo. `Persistent=false` é de propósito — é o `-StartWhenAvailable` que o
+    `sync-cron.ps1` tirou: servidor que volta de um reboot não despeja os ritos
+    perdidos (e `atrasado()` os recusaria de qualquer jeito).
+    """
+    saida: dict[str, str] = {}
+    for r in RITOS if ritos is None else validar(ritos):
+        slug = r["slug"]
+        if not _SLUG_DE_UNIT.match(slug):
+            raise ValueError(f"slug não serve de nome de unit: {slug!r}")
+        dia = f"{_DIA_SYSTEMD[r['dia']]} " if r.get("dia") else ""
+        quando = f"{dia}*-*-* {r['hora']}:00 {TZ.key}"
+        saida[f"escritorio-rito-{slug}.timer"] = _TIMER.format(
+            slug=slug, quando=quando, script=r["script"]
+        )
+    return saida
+
+
+if __name__ == "__main__":
+    import sys
+
+    destino = Path(sys.argv[1])
+    for nome, texto in timers_systemd().items():
+        # Bytes, não `write_text`: num checkout Windows o modo texto gravaria CRLF.
+        (destino / nome).write_bytes(texto.encode("utf-8"))
+        print(nome)

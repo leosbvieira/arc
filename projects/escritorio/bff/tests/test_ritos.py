@@ -80,3 +80,42 @@ def test_validateset_do_nudge_ps1_bate_com_os_slugs():
     fonte = (Path(__file__).resolve().parent.parent / "scripts" / "nudge.ps1").read_text(encoding="utf-8")
     membros = set(re.findall(r'"([a-z]+)"', fonte.splitlines()[0]))
     assert membros == set(ritos.slugs_por_script("nudge"))
+
+
+# --- systemd: os gatilhos do VPS ------------------------------------------------------
+
+def test_um_timer_por_rito_no_fuso_do_leo():
+    """O VPS roda em UTC. Sem o fuso escrito no OnCalendar, o toque das 5h30 sairia
+    às 2h30 de Brasília."""
+    timers = ritos.timers_systemd()
+    assert sorted(timers) == sorted(f"escritorio-rito-{r['slug']}.timer" for r in ritos.RITOS)
+    assert "OnCalendar=*-*-* 05:30:00 America/Sao_Paulo\n" in timers["escritorio-rito-toque.timer"]
+    assert "OnCalendar=*-*-* 09:00:00 America/Sao_Paulo\n" in timers["escritorio-rito-digest.timer"]
+
+
+def test_rito_semanal_so_dispara_no_dia_dele():
+    assert ("OnCalendar=Sun *-*-* 20:00:00 America/Sao_Paulo\n"
+            in ritos.timers_systemd()["escritorio-rito-review.timer"])
+
+
+def test_timer_aponta_o_endpoint_pelo_script_do_rito():
+    """`escritorio-rito` decide entre /internal/nudge e /internal/run-digest pelo
+    prefixo da instância: digest disparado como nudge morre no Literal do NudgeIn."""
+    timers = ritos.timers_systemd()
+    assert "Unit=escritorio-rito@digest-digest.service\n" in timers["escritorio-rito-digest.timer"]
+    for slug in ritos.slugs_por_script("nudge"):
+        assert f"Unit=escritorio-rito@nudge-{slug}.service\n" in timers[f"escritorio-rito-{slug}.timer"]
+
+
+def test_timer_nao_recupera_rito_perdido():
+    """`Persistent=true` é o -StartWhenAvailable do systemd: depois de um reboot os
+    ritos do dia chegariam no mesmo segundo (ver sync-cron.ps1)."""
+    for nome, texto in ritos.timers_systemd().items():
+        assert "Persistent=false\n" in texto, nome
+
+
+def test_slug_que_nao_serve_de_unit_levanta():
+    with pytest.raises(ValueError):
+        ritos.timers_systemd(
+            [{"slug": "a b", "hora": "05:30", "dia": None, "task": "T", "script": "nudge"}]
+        )

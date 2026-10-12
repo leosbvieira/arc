@@ -1,11 +1,13 @@
-# Roteiro candidato: release, backup e rollback do BFF
+# Roteiro: release, backup e rollback do BFF
 
-Nenhum comando deste roteiro foi executado num VPS. Adaptado do ramo
+Ensaiado em container em 2026-10-11 e usado no corte pro VPS no mesmo dia (snapshot, hash
+conferido na cópia, restauração, primeira release). O **rollback nunca foi exercitado em
+produção**: é o trecho menos provado deste roteiro. Adaptado do ramo
 `local-2026-09` para a arquitetura da nuvem: **um único SQLite** (`DB_PATH`,
 default `data.db`), Hermes como **CLI oneshot** (sem servidor, sem ledger
 próprio), ClickUp por REST, vault no GitHub, push Expo com Telegram de ponte.
-Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.service`,
-`ops/bff.env.example`.
+Ler junto: `development/VPS-DEPLOY.md` ("Estado real": o servidor como ele é e os comandos
+do dia a dia), `ops/escritorio-bff.service`, `ops/bff.env.example`.
 
 ## Inventário — o que existe fora do código
 
@@ -13,20 +15,23 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
 | --- | --- | --- |
 | Banco do BFF (tudo: fila de captura, leituras, pontos, rotinas, `notif_log`, `notif_reserva`, devices) | `DB_PATH` (+ `-wal`, `-shm` enquanto o processo vive) | Única fonte local de verdade. WAL/SHM fazem parte do banco: nunca apagar "pra destravar". |
 | Backup diário 1 | `Path(DB_PATH).parent/backups/data-<dia>.db` | Feito pelo próprio BFF via SQLite Backup API, com `integrity_check` antes; 14 dias. Mesmo volume do banco. |
-| Backup diário 2 | `BACKUP_DIR_2` | Mesma rotina, OUTRO volume. Vazio = desligado. |
-| Hermes | `$HOME/.hermes` do usuário do serviço (`config.yaml`, `SOUL.md`, personalities, `.env` com chaves, sessões) | Backup separado, cifrado/restrito. Não mora na release. |
-| Segredos do BFF | `/etc/escritorio/bff.env` | root 0600. Preservar JWT_SECRET/INTERNAL_TOKEN entre releases salvo rotação planejada (rotação de JWT_SECRET desloga o celular). |
+| Backup diário 2 | `BACKUP_DIR_2` | Mesma rotina, OUTRO volume. Vazio = desligado — e é como fica no VPS, que tem um disco só. |
+| Backup fora do VPS | repositório git privado, empurrado pelo `escritorio-backup.timer` (`ops/escritorio-backup.sh`) | Diário: snapshot pela API do SQLite, `integrity_check`, `SHA256SUMS` e `MANIFESTO.txt`. **Só o banco.** É o que cobre a perda do disco. Preparo e restauração: `development/VPS-DEPLOY.md`. |
+| Hermes | HOME do usuário do serviço (`/var/lib/escritorio-bff/hermes-home`: instalação, `config.yaml`, `auth.json` do login) | **Sem backup, de propósito.** O `vps-install.sh` reinstala e o login é refeito por device code; o `auth.json` nunca é copiado. Não mora na release. |
+| Segredos do BFF | `/etc/escritorio/bff.env` | root 0600. Preservar JWT_SECRET/INTERNAL_TOKEN entre releases salvo rotação planejada (rotação de JWT_SECRET desloga o celular). Fora de qualquer backup automático: perdeu o disco, recria. |
 | Efeitos externos | ClickUp (tarefas), vault no GitHub (notas), Expo/Telegram (avisos já entregues) | **Não estão no backup.** Restaurar um banco antigo não os desfaz e pode fazer o BFF repeti-los. |
 | App | fila offline, rascunho de leitura, token de push registrado, JWT | Limpar dados/reinstalar NÃO é procedimento de rollback do servidor. |
 
 ## Antes de qualquer troca de versão
 
-1. Diretório de backup **novo e privado**, fora de todos os caminhos acima — e **fora do
-   disco do VPS**: `BACKUP_DIR_2` nasce vazio no `bff.env.example`, então sem este passo
-   banco, `backups/`, `bff.env` e o HOME do Hermes morrem juntos com o disco. Vale um
-   `scp`/`rsync` pro PC ou um bucket; o corte pro VPS só acontece depois que uma cópia de
-   fora do VPS foi restaurada com sucesso no ensaio abaixo (revisão Codex 2026-10-11, #2).
-2. Parar produtores: cron/timers do Hermes que chamam `/internal/*`; o BFF (`systemctl stop`).
+1. Uma cópia do banco **fora do disco do VPS** antes de mexer: sem ela banco, `backups/`
+   e `bff.env` morrem juntos com o disco (revisão Codex 2026-10-11, #2). No VPS é
+   `systemctl start escritorio-backup.service` — snapshot online pela API do SQLite,
+   empurrado pro repositório privado; conferir que saiu com 0 e que o commit novo chegou.
+   Numa release de rotina (sem migração arriscada) este passo basta e os passos 2–4 são
+   dispensáveis. Sem o `backup.env` preparado, vale um `scp`/`rsync` pro PC.
+2. Parar produtores: os timers dos ritos, que chamam `/internal/*`
+   (`systemctl stop $(cd /etc/systemd/system && ls escritorio-rito-*.timer)`); o BFF (`systemctl stop`).
    Esperar o stop terminar (até `TimeoutStopSec`): uma captura em curso no Hermes precisa
    acabar. Se o stop estourar o prazo, a fila pode ter item em `processing` — isso é
    **normal** e o worker retoma; não editar a fila à mão.
@@ -37,7 +42,8 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
    (cd /backup/<dia> && sha256sum data.db > SHA256SUMS)   # caminho RELATIVO, ver ensaio
    ```
    Guardar junto: hash do release (commit), `pip freeze` do venv, versão do Hermes.
-4. Cópia do `bff.env` e do `~/.hermes` (cifradas) no mesmo diretório.
+4. Cópia cifrada do `bff.env` no mesmo diretório, se a troca mexe em segredo. O HOME do
+   Hermes não precisa (ver inventário).
 
 ## Ativar uma release
 
@@ -49,7 +55,7 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
 3. Com o BFF parado (passo anterior), `systemctl start`. O `init_db` aplica migrações
    idempotentes (`CREATE TABLE IF NOT EXISTS` + `ALTER` guardados) — **o schema novo é
    compatível pra frente, não pra trás** (ver rollback).
-   **Atenção:** o start já liga o worker de captura e o scheduler, mesmo com os crons
+   **Atenção:** o start já liga o worker de captura e o scheduler, mesmo com os timers
    parados. Se a fila tiver `pending`/`processing`, a release nova escreve no vault e no
    ClickUp antes de qualquer validação — e rollback de código não desfaz isso. Antes de
    subir, conferir no snapshot: `SELECT status, count(*) FROM capture_queue GROUP BY status`;
@@ -60,13 +66,17 @@ Ler junto: `development/VPS-DEPLOY.md` (o caminho feliz), `ops/escritorio-bff.se
    - `journalctl -u escritorio-bff` sem traceback;
    - o backup worker escreveu `backups/data-<hoje>.db` (ele roda no boot).
    Não usar uma captura real como probe: ela vira nota no vault e tarefa no ClickUp.
-5. Religar cron/timers. O primeiro `/internal/run-digest` do dia respeita `notif_reserva`
-   e `notif_log`: se já saiu hoje, responde `skipped`.
+5. Religar os timers dos ritos
+   (`systemctl start $(cd /etc/systemd/system && ls escritorio-rito-*.timer)`; o
+   `vps-install.sh` também os religa). O primeiro `/internal/run-digest` do dia respeita
+   `notif_reserva` e `notif_log`: se já saiu hoje, responde `skipped`.
 
 ## Rollback
 
 1. Parar produtores e o BFF (mesma disciplina de stop).
-2. Apontar a unit pra release **anterior** e subir. **Manter o banco atual.** O código
+2. Apontar a unit pra release **anterior** (o caminho `releases/<id>/` em
+   `/etc/systemd/system/escritorio-bff.service`, depois `daemon-reload`) e subir. As
+   releases antigas continuam em `/opt/escritorio/releases/`. **Manter o banco atual.** O código
    anterior ignora tabelas/colunas que não conhece (é só `SELECT` com nomes explícitos),
    então um rollback de código normalmente **não** precisa de restauração de dados.
 3. Restaurar o banco do backup é uma decisão separada e rara. Ela **perde** tudo que

@@ -1,0 +1,38 @@
+# Cópia diária do banco do BFF para um repositório git privado, fora do VPS.
+# Script: ops/escritorio-backup.sh (instalado em /usr/local/sbin/escritorio-backup pelo
+# vps-install.sh). Preparo e restauração: development/VPS-DEPLOY.md.
+#
+# Sem /etc/escritorio/backup.env a unit nem tenta rodar: o destino do backup é uma
+# decisão do Leo (repositório + chave de deploy), não um default do instalador.
+
+[Unit]
+Description=Escritorio: copia do banco para fora do VPS (git privado)
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/escritorio/backup.env
+
+[Service]
+Type=oneshot
+# Roda como root, que é o default de unit de sistema. NÃO escreva `User=root`: com ele
+# explícito e NoNewPrivileges, o systemd 255 tira o CAP_SETUID do processo e o `setpriv`
+# que desce pro usuário do BFF no snapshot leva EPERM (visto no VPS em 12/out; o ensaio
+# em container não tem systemd e não pegou).
+ExecStart=/usr/local/sbin/escritorio-backup
+UMask=0077
+Nice=10
+# Repositório local e área de trabalho: /var/lib/escritorio-backup (root 0700).
+StateDirectory=escritorio-backup
+StateDirectoryMode=0700
+# O snapshot nasce em backups/ do BFF e o SQLite precisa do -shm do banco vivo.
+ReadWritePaths=/var/lib/escritorio-bff
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=escritorio-backup

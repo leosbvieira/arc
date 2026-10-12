@@ -1,0 +1,36 @@
+# Um rito do escritório: POST em /internal/* do BFF LOCAL (ops/escritorio-rito.sh,
+# instalado em /usr/local/sbin/escritorio-rito pelo vps-install.sh).
+#
+# Instância = <script>-<slug> (nudge-toque, digest-digest). Quem escolhe é o timer
+# `escritorio-rito-<slug>.timer`, GERADO de bff/ritos.json. Esta unit não se habilita:
+# quem tem [Install] são os timers.
+#
+# root só pra ler o INTERNAL_TOKEN em /etc/escritorio/bff.env (root 0600). O resto é
+# trancado: o processo não escreve em lugar nenhum e só fala com o loopback, então o
+# token não tem por onde sair da máquina.
+
+[Unit]
+Description=Escritorio rito %i (POST /internal no BFF local)
+After=escritorio-bff.service
+ConditionPathExists=/etc/escritorio/bff.env
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/sbin/escritorio-rito %i
+# 60s esperando o /health (restart de deploy) + 300s do digest (ClickUp, agenda) + folga.
+TimeoutStartSec=420
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+LimitCORE=0
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=escritorio-rito

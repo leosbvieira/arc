@@ -1,22 +1,24 @@
-# CANDIDATO — nenhum comando daqui foi executado num VPS. Trocar __RELEASE_ID__
-# antes de instalar. Adaptado do ramo local-2026-09 para a arquitetura da nuvem:
+# Modelo da unit em produção desde 2026-10-11. O vps-install.sh troca __RELEASE_ID__
+# e o PATH do Hermes e grava em /etc/systemd/system/ — não edite a cópia instalada,
+# salvo o rollback de código (development/VPS-DEPLOY.md, "Nova release").
+# Adaptado do ramo local-2026-09 para a arquitetura da nuvem:
 # o BFF NÃO fala com um servidor HTTP do Hermes; ele sobe `hermes -z` como
 # SUBPROCESSO a cada chamada (bff/app/hermes_client.py). Por isso:
 #   - o usuário do serviço precisa do Hermes instalado E do seu ~/.hermes
-#     (config.yaml, SOUL.md, .env com as chaves, sessões). HOME aponta pra um
+#     (config.yaml, auth.json do login no Codex, sessões). HOME aponta pra um
 #     diretório de estado fora de /home, e ProtectHome=true continua valendo;
 #   - ProtectSystem=strict + ReadWritePaths cobrindo o estado do BFF (data.db,
-#     backups/) e o HOME do Hermes, que escreve sessões e cache do npx (ClickUp MCP);
+#     backups/) e o HOME do Hermes, que escreve sessões e cache;
 #   - TimeoutStopSec >= HERMES_TIMEOUT (150s no config.py) + folga: matar o uvicorn
 #     no meio de uma captura em curso perde a resposta do agente e deixa a fila
 #     em `processing`.
 #
 # Layout esperado:
 #   /opt/escritorio/releases/<id>/bff        código + .venv (imutável por release)
-#   /opt/escritorio/hermes/.venv/bin/hermes  Hermes CLI (fora da release do BFF)
 #   /var/lib/escritorio-bff/                 data.db, backups/, hermes-home/
+#   /var/lib/escritorio-bff/hermes-home/.local/bin/hermes   Hermes CLI (fora da release)
 #   /etc/escritorio/bff.env                  segredos (root:root 0600) — ver bff.env.example
-#   backup_dir_2                             OUTRO volume (BACKUP_DIR_2 no env)
+#   A cópia fora do disco é o escritorio-backup.timer (BACKUP_DIR_2 fica vazio).
 
 [Unit]
 Description=Escritorio BFF (FastAPI + Hermes CLI oneshot)
