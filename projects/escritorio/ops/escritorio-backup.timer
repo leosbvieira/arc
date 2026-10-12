@@ -1,0 +1,13 @@
+# 06:30 UTC = 03:30 em São Paulo: madrugada do Leo, longe dos ritos e do digest.
+# Persistent=true: se o VPS estava desligado na hora, roda assim que voltar.
+
+[Unit]
+Description=Escritorio: backup diario do banco para fora do VPS
+
+[Timer]
+OnCalendar=*-*-* 06:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -18,6 +18,10 @@
 #   /opt/escritorio/releases/<id>/bff   código + .venv, imutável por release
 #   /var/lib/escritorio-bff/            data.db, backups/, hermes-home/ (HOME do Hermes)
 #   /etc/escritorio/bff.env             segredos (root:root 0600)
+#   /usr/local/sbin/escritorio-backup   cópia do banco pra fora do VPS (timer diário);
+#                                       só liga com /etc/escritorio/backup.env (VPS-DEPLOY.md)
+#   /usr/local/sbin/escritorio-rito     dispara um rito no BFF local; os timers
+#                                       escritorio-rito-<slug>.timer saem de bff/ritos.json
 #
 # O que este script NÃO faz, de propósito: o login do Hermes no Codex (device code,
 # exige você: `hermes auth add openai-codex` como o usuário do serviço) e copiar o
@@ -45,7 +49,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   ca-certificates curl git sqlite3 rsync openssl gnupg sudo libatomic1 \
-  python3 python3-venv python3-pip systemd ufw >/dev/null
+  python3 python3-venv python3-pip systemd tzdata ufw >/dev/null
 
 if ! command -v caddy >/dev/null; then
   log "caddy (repo oficial)"
@@ -106,7 +110,7 @@ if [ ! -f "$ENV_FILE" ]; then
       -e "s|^INTERNAL_TOKEN=.*|INTERNAL_TOKEN=$(openssl rand -hex 32)|" \
       -e "s|^DB_PATH=.*|DB_PATH=$STATE/data.db|" \
       -e "s|^HERMES_BIN=.*|HERMES_BIN=$HERMES_BIN|" \
-      "$SRC_DIR/projects/escritorio/ops/bff.env.example" | tr -d '' > "$ENV_FILE"   # CR de checkout Windows quebra o EnvironmentFile
+      "$SRC_DIR/projects/escritorio/ops/bff.env.example" | tr -d '\r' > "$ENV_FILE"   # CR de checkout Windows quebra o EnvironmentFile
   chmod 0600 "$ENV_FILE"
 fi
 
@@ -115,6 +119,31 @@ sed -e "s|__RELEASE_ID__|$RELEASE_ID|g" \
     -e "s|^Environment=PATH=.*|Environment=PATH=$(dirname "$HERMES_BIN"):/usr/local/bin:/usr/bin:/bin|" \
     "$SRC_DIR/projects/escritorio/ops/escritorio-bff.service" > "$UNIT"
 systemd-analyze verify "$UNIT" || true
+
+log "backup fora do VPS: script + timer"
+OPS="$SRC_DIR/projects/escritorio/ops"
+install -m 0755 "$OPS/escritorio-backup.sh" /usr/local/sbin/escritorio-backup
+install -m 0644 "$OPS/escritorio-backup.service" "$OPS/escritorio-backup.timer" /etc/systemd/system/
+systemd-analyze verify /etc/systemd/system/escritorio-backup.service || true
+
+log "ritos: disparador + timers gerados de ritos.json"
+install -m 0755 "$OPS/escritorio-rito.sh" /usr/local/sbin/escritorio-rito
+install -m 0644 "$OPS/escritorio-rito@.service" /etc/systemd/system/
+RITOS_TMP="$(mktemp -d)"
+RITO_TIMERS="$(cd "$REL/bff" && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m app.ritos "$RITOS_TMP" | tr '\n' ' ')"
+[ -n "$RITO_TIMERS" ] || { echo "ritos.json não gerou nenhum timer"; exit 1; }
+# Reconcilia como o sync-cron.ps1: rito renomeado ou removido do ritos.json não pode
+# deixar o timer antigo disparando ao lado do novo.
+for velho in /etc/systemd/system/escritorio-rito-*.timer; do
+  if [ -e "$velho" ] && [ ! -e "$RITOS_TMP/$(basename "$velho")" ]; then
+    [ "$ENSAIO" = 1 ] || systemctl disable --now "$(basename "$velho")" || true
+    rm -f "$velho"
+    echo "rito removido: $(basename "$velho")"
+  fi
+done
+install -m 0644 "$RITOS_TMP"/escritorio-rito-*.timer /etc/systemd/system/
+rm -rf "$RITOS_TMP"
+systemd-analyze verify /etc/systemd/system/escritorio-rito-*.timer || true
 
 if [ -n "$DOMAIN" ]; then
   log "caddy: $DOMAIN -> 127.0.0.1:8000"
@@ -145,6 +174,33 @@ systemctl daemon-reload
 # (guard do boot), então o start fica pra depois de preencher o env.
 systemctl enable escritorio-bff.service
 [ -n "$DOMAIN" ] && systemctl reload caddy || true
+# O destino do backup (repositório + chave de deploy) é decisão do Leo: sem o
+# backup.env o timer fica instalado e desligado, e a unit nem tenta rodar.
+if [ -f /etc/escritorio/backup.env ]; then
+  systemctl enable --now escritorio-backup.timer
+else
+  echo "backup fora do VPS: sem /etc/escritorio/backup.env, timer DESLIGADO (VPS-DEPLOY.md)"
+fi
+# Os ritos (toque, check-in, jornal, digest, shutdown, fechamento, review): sem estes
+# timers nada chama /internal/* e o servidor fica mudo — foi o que o corte de 11/out
+# esqueceu. Ligam sempre; o restart é pra hora nova do ritos.json valer já. Com o BFF
+# parado (primeira instalação, antes dos segredos) o rito falha e aparece em
+# `systemctl --failed`, que é o aviso certo.
+# shellcheck disable=SC2086
+systemctl enable $RITO_TIMERS
+# shellcheck disable=SC2086
+systemctl restart $RITO_TIMERS
+
+if systemctl is-active --quiet escritorio-bff.service; then
+  cat <<FIM
+
+Release $RELEASE_ID instalada. O serviço AINDA roda a anterior até reiniciar:
+  systemctl restart escritorio-bff && sleep 3 && curl -fsS http://127.0.0.1:8000/health
+Antes do restart, conferir a fila de captura: ops/release-backup-rollback.md,
+"Ativar uma release", passo 3.
+FIM
+  exit 0
+fi
 cat <<FIM
 
 Instalado (serviço habilitado, ainda PARADO). Falta você:
@@ -159,4 +215,8 @@ Instalado (serviço habilitado, ainda PARADO). Falta você:
      (sem CLICKUP_TOKEN o serviço cai no boot de propósito — veja journalctl -u escritorio-bff)
   3. Se o banco vem do PC: parar o serviço, copiar o snapshot pra $STATE/data.db
      (chown $SVC_USER), subir de novo. Roteiro: ops/release-backup-rollback.md.
+  4. Backup fora do VPS: criar a chave de deploy e o /etc/escritorio/backup.env
+     (development/VPS-DEPLOY.md, "Backup fora do VPS") e rodar este script de novo.
+Os timers dos ritos já estão ligados (systemctl list-timers 'escritorio-rito-*'):
+enquanto o serviço estiver parado eles falham, e é esperado.
 FIM
