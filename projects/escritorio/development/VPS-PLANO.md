@@ -282,6 +282,11 @@ instalado, só desabilitado. E o banco tem backup diário desde hoje.
 
 ## Aceite da fase 1
 
+> **Nota de 12/out/2026.** O corte foi em 11/out (`VPS-DEPLOY.md`, "Estado real"). O
+> backup diário nasce no servidor e, desde 12/out, também sai dele (repositório privado).
+> Os gatilhos dos ritos só chegaram em 12/out: entre o corte e essa data o servidor não
+> disparou nenhum nudge, então a contagem das 24h dos nudges começa daí.
+
 - [ ] PC desligado por 24h e os 6 nudges chegaram no horário
 - [ ] captura pelo celular com o PC desligado: Raw no vault, item na fila, sem perda
 - [ ] fechamento do dia gravado com o PC desligado
