@@ -666,11 +666,11 @@ async def run_digest() -> dict:
         extra.append(sl)
     extra.extend(routine_lines())
     try:
-        from datetime import date
-
         from . import agenda
 
-        extra.extend(agenda.linhas_digest(await agenda.do_dia(date.today())))
+        # `tz.hoje_local()`, não `date.today()`: no VPS em UTC, das 21h à meia-noite
+        # BRT o relógio do processo já está em D+1 e o digest traria a agenda de amanhã.
+        extra.extend(agenda.linhas_digest(await agenda.do_dia(tz.hoje_local())))
     except Exception:
         # A agenda é best-effort: uma fonte externa não cala a cobrança factual (lei 4).
         pass

@@ -56,3 +56,23 @@ def test_notif_dedupe_usa_a_data_do_leo(monkeypatch):
         data = con.execute("SELECT data_local FROM notif_log").fetchone()[0]
     assert data == "2026-08-04"
     assert store.notif_sent_today("nudge_closing") is True
+
+
+async def test_digest_pede_a_agenda_do_dia_do_leo(monkeypatch):
+    """O último `date.today()` que sobrou: `run_digest` pedia a agenda pelo relógio do
+    PROCESSO. No VPS em UTC, das 21h à meia-noite BRT, o digest mostraria os
+    compromissos de amanhã como se fossem de hoje."""
+    from app import agenda, tasks
+
+    pedidos = []
+
+    async def agenda_do_dia(ref):
+        pedidos.append(ref)
+        return {"data": ref.isoformat(), "eventos": [], "temas": [], "fontes": {}}
+
+    monkeypatch.setattr(agenda, "do_dia", agenda_do_dia)
+    monkeypatch.setattr(tz, "hoje_local", lambda: date(2026, 8, 4))
+
+    await tasks.run_digest()
+
+    assert pedidos == [date(2026, 8, 4)]
