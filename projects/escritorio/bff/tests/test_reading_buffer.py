@@ -275,6 +275,34 @@ async def test_oneshot_envia_prompt_longo_por_stdin_e_nao_argv(monkeypatch):
     assert "segredo-privado" not in " ".join(seen["args"])
 
 
+@pytest.mark.hermes_oneshot
+async def test_oneshot_sem_python_ao_lado_usa_o_binario_hermes_com_stdin(monkeypatch):
+    """VPS: `hermes` é o wrapper do instalador oficial, sem venv/python junto. Antes
+    disso o BFF levantava `hermes_error` em toda chamada (captura 52 de 12/out)."""
+    prompt = "segredo-privado da captura"
+    seen = {}
+
+    def fake_run(args, **kwargs):
+        seen["args"] = args
+        seen["input"] = kwargs.get("input")
+        return type("Proc", (), {"returncode": 0, "stdout": "resposta", "stderr": "session_id: x"})()
+
+    def sem_python():
+        raise RuntimeError("hermes_error")
+
+    monkeypatch.setattr(settings, "hermes_bin", "/opt/hermes/.local/bin/hermes")
+    monkeypatch.setattr(hermes_client.shutil, "which", lambda _: None)
+    monkeypatch.setattr(hermes_client, "_hermes_python", sem_python)
+    monkeypatch.setattr(hermes_client.subprocess, "run", fake_run)
+
+    assert await hermes_client._oneshot(prompt) == "resposta"
+    assert seen["args"] == [
+        "/opt/hermes/.local/bin/hermes", "chat", "--query-file", "-", "--quiet",
+    ]
+    assert seen["input"] == prompt
+    assert "segredo-privado" not in " ".join(seen["args"])
+
+
 async def test_compile_reading_insere_quote_verbatim_sem_enviar_ao_hermes(monkeypatch):
     monkeypatch.setattr(settings, "hermes_mock", False)
     seen = {}
