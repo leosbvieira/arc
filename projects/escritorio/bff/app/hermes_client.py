@@ -58,6 +58,12 @@ def _clean(s: str) -> str:
 
 
 def _hermes_python() -> str:
+    """O python do venv onde o Hermes está instalado (o do `pip install` no Windows).
+
+    Só existe quando `hermes` é um entry point do venv: no VPS, `hermes` é um wrapper
+    sh do instalador oficial e não tem python ao lado — aí `_comando_hermes` cai no
+    outro caminho.
+    """
     hermes_path = shutil.which(settings.hermes_bin) or settings.hermes_bin
     scripts_dir = Path(hermes_path).resolve().parent
     candidates = (scripts_dir / "python.exe", scripts_dir / "python")
@@ -65,6 +71,33 @@ def _hermes_python() -> str:
         if candidate.exists():
             return str(candidate)
     raise RuntimeError("hermes_error")
+
+
+def _comando_hermes() -> list[str]:
+    """Linha de comando que roda um prompt lido de STDIN e devolve só a resposta.
+
+    O prompt vai por stdin nos dois caminhos: sessões longas não batem o limite de argv
+    do Windows e conteúdo privado não aparece na command line/process list.
+
+    1. Venv com python ao lado do `hermes` (PC): um bootstrap que põe o texto em
+       `sys.argv` só dentro do processo filho e chama `hermes -z`.
+    2. Instalador oficial (VPS, Linux): o próprio binário `hermes` com
+       `chat --query-file - --quiet`, que lê a pergunta de stdin e imprime só a resposta
+       em stdout (o `session_id` vai pra stderr). Sem isso, o BFF no VPS levantava
+       `hermes_error` em TODA chamada — a captura 52 de 12/out nunca passou daqui.
+    """
+    try:
+        python = _hermes_python()
+    except RuntimeError:
+        hermes_bin = shutil.which(settings.hermes_bin) or settings.hermes_bin
+        return [hermes_bin, "chat", "--query-file", "-", "--quiet"]
+    bootstrap = (
+        "import sys; "
+        "prompt=sys.stdin.read(); "
+        "sys.argv=['hermes','-z',prompt]; "
+        "from hermes_cli.main import main; main()"
+    )
+    return [python, "-c", bootstrap]
 
 
 # Uma conversa com o Hermes por vez. Cada chamada sobe um `hermes.exe` com timeout de
@@ -197,17 +230,9 @@ async def _oneshot(prompt: str, *, primeiro_plano: bool = False) -> str:
     """
 
     def _run() -> subprocess.CompletedProcess:
-        # O prompt vai por stdin: sessões longas não batem o limite de argv do Windows
-        # e conteúdo privado não aparece na command line/process list. O bootstrap põe
-        # o texto em sys.argv apenas dentro do processo filho, antes de chamar o CLI.
-        bootstrap = (
-            "import sys; "
-            "prompt=sys.stdin.read(); "
-            "sys.argv=['hermes','-z',prompt]; "
-            "from hermes_cli.main import main; main()"
-        )
+        # O prompt vai por stdin (ver `_comando_hermes`): nunca na command line.
         return subprocess.run(
-            [_hermes_python(), "-c", bootstrap],
+            _comando_hermes(),
             input=prompt,
             capture_output=True,
             text=True,
